@@ -22,6 +22,10 @@ Sus Word is a live Twitch chat game about hiding one ordinary word in plain sigh
 
 Open `http://localhost:3000/host` for controls. For an offline rehearsal, run `npm run demo -- --fast` and open the overlay; omit `--fast` for full three-minute timing. Add `--players 30` (up to 200) to rehearse multiple tables.
 
+## Mixed rehearsal on your real channel
+
+Testing alone? `npm run sim` connects to your real Twitch channel like `npm start`, and also seats three simulated players (`--sim 5` for more). Their names start with "Sim", their lines show on the overlay and in the reveal, and they never post in Twitch chat. You join and claim a card as usual, start rounds with `!sus go` in chat, and play against them: they chat, one of them may be the Imposter and hide the word, and they vote. In this mode the lobby waits for `!sus go` and rounds are 75 seconds.
+
 ## Big chats: tables
 
 One table is the whole game for a small stream. When more people claim cards, Sus Word deals them into tables of up to 12, and every table plays at the same time on one timer.

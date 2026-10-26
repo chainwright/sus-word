@@ -10,7 +10,8 @@
     "start": "node src/server.js",
     "auth": "node src/auth.js",
     "test": "node --test",
-    "demo": "node src/demo.js"
+    "demo": "node src/demo.js",
+    "sim": "node src/sim.js --quick"
   },
   "dependencies": {
     "dotenv": "^18.0.9",
