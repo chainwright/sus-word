@@ -155,3 +155,33 @@ body { color: var(--ink); font-family: "Courier Prime", monospace; }
 .connection-badge { position: absolute; z-index: 50; left: 20px; bottom: 20px; padding: 8px 13px; border: 2px solid var(--red); color: var(--red); background: #f4e7cc; font: 700 19px/1 "Oswald", sans-serif; }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+/* Layout fixes after the first visual review (names overflowed the 560 px board). */
+.round-players { grid-template-columns: 1fr 1fr; gap: 14px 16px; margin-top: 30px; }
+.round-players > * { min-width: 0; }
+.round-player { display: grid; grid-template-columns: 84px 1fr; grid-template-rows: auto auto; column-gap: 12px; align-items: center; padding: 7px 10px 7px 7px; }
+.round-player .polaroid-photo { grid-row: 1 / span 2; width: 84px; font-size: 32px; }
+.round-player .polaroid-name { margin: 0; text-align: left; font: 600 28px/1.05 "Oswald", sans-serif; }
+.round-player-count { margin: 2px 0 0; text-align: left; font-size: 34px; }
+.vote-row { grid-template-columns: 170px 1fr; }
+.vote-row .polaroid { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 8px; padding: 6px 8px 6px 6px; }
+.vote-row .polaroid-photo { width: 64px; font-size: 24px; }
+.vote-row .polaroid-name { margin: 0; text-align: left; font: 600 24px/1.05 "Oswald", sans-serif; white-space: normal; overflow-wrap: anywhere; }
+.tally-slip { height: 92px; }
+.vote-rows { gap: 14px; margin: 22px 0 18px; }
+.vote-command { font-size: 26px; padding: 16px 20px; }
+.reveal-title { font-size: 64px; padding: 14px 25px 18px; top: 50px; }
+.shuffle-deck { top: 225px; }
+.sneakiness-slip { top: 505px; }
+.leaderboard { top: 650px; }
+.vote-row { grid-template-columns: 215px 1fr; }
+.vote-row .polaroid-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 23px; }
+.verdict-slip { min-height: 200px; padding: 42px 18px 18px; }
+.verdict-points { margin-top: 8px; font-size: 58px; }
+.sneakiness-slip { top: 490px; }
+.leaderboard { top: 640px; }
+.vote-row { grid-template-columns: 190px 1fr; }
+.vote-row > * { min-width: 0; }
+.tally-slip { overflow: hidden; padding: 14px 12px; gap: 6px; }
+.tally-group { width: 78px; gap: 4px; }
+.tally-stroke.fifth { left: 32px; }
