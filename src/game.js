@@ -45,6 +45,7 @@ function publicPlayer(player, score = 0) {
     displayName: player.displayName,
     avatar: player.avatar,
     claimed: Boolean(player.claimed),
+    muted: Boolean(player.muted),
     joinedAt: player.joinedAt ?? null,
     messageCount: player.messageCount ?? 0,
     score,
@@ -115,6 +116,8 @@ export class Game extends EventEmitter {
     this.codeGenerator = options.codeGenerator ?? null;
     this.words = options.words ?? WORDS;
     this.durations = { ...DEFAULT_DURATIONS, ...options.durations };
+    this.streamerLogin = normalizeLogin(options.streamerLogin);
+    this.hostPlays = options.hostPlays !== false;
     this.state = PHASES.IDLE;
     this.roundNumber = 0;
     this.players = new Map();
@@ -137,13 +140,46 @@ export class Game extends EventEmitter {
     this.crowdParticipants = new Set();
     this.crowdAccusations = new Set();
     this.crowdVoteTables = new Map();
+    this.roundAccusations = new Set();
+    this.roundVoteTables = new Map();
     this.crowdMessageCount = 0;
+    this.mutedPlayerIds = new Set();
     this.isFinalRound = false;
     this.lobbyOpenedAt = null;
     this.timers = new Map();
   }
 
   get phase() { return this.state; }
+
+  configureStreamer(login) {
+    this.streamerLogin = normalizeLogin(login);
+    return { ok: true, login: this.streamerLogin, hostPlays: this.hostPlays };
+  }
+
+  setHostPlays(enabled) {
+    this.hostPlays = Boolean(enabled);
+    const streamer = this.#streamerPlayer();
+    if (ACTIVE_PHASES.has(this.state)) {
+      if (this.hostPlays && streamer) this.#moveStreamerTo(this.featuredTableId);
+      if (!this.hostPlays && streamer) this.#removeFromActiveTable(streamer.id);
+    }
+    this.#publish("hostPlays", { enabled: this.hostPlays });
+    return { ok: true, enabled: this.hostPlays };
+  }
+
+  mute(reference) {
+    const player = this.#resolvePlayer(reference, this.players)
+      ?? this.#resolvePlayer(reference, this.profiles);
+    if (!player) return { ok: false, reason: "unknown_player" };
+    this.mutedPlayerIds.add(player.id);
+    const active = this.players.get(player.id);
+    if (active) active.muted = true;
+    const profile = this.profiles.get(player.id);
+    if (profile) profile.muted = true;
+    this.#removeFromActiveTable(player.id);
+    this.#publish("player", { action: "mute", player: this.#publicPlayer(player) });
+    return { ok: true, player: this.#publicPlayer(player) };
+  }
 
   start() {
     if (this.state !== PHASES.IDLE) return { ok: false, reason: "invalid_state" };
@@ -198,6 +234,7 @@ export class Game extends EventEmitter {
     const player = {
       ...profile,
       claimed,
+      muted: this.mutedPlayerIds.has(id),
       joinedAt: existing?.joinedAt ?? this.#now(),
       messageCount: existing?.messageCount ?? 0,
     };
@@ -290,7 +327,11 @@ export class Game extends EventEmitter {
 
   go(options = {}) {
     if (this.state !== PHASES.LOBBY) return { ok: false, reason: "invalid_state" };
-    const claimed = [...this.players.values()].filter((player) => player.claimed);
+    const claimed = [...this.players.values()].filter((player) => (
+      player.claimed
+      && !this.mutedPlayerIds.has(player.id)
+      && (this.hostPlays || player.login !== this.streamerLogin)
+    ));
     return this.#startRound(claimed, options, false);
   }
 
@@ -309,14 +350,21 @@ export class Game extends EventEmitter {
         .sort((left, right) => (this.scores.get(right.id) ?? 0) - (this.scores.get(left.id) ?? 0)
           || left.login.localeCompare(right.login))[0]).filter(Boolean);
     }
-    if (finalists.length < 3) return { ok: false, reason: "not_enough_finalists" };
-    return this.#startRound(finalists.slice(0, 12), options, true);
+    finalists = finalists.filter((player) => !this.mutedPlayerIds.has(player.id));
+    const streamer = this.#streamerPlayer();
+    const selected = finalists.slice(0, 12);
+    if (this.hostPlays && streamer && !selected.some(({ id }) => id === streamer.id)) {
+      selected.push(streamer);
+    }
+    if (selected.length < 3) return { ok: false, reason: "not_enough_finalists" };
+    return this.#startRound(selected, options, true);
   }
 
   featureTable(tableId) {
     const id = Number(tableId);
     const table = this.tables.get(id);
     if (!table || !ACTIVE_PHASES.has(this.state)) return { ok: false, reason: "unknown_table" };
+    if (this.hostPlays) this.#moveStreamerTo(id);
     this.featuredTableId = id;
     this.currentRound = table;
     this.lastFeaturedTableId = id;
@@ -330,7 +378,21 @@ export class Game extends EventEmitter {
     const reference = options.userId ?? options.id ?? options.login;
     const messageText = String(options.text ?? options.message ?? "");
     if (!reference || !messageText) return { ok: false, reason: "invalid_message" };
+    const knownPlayer = this.#resolvePlayer(reference, this.players)
+      ?? this.#resolvePlayer(reference, this.profiles);
+    if (knownPlayer && this.mutedPlayerIds.has(knownPlayer.id)) {
+      return { ok: false, reason: "muted" };
+    }
     const table = this.#tableForPlayer(reference);
+    const transport = options.transport ?? (options.source === "voice" ? "voice" : "direct");
+    if (transport === "card" && (!table || table.id === this.featuredTableId)) {
+      return { ok: false, reason: table ? "featured_table_locked" : "not_seated" };
+    }
+    if (transport === "twitch" && table && table.id !== this.featuredTableId) {
+      this.crowdMessageCount += 1;
+      this.#publish("crowdMessage", { count: this.crowdMessageCount, playerId: String(reference) });
+      return { ok: true, crowd: true, counted: true };
+    }
     if (!table) {
       if (options.source === "voice") return { ok: false, reason: "invalid_message" };
       const crowd = this.#rememberParticipant(options);
@@ -351,6 +413,7 @@ export class Game extends EventEmitter {
       avatar: player.avatar,
       text: messageText,
       source: options.source === "voice" ? "voice" : "chat",
+      transport,
       at: now,
       elapsedMs: Math.max(0, now - table.startedAt),
       sequence: table.messages.length,
@@ -387,14 +450,17 @@ export class Game extends EventEmitter {
       ? accuserReference : { userId: accuserReference };
     const accuser = this.#rememberParticipant(input);
     if (!accuser) return { ok: false, reason: "invalid_accuser" };
+    if (this.mutedPlayerIds.has(accuser.id)) return { ok: false, reason: "muted" };
     const seatedTable = this.#tableForPlayer(accuser.id);
-    const table = seatedTable ?? this.tables.get(this.featuredTableId);
+    const ownTable = seatedTable && input.transport !== "twitch";
+    const table = ownTable ? seatedTable : this.tables.get(this.featuredTableId);
     if (!table) return { ok: false, reason: "unknown_table" };
-    if (table.accusations.has(accuser.id)) return { ok: false, reason: "already_accused" };
-    if (!seatedTable && this.crowdAccusations.has(accuser.id)) {
-      return { ok: false, reason: "already_accused" };
+    if (input.transport === "card" && table.id === this.featuredTableId) {
+      return { ok: false, reason: "featured_table_locked" };
     }
-    if (!seatedTable) {
+    if (this.roundAccusations.has(accuser.id)) return { ok: false, reason: "already_accused" };
+    this.roundAccusations.add(accuser.id);
+    if (!ownTable) {
       this.crowdParticipants.add(accuser.id);
       this.crowdAccusations.add(accuser.id);
     }
@@ -412,8 +478,13 @@ export class Game extends EventEmitter {
       at: this.#now(),
     };
     table.accusations.set(accuser.id, accusation);
+    table.accusationLog.push(accusation);
     if (!correct) {
-      this.#publish("accuseMiss", { tableId: table.id, accusation });
+      this.#publish("accuseMiss", {
+        tableId: table.id,
+        accuser: this.#publicPlayer(accuser),
+        accusation,
+      });
       return { ok: true, correct: false, tableId: table.id };
     }
     assignment.busted = true;
@@ -451,20 +522,26 @@ export class Game extends EventEmitter {
       ? voterReference : { userId: voterReference };
     const voter = this.#rememberParticipant(input);
     if (!voter) return { ok: false, reason: "not_a_player" };
+    if (this.mutedPlayerIds.has(voter.id)) return { ok: false, reason: "muted" };
     const seatedTable = this.#tableForPlayer(voter.id);
-    const table = seatedTable ?? this.tables.get(this.featuredTableId);
+    const ownTable = seatedTable && input.transport !== "twitch";
+    const table = ownTable ? seatedTable : this.tables.get(this.featuredTableId);
     if (!table) return { ok: false, reason: "unknown_table" };
-    if (!seatedTable) {
-      this.crowdParticipants.add(voter.id);
-      const previousTableId = this.crowdVoteTables.get(voter.id);
-      if (previousTableId && previousTableId !== table.id) {
-        this.tables.get(previousTableId)?.votes.delete(voter.id);
-      }
-      this.crowdVoteTables.set(voter.id, table.id);
+    if (input.transport === "card" && table.id === this.featuredTableId) {
+      return { ok: false, reason: "featured_table_locked" };
     }
     const target = this.#resolvePlayer(targetReference, table.roster);
     if (!target) return { ok: false, reason: "unknown_target" };
     if (voter.id === target.id) return { ok: false, reason: "self_vote" };
+    const earlierTableId = this.roundVoteTables.get(voter.id);
+    if (earlierTableId && earlierTableId !== table.id) {
+      this.tables.get(earlierTableId)?.votes.delete(voter.id);
+    }
+    this.roundVoteTables.set(voter.id, table.id);
+    if (!ownTable) {
+      this.crowdParticipants.add(voter.id);
+      this.crowdVoteTables.set(voter.id, table.id);
+    }
     const previousTargetId = table.votes.get(voter.id) ?? null;
     table.votes.set(voter.id, target.id);
     this.votes.set(voter.id, target.id);
@@ -502,6 +579,16 @@ export class Game extends EventEmitter {
     this.lastReveal = this.currentRound.reveal;
     const otherResults = [...this.tables.values()]
       .filter(({ id }) => id !== this.featuredTableId).flatMap(({ reveal }) => reveal.imposters);
+    this.lastReveal.otherTables = [...this.tables.values()]
+      .filter(({ id }) => id !== this.featuredTableId)
+      .map((table) => ({
+        id: table.id,
+        results: table.reveal.imposters.map((result) => ({
+          impostor: result.impostor,
+          verdict: result.verdict,
+          bustedBy: result.bustedBy,
+        })),
+      }));
     const caughtCount = otherResults.filter(({ verdict }) => verdict === "CAUGHT" || verdict === "BUSTED").length;
     const gotAwayCount = otherResults.filter(({ verdict }) => verdict === "GOT AWAY").length;
     this.lastReveal.otherTablesMessage = this.tables.size > 1
@@ -535,6 +622,7 @@ export class Game extends EventEmitter {
     const base = {
       linked: true,
       joined: this.players.has(session.userId),
+      muted: this.mutedPlayerIds.has(session.userId),
       player: this.#publicPlayer(player),
       state: this.state,
       roundNumber: this.roundNumber,
@@ -545,13 +633,21 @@ export class Game extends EventEmitter {
       return { ...base, role: null, crowd: ACTIVE_PHASES.has(this.state) };
     }
     const assignment = table.impostors.find(({ playerId }) => player.id === playerId);
+    const onStream = table.id === this.featuredTableId;
     const tableView = {
       tableId: table.id,
       tableCount: this.tables.size,
+      featuredTableId: this.featuredTableId,
+      onStream,
+      chatLocked: onStream,
       tableMates: [...table.roster.values()].map((mate) => this.#publicPlayer(mate)),
       messages: table.messages.slice(-20).map((message) => this.#publicMessage(message, table)),
       hints: this.#publicHints(table),
       roundPoints: table.scoreChanges.get(player.id) ?? 0,
+      accusationUsed: this.roundAccusations.has(player.id),
+      voteTargetId: table.votes.get(player.id) ?? null,
+      canAccuse: this.state === PHASES.ROUND && !this.roundAccusations.has(player.id),
+      canVote: this.state === PHASES.VOTE,
     };
     if (this.state === PHASES.REVEAL) tableView.result = table.reveal;
     if (!assignment) return {
@@ -583,7 +679,11 @@ export class Game extends EventEmitter {
       featuredTableId: this.featuredTableId,
       players: table ? [...table.roster.values()].map((player) => this.#publicPlayer(player))
         : [...this.players.values()].map((player) => this.#publicPlayer(player)),
-      claimedCount: [...this.players.values()].filter((player) => player.claimed).length,
+      claimedCount: [...this.players.values()].filter((player) => (
+        player.claimed
+        && !this.mutedPlayerIds.has(player.id)
+        && (this.hostPlays || player.login !== this.streamerLogin)
+      )).length,
       scores: this.#leaderboard(),
       leaderboard: this.#leaderboard(),
       tables: [...this.tables.values()].map((entry) => ({
@@ -591,12 +691,19 @@ export class Game extends EventEmitter {
         playerCount: entry.roster.size,
         ...(entry.phaseResult ? { phaseResult: entry.phaseResult } : {}),
       })),
+      accusations: [...this.tables.values()].flatMap((entry) => (
+        entry.accusationLog.map((accusation) => this.#publicAccusation(entry, accusation))
+      )).sort((left, right) => right.at - left.at).slice(0, 12),
       crowdCount: this.#crowdCount(),
       phaseEndsAt: this.#phaseEndsAt(),
       phaseDurationMs: this.durations[this.state.toLowerCase()] ?? 0,
       remainingMs: Math.max(0, (this.#phaseEndsAt() ?? now) - now),
       final: this.isFinalRound,
+      canFinal: this.state === PHASES.LOBBY && this.lastRoundSeating.length > 0,
       champion: this.state === PHASES.REVEAL ? this.lastChampion : null,
+      hostPlays: this.hostPlays,
+      streamerLogin: this.streamerLogin,
+      streamerSeated: Boolean(this.#streamerPlayer() && this.#tableForPlayer(this.#streamerPlayer().id)),
     };
     if (!table) return state;
     const round = {
@@ -614,6 +721,11 @@ export class Game extends EventEmitter {
       latestMessages: table.messages.slice(-3).map((message) => this.#publicMessage(message, table)),
       recentMessages: table.messages.slice(-6).map((message) => this.#publicMessage(message, table)),
       tallies: this.state === PHASES.VOTE ? this.getTallies(table.id) : undefined,
+      accusations: table.accusationLog.map((accusation) => this.#publicAccusation(table, accusation)),
+      busted: table.impostors.filter(({ busted }) => busted).map((assignment) => ({
+        impostor: this.#publicPlayer(table.roster.get(assignment.playerId) ?? this.profiles.get(assignment.playerId)),
+        accuser: this.#publicPlayer(this.profiles.get(assignment.bustedBy)),
+      })),
     };
     if (this.state === PHASES.REVEAL) round.reveal = table.reveal;
     return { ...state, round };
@@ -630,7 +742,17 @@ export class Game extends EventEmitter {
 
   #startRound(eligible, options, finalRound) {
     if (eligible.length < 3) return { ok: false, reason: "not_enough_claimed" };
-    const seatedGroups = finalRound ? [stableShuffle(eligible, this.random)] : seatPlayers(eligible, this.random);
+    const streamer = this.hostPlays
+      ? eligible.find(({ login }) => login === this.streamerLogin)
+      : null;
+    const regularPlayers = streamer
+      ? eligible.filter(({ id }) => id !== streamer.id)
+      : eligible;
+    const seatedGroups = finalRound
+      ? [stableShuffle(regularPlayers, this.random)]
+      : regularPlayers.length < 3
+        ? [stableShuffle(regularPlayers, this.random)]
+        : seatPlayers(regularPlayers, this.random);
     const tableCount = seatedGroups.length;
     const nextFeaturedId = finalRound ? 1 : (this.lastFeaturedTableId % tableCount) + 1;
     if (!finalRound && tableCount > 1 && this.lastFeaturedPlayerIds.size) {
@@ -657,6 +779,9 @@ export class Game extends EventEmitter {
       }
       seatedGroups.splice(0, seatedGroups.length, ...arranged);
     }
+    // Keep the broadcaster first in the featured roster. Besides making the
+    // host easy to spot, this preserves the single-table seeded role order.
+    if (streamer) seatedGroups[nextFeaturedId - 1].unshift(streamer);
     const now = this.#now();
     const previousImpostors = new Set(this.lastImpostorIds);
     const nextImpostors = new Set();
@@ -709,6 +834,7 @@ export class Game extends EventEmitter {
         smuggle: null,
         decoys: [],
         accusations: new Map(),
+        accusationLog: [],
         votes: new Map(),
         scoreChanges: new Map([...roster.keys()].map((playerId) => [playerId, 0])),
         reveal: null,
@@ -728,6 +854,8 @@ export class Game extends EventEmitter {
     this.crowdParticipants.clear();
     this.crowdAccusations.clear();
     this.crowdVoteTables.clear();
+    this.roundAccusations.clear();
+    this.roundVoteTables.clear();
     this.crowdMessageCount = 0;
     this.votes.clear();
     this.isFinalRound = finalRound;
@@ -840,7 +968,10 @@ export class Game extends EventEmitter {
   }
 
   #assignmentReveal(table, assignment) {
-    const impostor = this.#publicPlayer(table.roster.get(assignment.playerId), this.scores.get(assignment.playerId) ?? 0);
+    const impostor = this.#publicPlayer(
+      table.roster.get(assignment.playerId) ?? this.profiles.get(assignment.playerId),
+      this.scores.get(assignment.playerId) ?? 0,
+    );
     const evidence = assignment.smuggle ? this.#revealMessage(assignment.smuggle, table) : null;
     const readers = assignment.smuggle ? [...new Set(
       table.messages.slice(assignment.smuggle.sequence + 1).map(({ userId }) => userId)
@@ -913,7 +1044,7 @@ export class Game extends EventEmitter {
   #publicMessage(message, table) {
     return {
       id: message.id,
-      player: this.#publicPlayer(table.roster.get(message.userId)),
+      player: this.#publicPlayer(table.roster.get(message.userId) ?? this.profiles.get(message.userId)),
       text: message.text,
       source: message.source,
       at: message.at,
@@ -926,6 +1057,18 @@ export class Game extends EventEmitter {
     return {
       category: table.hints.category ? [...new Set(table.impostors.map(({ category }) => category))].join(" · ") : null,
       letter: table.hints.letter ? [...new Set(table.impostors.map(({ word }) => word[0]))].join(" · ") : null,
+    };
+  }
+
+  #publicAccusation(table, accusation) {
+    return {
+      tableId: table.id,
+      correct: accusation.correct,
+      at: accusation.at,
+      accuser: this.#publicPlayer(this.profiles.get(accusation.accuserId)),
+      target: accusation.correct
+        ? this.#publicPlayer(table.roster.get(accusation.targetId) ?? this.profiles.get(accusation.targetId))
+        : null,
     };
   }
 
@@ -984,10 +1127,61 @@ export class Game extends EventEmitter {
     this.crowdParticipants.clear();
     this.crowdAccusations.clear();
     this.crowdVoteTables.clear();
+    this.roundAccusations.clear();
+    this.roundVoteTables.clear();
     this.crowdMessageCount = 0;
     this.currentRound = null;
     this.featuredTableId = null;
     this.isFinalRound = false;
+  }
+
+  #streamerPlayer() {
+    if (!this.streamerLogin) return null;
+    const player = [...this.players.values()].find(({ login }) => login === this.streamerLogin);
+    if (!player?.claimed || this.mutedPlayerIds.has(player.id)) return null;
+    return player;
+  }
+
+  #removeFromActiveTable(playerId) {
+    const table = this.#tableForPlayer(playerId);
+    if (!table) return null;
+    const assignments = table.impostors.filter((assignment) => assignment.playerId === playerId);
+    table.impostors = table.impostors.filter((assignment) => assignment.playerId !== playerId);
+    table.roster.delete(playerId);
+    table.messageCounts.delete(playerId);
+    table.votes.delete(playerId);
+    table.accusations.delete(playerId);
+    for (const [voterId, targetId] of table.votes) {
+      if (targetId === playerId) table.votes.delete(voterId);
+    }
+    this.playerTables.delete(playerId);
+    const primary = table.impostors[0] ?? null;
+    table.impostorId = primary?.playerId ?? null;
+    table.word = primary?.word ?? null;
+    table.category = primary?.category ?? null;
+    table.smuggle = primary?.smuggle ?? null;
+    return { table, assignments };
+  }
+
+  #moveStreamerTo(tableId) {
+    const streamer = this.#streamerPlayer();
+    const destination = this.tables.get(Number(tableId));
+    if (!streamer || !destination) return;
+    const current = this.#tableForPlayer(streamer.id);
+    if (current?.id === destination.id) return;
+    const removed = this.#removeFromActiveTable(streamer.id);
+    destination.roster.set(streamer.id, { ...streamer, messageCount: 0 });
+    destination.messageCounts.set(streamer.id, 0);
+    destination.scoreChanges.set(streamer.id, destination.scoreChanges.get(streamer.id) ?? 0);
+    if (removed?.assignments.length) {
+      destination.impostors.push(...removed.assignments);
+      const primary = destination.impostors[0];
+      destination.impostorId = primary.playerId;
+      destination.word = primary.word;
+      destination.category = primary.category;
+      destination.smuggle = primary.smuggle;
+    }
+    this.playerTables.set(streamer.id, destination.id);
   }
 
   #tableForPlayer(reference) {

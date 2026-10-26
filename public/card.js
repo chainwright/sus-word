@@ -3,6 +3,7 @@ const connection = document.querySelector("#connection");
 let state = { linked: false, role: null };
 let receivedAt = Date.now();
 let reconnectDelay = 1_000;
+let cardSocket = null;
 
 function node(tag, className, text) {
   const element = document.createElement(tag);
@@ -33,6 +34,150 @@ function avatar(player) {
   card.append(photo, node("div", "mini-polaroid-name", `@${player?.login || "unknown"}`));
   wrap.append(card);
   return wrap;
+}
+
+function miniMate(player) {
+  const card = node("article", "table-mate");
+  const photo = node("div", "table-mate-photo");
+  if (player?.avatar) {
+    const image = node("img");
+    image.src = player.avatar;
+    image.alt = "";
+    photo.append(image);
+  } else {
+    photo.textContent = (player?.displayName || player?.login || "?").slice(0, 2).toUpperCase();
+  }
+  card.append(photo, node("strong", "", `@${player?.login || "unknown"}`));
+  return card;
+}
+
+function sendCardAction(payload) {
+  if (cardSocket?.readyState !== WebSocket.OPEN) return false;
+  cardSocket.send(JSON.stringify(payload));
+  return true;
+}
+
+function playerSelect(className = "") {
+  const select = node("select", className);
+  const placeholder = node("option", "", "Pick a table-mate");
+  placeholder.value = "";
+  select.append(placeholder);
+  for (const mate of state.tableMates || []) {
+    if (mate.id === state.player?.id) continue;
+    const option = node("option", "", `@${mate.login}`);
+    option.value = mate.login;
+    if (state.voteTargetId === mate.id) option.selected = true;
+    select.append(option);
+  }
+  return select;
+}
+
+function appendTableTools(section) {
+  section.classList.add("table-case");
+  const status = node("section", `table-status ${state.onStream ? "featured" : "side"}`);
+  status.append(
+    node("strong", "", `TABLE ${state.tableId} OF ${state.tableCount}`),
+    node("span", "", state.onStream ? "ON STREAM · talk in Twitch chat" : "SIDE TABLE · talk here"),
+  );
+  section.prepend(status);
+
+  const hints = node("section", "card-hints");
+  hints.append(
+    node("div", "", `CATEGORY\n${state.hints?.category || "🔒"}`),
+    node("div", "", `STARTS WITH\n${state.hints?.letter || "🔒"}`),
+  );
+  section.append(hints);
+
+  const mates = node("section", "table-mates");
+  mates.append(node("h2", "panel-title", "YOUR TABLE"));
+  const mateGrid = node("div", "table-mate-grid");
+  mateGrid.append(...(state.tableMates || []).map(miniMate));
+  mates.append(mateGrid);
+  section.append(mates);
+
+  const chat = node("section", "table-chat-panel");
+  chat.append(node("h2", "panel-title", "TABLE CHAT"));
+  const log = node("div", "table-chat-log");
+  const messages = (state.messages || []).slice(-20);
+  if (!messages.length) log.append(node("p", "chat-empty", "No evidence yet."));
+  for (const message of messages) {
+    const line = node("p", message.source === "voice" ? "voice-line" : "");
+    line.append(
+      node("strong", "", `@${message.player?.login || "unknown"}: `),
+      document.createTextNode(`${message.source === "voice" ? "🎙 " : ""}${message.text}`),
+    );
+    log.append(line);
+  }
+  chat.append(log);
+  if (state.onStream) {
+    chat.append(node("p", "chat-locked", "🔒 This table is on stream. Talk in Twitch chat."));
+  } else if (state.state === "ROUND") {
+    const form = node("form", "table-chat-form");
+    const input = node("input");
+    input.maxLength = 200;
+    input.placeholder = "Message your table…";
+    input.autocomplete = "off";
+    const send = node("button", "small-action", "SEND");
+    send.type = "submit";
+    form.append(input, send);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const text = input.value.trim();
+      if (!text || !sendCardAction({ type: "tableChat", text })) return;
+      input.value = "";
+    });
+    chat.append(form);
+  }
+  section.append(chat);
+
+  if (state.state === "ROUND") {
+    const accuse = node("form", "case-action-panel accuse-panel");
+    accuse.append(node("h2", "panel-title", "ONE ACCUSATION"));
+    const target = playerSelect();
+    const word = node("input");
+    word.placeholder = "Secret word";
+    word.maxLength = 20;
+    const button = node("button", "small-action ink-red", state.accusationUsed ? "SHOT USED" : "ACCUSE");
+    button.type = "submit";
+    button.disabled = state.accusationUsed;
+    accuse.append(target, word, button);
+    accuse.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (!target.value || !word.value.trim()) return;
+      if (state.onStream) navigator.clipboard?.writeText(`!accuse ${target.value} ${word.value.trim()}`);
+      else sendCardAction({ type: "accuse", target: target.value, word: word.value.trim() });
+    });
+    if (state.onStream && !state.accusationUsed) accuse.append(node("small", "", "Tap ACCUSE to copy the Twitch command."));
+    section.append(accuse);
+  }
+
+  if (state.state === "VOTE") {
+    const vote = node("form", "case-action-panel vote-panel");
+    vote.append(node("h2", "panel-title", "WHO IS SUS?"));
+    const target = playerSelect();
+    const button = node("button", "small-action ink-navy", state.voteTargetId ? "CHANGE VOTE" : "VOTE");
+    button.type = "submit";
+    vote.append(target, button);
+    vote.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (!target.value) return;
+      if (state.onStream) navigator.clipboard?.writeText(`!vote ${target.value}`);
+      else sendCardAction({ type: "vote", target: target.value });
+    });
+    if (state.onStream) vote.append(node("small", "", "Tap VOTE to copy the Twitch command."));
+    section.append(vote);
+  }
+
+  if (state.state === "REVEAL" && state.result) {
+    const mine = state.result.imposters?.find(({ impostor }) => impostor.id === state.player.id);
+    const result = node("section", "card-result");
+    result.append(node("h2", "panel-title", "TABLE RESULT"));
+    result.append(node("strong", "result-stamp", mine ? mine.verdict : `+${state.roundPoints || 0} POINTS`));
+    result.append(node("p", "", mine ? mine.caption : "The case is closed. Check the table results."));
+    section.append(result);
+  }
+
+  section.append(node("p", "card-action-feedback", ""));
 }
 
 function renderLogin(message = "") {
@@ -105,6 +250,7 @@ function renderImposter() {
   timer.dataset.timer = "phase";
   section.append(timer);
   section.append(node("p", `delivery${state.delivered ? " done" : ""}`, state.delivered ? "✓ Delivered" : "Not delivered yet"));
+  appendTableTools(section);
   root.replaceChildren(section);
   stamp.animate(
     [{ transform: "rotate(-7deg) scale(1.65)", opacity: 0 }, { transform: "rotate(-7deg) scale(1)", opacity: 1 }],
@@ -122,6 +268,7 @@ function renderDetective() {
   const timer = node("time", "role-timer");
   timer.dataset.timer = "phase";
   section.append(timer);
+  appendTableTools(section);
   root.replaceChildren(section);
   stamp.animate(
     [{ transform: "rotate(-5deg) scale(1.5)", opacity: 0 }, { transform: "rotate(-5deg) scale(1)", opacity: 1 }],
@@ -192,6 +339,7 @@ async function loadCard() {
 function connect() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   const socket = new WebSocket(`${protocol}//${location.host}/ws?view=card`);
+  cardSocket = socket;
   socket.addEventListener("open", () => {
     connection.textContent = "LIVE";
     connection.classList.add("online");
@@ -200,8 +348,18 @@ function connect() {
   socket.addEventListener("message", (event) => {
     const payload = JSON.parse(event.data);
     if (payload.type === "card") render(payload.data);
+    if (payload.type === "actionResult") {
+      const feedback = document.querySelector(".card-action-feedback");
+      if (feedback) {
+        feedback.textContent = payload.data?.ok
+          ? (payload.action === "accuse" && payload.data.correct ? "BUSTED ✓" : "Sent ✓")
+          : String(payload.data?.reason || "not accepted").replaceAll("_", " ");
+        feedback.classList.toggle("error", !payload.data?.ok);
+      }
+    }
   });
   socket.addEventListener("close", () => {
+    if (cardSocket === socket) cardSocket = null;
     connection.textContent = "RECONNECTING";
     connection.classList.remove("online");
     setTimeout(connect, reconnectDelay);
@@ -219,24 +377,41 @@ function mockCard(kind) {
   if (kind === "claim") {
     return { linked: false, role: null, pendingClaim: { login: "pixel_mara", code: "M7K2", expiresAt: Date.now() + 570_000 } };
   }
+  const tableMates = [player, ...["tomtom_irl", "quietfox", "streamer"].map((login, index) => ({ id: `p${index + 2}`, login, displayName: login, avatar: "", claimed: true }))];
+  const side = kind === "side";
+  const featured = kind === "featured";
   return {
     linked: true,
     joined: true,
     state: "ROUND",
     roundNumber: 2,
     player,
-    role: kind === "imposter" ? "IMPOSTER" : "DETECTIVE",
-    word: kind === "imposter" ? "candle" : undefined,
+    role: kind === "imposter" || side ? "IMPOSTER" : "DETECTIVE",
+    word: kind === "imposter" || side ? "candle" : undefined,
     mission: "Get this word into chat naturally in a real sentence before time runs out.",
     delivered: false,
     remainingMs: 133_000,
     phaseEndsAt: Date.now() + 133_000,
+    tableId: side ? 2 : 1,
+    tableCount: side || featured ? 3 : 1,
+    featuredTableId: 1,
+    onStream: !side,
+    chatLocked: !side,
+    tableMates,
+    hints: { category: "home", letter: side ? "c" : null },
+    messages: [
+      { id: "m1", player: tableMates[1], text: "the kitchen light flickered again", source: "chat" },
+      { id: "m2", player: tableMates[2], text: "I suspect absolutely everyone", source: "chat" },
+    ],
+    canAccuse: true,
+    canVote: false,
+    accusationUsed: false,
   };
 }
 
 setInterval(updateTimers, 500);
 const mock = new URLSearchParams(location.search).get("mock");
-if (["claim", "imposter", "detective"].includes(mock)) {
+if (["claim", "imposter", "detective", "side", "featured"].includes(mock)) {
   connection.textContent = "PREVIEW";
   render(mockCard(mock));
 } else {

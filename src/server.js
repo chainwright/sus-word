@@ -17,6 +17,13 @@ export const SESSION_COOKIE = "sus_sid";
 const PUBLIC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../public");
 const HELP_MESSAGE = "🕵️ Join with !join, accuse with !accuse name word, then vote with !vote name.";
 
+export function stripUrls(value) {
+  return String(value ?? "")
+    .replace(/(?:https?:\/\/|www\.)\S+/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 function parseCookies(header = "") {
   return Object.fromEntries(header.split(";").flatMap((part) => {
     const separator = part.indexOf("=");
@@ -89,6 +96,10 @@ export function createSusWordServer(options = {}) {
   let bustedTimer = null;
   let bustedBatch = [];
   let waitlistAnnouncementRound = null;
+  const cardMessageTimes = new Map();
+  const serverNow = options.now ?? (() => Date.now());
+
+  if (env.CHANNEL_LOGIN) game.configureStreamer?.(env.CHANNEL_LOGIN);
 
   app.use(express.json({ limit: "16kb" }));
 
@@ -124,6 +135,11 @@ export function createSusWordServer(options = {}) {
   app.post("/api/host/feature/:tableId", (request, response) => {
     const result = game.featureTable(request.params.tableId);
     response.status(result.ok ? 200 : 409).json(result);
+  });
+
+  app.post("/api/host/host-plays", (request, response) => {
+    const result = game.setHostPlays(request.body?.enabled !== false);
+    response.json(result);
   });
 
   app.post("/api/host/:action", async (request, response, next) => {
@@ -235,22 +251,71 @@ export function createSusWordServer(options = {}) {
       messageId: `voice:${Date.now()}:${voiceSequence}`,
       text: transcript,
       source: "voice",
+      transport: "voice",
     });
   }
 
   function receiveBrowserMessage(client, data) {
-    if (client.view !== "host") return;
     let payload;
     try {
       payload = JSON.parse(data.toString());
     } catch {
       return;
     }
-    if (payload?.type !== "voice") return;
-    sendJson(client.socket, {
-      type: "voiceResult",
-      data: handleVoiceChunk(payload.text, client.isLocal),
-    });
+    if (client.view === "host" && payload?.type === "voice") {
+      sendJson(client.socket, {
+        type: "voiceResult",
+        data: handleVoiceChunk(payload.text, client.isLocal),
+      });
+      return;
+    }
+    if (client.view === "card") {
+      const result = handleCardAction(client.sessionId, payload);
+      sendJson(client.socket, {
+        type: "actionResult",
+        action: payload?.type,
+        data: result,
+      });
+    }
+  }
+
+  function handleCardAction(sid, payload) {
+    const card = game.getCard(sid);
+    if (!card.linked || !card.player) return { ok: false, reason: "card_not_linked" };
+    const actor = { userId: card.player.id, transport: "card" };
+    if (payload?.type === "tableChat") {
+      const raw = String(payload.text ?? "").trim();
+      if (!raw || raw.length > 200) return { ok: false, reason: "invalid_message" };
+      if (card.onStream) return { ok: false, reason: "featured_table_locked" };
+      const now = Number(typeof serverNow === "function" ? serverNow() : serverNow);
+      const lastAt = cardMessageTimes.get(card.player.id) ?? -Infinity;
+      if (now - lastAt < 2_000) {
+        return { ok: false, reason: "rate_limited", retryAfterMs: 2_000 - (now - lastAt) };
+      }
+      const accusation = /^\/accuse\s+@?([a-z0-9_]{1,25})\s+([a-z][a-z’']{1,19})$/i.exec(raw);
+      if (accusation) {
+        const result = game.accuse(actor, accusation[1], accusation[2]);
+        if (result.ok) cardMessageTimes.set(card.player.id, now);
+        return result;
+      }
+      const text = stripUrls(raw);
+      if (!text) return { ok: false, reason: "invalid_message" };
+      const result = game.recordMessage({
+        ...actor,
+        messageId: `card:${card.player.id}:${now}`,
+        text,
+        source: "chat",
+      });
+      if (result.ok) cardMessageTimes.set(card.player.id, now);
+      return result;
+    }
+    if (payload?.type === "accuse") {
+      return game.accuse(actor, payload.target, payload.word);
+    }
+    if (payload?.type === "vote") {
+      return game.vote(actor, payload.target);
+    }
+    return { ok: false, reason: "unknown_action" };
   }
 
   function cardState(sid) {
@@ -368,6 +433,7 @@ export function createSusWordServer(options = {}) {
         displayName: message.displayName,
         messageId: message.id,
         text: message.text,
+        transport: "twitch",
       });
     }
 
@@ -395,11 +461,13 @@ export function createSusWordServer(options = {}) {
       userId: message.userId,
       login: message.login,
       displayName: message.displayName,
+      transport: "twitch",
     }, command.target);
     if (command.type === "accuse") return game.accuse({
       userId: message.userId,
       login: message.login,
       displayName: message.displayName,
+      transport: "twitch",
     }, command.target, command.word);
     if (command.type === "sus") {
       if (command.action === "help") {
@@ -409,6 +477,7 @@ export function createSusWordServer(options = {}) {
       if (command.requiresControl && !canControl(message)) {
         return { ok: false, reason: "not_authorized" };
       }
+      if (command.action === "mute") return game.mute(command.target);
       return runHostAction(command.action);
     }
     return { ok: false, reason: "unknown_command" };
@@ -491,6 +560,7 @@ export function createSusWordServer(options = {}) {
     game,
     get twitch() { return twitch; },
     handleChatMessage,
+    handleCardAction,
     handleVoiceChunk,
     runHostAction,
     start,

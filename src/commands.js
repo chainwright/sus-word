@@ -24,6 +24,16 @@ export function parseCommand(message) {
     };
   }
 
+  match = /^!sus\s+mute\s+@?([a-z0-9_]{1,25})$/i.exec(text);
+  if (match) {
+    return {
+      type: "sus",
+      action: "mute",
+      target: match[1].toLowerCase(),
+      requiresControl: true,
+    };
+  }
+
   match = /^!sus\s+(start|go|vote|next|end|help)$/i.exec(text);
   if (!match) return null;
   const action = match[1].toLowerCase();

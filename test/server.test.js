@@ -9,6 +9,7 @@ import {
   createSusWordServer,
   isLocalHostOrigin,
   isLoopbackAddress,
+  stripUrls,
 } from "../src/server.js";
 
 function firstSocketMessage(url, options) {
@@ -201,4 +202,83 @@ test("chat routes accusations and the host can feature another table", async (co
   assert.equal(response.status, 200);
   assert.equal((await response.json()).tableId, 2);
   assert.equal(game.featuredTableId, 2);
+});
+
+test("side-table card messages are sanitized, scoped, and rate limited", () => {
+  let now = 10_000;
+  const game = new Game({
+    random: () => 0,
+    words: [
+      { word: "candle", category: "home" },
+      { word: "rocket", category: "space" },
+    ],
+  });
+  for (let index = 0; index < 13; index += 1) {
+    const id = `card-${index}`;
+    game.join({ id, login: `card_${index}` });
+    game.players.get(id).claimed = true;
+    game.sessions.set(`session-${index}`, { userId: id, linkedAt: 0 });
+  }
+  game.start();
+  game.go();
+  const sidePlayer = [...game.tables.get(2).roster.values()][0];
+  const sid = [...game.sessions.entries()].find(([, session]) => session.userId === sidePlayer.id)[0];
+  const service = createSusWordServer({
+    game,
+    port: 0,
+    env: {},
+    now: () => now,
+    logger: { log() {}, error() {} },
+  });
+
+  assert.equal(stripUrls("look https://example.com here www.test.invalid now"), "look here now");
+  const first = service.handleCardAction(sid, {
+    type: "tableChat",
+    text: "look https://example.com this is evidence",
+  });
+  assert.equal(first.ok, true);
+  assert.equal(game.tables.get(2).messages[0].text, "look this is evidence");
+  assert.equal(service.handleCardAction(sid, {
+    type: "tableChat",
+    text: "another message arrives too soon",
+  }).reason, "rate_limited");
+  now += 2_000;
+  assert.equal(service.handleCardAction(sid, {
+    type: "tableChat",
+    text: "x".repeat(201),
+  }).reason, "invalid_message");
+  game.reset();
+});
+
+test("a broadcaster can mute a player out of the session", async () => {
+  const game = new Game({ random: () => 0 });
+  for (const [id, login] of [["mute-a", "alice"], ["mute-b", "bruno"], ["mute-c", "cora"]]) {
+    game.join({ id, login });
+    game.players.get(id).claimed = true;
+  }
+  game.start();
+  game.go({ word: "candle", category: "home" });
+  const service = createSusWordServer({
+    game,
+    port: 0,
+    env: {},
+    logger: { log() {}, error() {} },
+  });
+  assert.equal((await service.handleChatMessage({
+    userId: "stranger",
+    login: "stranger",
+    text: "!sus mute alice",
+  })).reason, "not_authorized");
+  assert.equal((await service.handleChatMessage({
+    userId: "channel",
+    login: "channel",
+    isBroadcaster: true,
+    text: "!sus mute alice",
+  })).ok, true);
+  assert.equal(game.currentRound.roster.has("mute-a"), false);
+  assert.equal(game.recordMessage({ userId: "mute-a", text: "I should not appear" }).reason, "muted");
+  game.reset();
+  game.start();
+  assert.equal(game.go().reason, "not_enough_claimed");
+  game.reset();
 });

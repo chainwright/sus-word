@@ -94,6 +94,26 @@ function setViews(phase) {
   revealView.hidden = phase !== "REVEAL";
 }
 
+function renderTableContext(state) {
+  const plate = document.querySelector("#table-plate");
+  const ticker = document.querySelector("#accusation-ticker");
+  const count = state.tables?.length || state.round?.tableCount || 0;
+  const tableId = state.featuredTableId || state.round?.tableId;
+  plate.hidden = !tableId || state.phase === "LOBBY";
+  plate.textContent = state.final
+    ? `FINAL TABLE · ${state.round?.players?.length || state.players.length} players · on stream`
+    : `TABLE ${tableId} of ${count || 1} · ${state.round?.players?.length || state.players.length} players · on stream`;
+  const accusations = (state.round?.accusations || []).slice(-2);
+  ticker.hidden = accusations.length === 0 || state.phase === "LOBBY";
+  ticker.replaceChildren(...accusations.map((entry) => node(
+    "span",
+    entry.correct ? "ticker-hit" : "ticker-miss",
+    entry.correct
+      ? `✅ @${entry.accuser.login} busted @${entry.target?.login || "suspect"}`
+      : `❌ @${entry.accuser.login} guessed wrong`,
+  )));
+}
+
 function renderLobby(state) {
   document.querySelector("#phase-title").textContent = "SUS WORD";
   document.querySelector("#round-label").textContent = state.roundNumber ? `· LOBBY · AFTER ROUND ${state.roundNumber}` : "· LOBBY";
@@ -131,7 +151,7 @@ function revealHint(selector, label, value) {
 
 function renderRound(state) {
   document.querySelector("#phase-title").textContent = "SUS WORD";
-  document.querySelector("#round-label").textContent = `ROUND ${state.roundNumber}`;
+  document.querySelector("#round-label").textContent = state.final ? "FINAL TABLE" : `ROUND ${state.roundNumber}`;
   revealHint("#category-hint", "CATEGORY", state.round?.hints?.category);
   revealHint("#letter-hint", "STARTS WITH", state.round?.hints?.letter);
 
@@ -155,6 +175,12 @@ function renderRound(state) {
     card.append(node("span", "round-player-count", String(count)));
     card.dataset.entering = String(previousTopPlayerIds.length > 0 && !priorTop.has(player.id));
     card.dataset.bumped = String(count > (previousCounts[player.id] || 0));
+    const bust = state.round?.busted?.find(({ impostor }) => impostor?.id === player.id);
+    if (bust) {
+      const mark = node("div", "live-busted-stamp");
+      mark.append(node("strong", "", "BUSTED"), node("small", "", `by @${bust.accuser?.login || "detective"}`));
+      card.append(mark);
+    }
     return card;
   });
   players.replaceChildren(...cards);
@@ -235,7 +261,7 @@ function tallyMarks(count, previous) {
 
 function renderVote(state) {
   document.querySelector("#phase-title").textContent = "SUS WORD";
-  document.querySelector("#round-label").textContent = `· VOTE · ROUND ${state.roundNumber}`;
+  document.querySelector("#round-label").textContent = state.final ? "· VOTE · FINAL TABLE" : `· VOTE · ROUND ${state.roundNumber}`;
   const allTallies = state.round?.tallies || [];
   const visibleTallies = selectVoteSuspects(allTallies);
   const rows = visibleTallies.map(({ player, votes }) => {
@@ -367,9 +393,36 @@ function clearReveal() {
 }
 
 function showReveal(state) {
-  const reveal = state.round.reveal;
+  const tableReveal = state.round.reveal;
+  const results = tableReveal.imposters?.length ? tableReveal.imposters : [tableReveal];
+  const reveal = {
+    ...results.at(-1),
+    leaderboard: tableReveal.leaderboard,
+    scoreChanges: tableReveal.scoreChanges,
+    otherTables: tableReveal.otherTables || [],
+    champion: tableReveal.champion || state.champion,
+  };
   const speed = new URLSearchParams(location.search).has("mock") ? .18 : 1;
   clearReveal();
+
+  if (results.length > 1) {
+    const prior = node("aside", "prior-imposters");
+    results.slice(0, -1).forEach((result, index) => {
+      const caseCard = node("article", "prior-imposter reveal-paper");
+      caseCard.append(avatarPhoto(result.impostor));
+      caseCard.append(
+        node("strong", "", `@${result.impostor.login}`),
+        node("span", "", result.word.toUpperCase()),
+        node("b", "", result.verdict),
+      );
+      caseCard.animate(
+        [{ transform: "translateY(-100px) rotate(-8deg)", opacity: 0 }, { transform: `translateY(0) rotate(${index % 2 ? 2 : -2}deg)`, opacity: 1 }],
+        { duration: 440 * speed, delay: index * 650 * speed, fill: "both" },
+      );
+      prior.append(caseCard);
+    });
+    revealView.append(prior);
+  }
 
   const title = node("h1", "reveal-title reveal-paper", "THE IMPOSTER WAS…");
   const deck = node("div", "shuffle-deck");
@@ -512,6 +565,24 @@ function showLeaderboard(reveal, speed) {
     revealView.append(stack);
     stack.animate([{ opacity: 0, transform: "translateX(-35px)" }, { opacity: 1, transform: "translateX(0)" }], { duration: 550 * speed, fill: "both" });
   }
+
+  if (reveal.otherTables?.length) {
+    const strip = node("aside", "other-table-results reveal-paper");
+    strip.append(node("strong", "", "OTHER TABLES"));
+    for (const table of reveal.otherTables) {
+      const summary = table.results.map(({ verdict }) => verdict).join(" · ");
+      strip.append(node("span", "", `T${table.id}  ${summary}`));
+    }
+    revealView.append(strip);
+    strip.animate([{ transform: "translateY(100%)", opacity: 0 }, { transform: "translateY(0)", opacity: 1 }], { duration: 520 * speed, fill: "both" });
+  }
+
+  if (reveal.champion) {
+    const champion = node("div", "champion-stamp", `CHAMPION · @${reveal.champion.login}`);
+    revealView.append(champion);
+    champion.animate([{ transform: "rotate(-5deg) scale(1.7)", opacity: 0 }, { transform: "rotate(-5deg) scale(1)", opacity: 1 }], { duration: 360 * speed, delay: 600 * speed, fill: "both" });
+    schedule(playThud, 620 * speed);
+  }
 }
 
 function render(state) {
@@ -520,6 +591,7 @@ function render(state) {
   const phase = state.phase || state.state;
   if (phase !== "ROUND") previousTopPlayerIds = [];
   setViews(phase);
+  renderTableContext(state);
   if (phase !== "REVEAL" && revealKey !== null) {
     clearReveal();
     revealKey = null;
@@ -528,7 +600,7 @@ function render(state) {
   if (phase === "ROUND") renderRound(state);
   if (phase === "VOTE") renderVote(state);
   if (phase === "REVEAL" && state.round?.reveal) {
-    const key = `${state.roundNumber}:${state.round.reveal.outcome}`;
+    const key = `${state.roundNumber}:${(state.round.reveal.imposters || [state.round.reveal]).map(({ outcome }) => outcome).join("-")}`;
     if (revealKey !== key) {
       revealKey = key;
       showReveal(state);
@@ -544,6 +616,7 @@ function mockAvatar(initials, background, hair) {
 
 const previewParams = new URLSearchParams(location.search);
 const previewPlayerCount = Math.min(60, Math.max(4, Number(previewParams.get("players")) || 4));
+const previewTableCount = Math.min(20, Math.max(1, Number(previewParams.get("tables")) || 1));
 const featuredPlayers = [
   ["pixel_mara", "PM", "#9a65ca", "#31213d"],
   ["tomtom_irl", "TT", "#6fbd8b", "#513126"],
@@ -577,7 +650,8 @@ const demoMessages = [
 ];
 
 function mockState(kind) {
-  const base = { state: kind.toUpperCase(), phase: kind.toUpperCase(), roundNumber: 2, players: demoPlayers, claimedCount: 4, cardUrl: "susword.example/card", scores: demoPlayers.map((player) => ({ player, score: player.score })) };
+  const tables = Array.from({ length: previewTableCount }, (_, index) => ({ id: index + 1, playerCount: 10 + (index % 3) }));
+  const base = { state: kind.toUpperCase(), phase: kind.toUpperCase(), roundNumber: 2, featuredTableId: 1, tables, players: demoPlayers, claimedCount: 4, cardUrl: "susword.example/card", scores: demoPlayers.map((player) => ({ player, score: player.score })) };
   const messageCounts = Object.fromEntries(demoPlayers.map((player, index) => [player.id, (index * 7 + 3) % 19]));
   const messageRecency = Object.fromEntries(demoPlayers.map((player, index) => [player.id, (index * 11) % previewPlayerCount]));
   const voteCounts = Array(previewPlayerCount).fill(0);
@@ -589,7 +663,7 @@ function mockState(kind) {
     votesRemaining -= votes;
   }
   if (kind === "lobby") return { ...base, state: "LOBBY", phase: "LOBBY", roundNumber: 1, claimedCount: demoPlayers.filter(({ claimed }) => claimed).length };
-  if (kind === "round") return { ...base, phaseEndsAt: Date.now() + 108_000, phaseDurationMs: 180_000, remainingMs: 108_000, round: { players: demoPlayers, remainingMs: 108_000, hints: { category: "home", letter: null }, messageCounts, messageRecency, latestMessages: demoMessages.slice(0, 3) } };
+  if (kind === "round") return { ...base, phaseEndsAt: Date.now() + 108_000, phaseDurationMs: 180_000, remainingMs: 108_000, round: { tableId: 1, tableCount: previewTableCount, players: demoPlayers, remainingMs: 108_000, hints: { category: "home", letter: null }, messageCounts, messageRecency, latestMessages: demoMessages.slice(0, 3), accusations: [{ correct: false, accuser: demoPlayers[2], at: 1 }, { correct: true, accuser: demoPlayers[1], target: demoPlayers[0], at: 2 }], busted: [{ impostor: demoPlayers[0], accuser: demoPlayers[1] }] } };
   if (kind === "vote") return { ...base, phaseEndsAt: Date.now() + 21_000, round: { players: demoPlayers, tallies: demoPlayers.map((player, index) => ({ player, votes: voteCounts[index] })) } };
   const evidence = { ...demoMessages[3], index: 34, length: 6 };
   return {
@@ -601,6 +675,11 @@ function mockState(kind) {
         impostor: demoPlayers[0], word: "candle", evidence, smuggled: true, caption: "1:12 into the round. 2 people read this. Nobody noticed.", messages: demoMessages,
         accidentalDecoys: [{ ...demoMessages[1], caption: "@quietfox said it too, by accident." }], verdict: "GOT AWAY", outcome: "got_away", sneakiness: "Hid ‘candle’ inside a complaint about the power bill. Cold.",
         scoreChanges: demoPlayers.map((player, index) => ({ player, delta: index ? 0 : 3, score: player.score })), leaderboard: demoPlayers.slice(0, 5).map((player) => ({ player, score: player.score })),
+        imposters: previewTableCount > 1 ? [
+          { impostor: demoPlayers[1], word: "teapot", evidence: null, messages: demoMessages, accidentalDecoys: [], verdict: "CAUGHT", outcome: "caught", caption: "Someone noticed.", sneakiness: "Chat caught the first clue." },
+          { impostor: demoPlayers[0], word: "candle", evidence, messages: demoMessages, accidentalDecoys: [{ ...demoMessages[1], caption: "@quietfox said it too, by accident." }], verdict: "GOT AWAY", outcome: "got_away", caption: "1:12 into the round. 2 people read this. Nobody noticed.", sneakiness: "Hid ‘candle’ in plain sight." },
+        ] : undefined,
+        otherTables: tables.slice(1).map((table, index) => ({ id: table.id, results: [{ impostor: demoPlayers[(index + 2) % demoPlayers.length], verdict: index % 2 ? "CAUGHT" : "GOT AWAY" }] })),
       },
     },
   };

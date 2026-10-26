@@ -25,6 +25,9 @@ const heardStrip = document.querySelector(".heard-strip");
 const voiceInterim = document.querySelector("#voice-interim");
 const voiceHelp = document.querySelector("#voice-help");
 const voiceRosterWarning = document.querySelector("#voice-roster-warning");
+const tableStrip = document.querySelector("#table-strip");
+const hostPlays = document.querySelector("#host-plays");
+const accuseLog = document.querySelector("#accuse-log");
 const actionButtons = [...document.querySelectorAll(".stamp-button[data-action]")];
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const hostParams = new URLSearchParams(location.search);
@@ -173,6 +176,40 @@ function renderConnection(nextState) {
   connectionLabel.textContent = online ? "LIVE ON TWITCH" : "OFFLINE";
 }
 
+function renderTables(nextState) {
+  const tables = nextState.tables || [];
+  if (!tables.length) {
+    tableStrip.replaceChildren(node("span", "tables-empty", "Tables appear when a round begins."));
+  } else {
+    tableStrip.replaceChildren(...tables.map((table) => {
+      const item = node("button", `table-chip${table.id === nextState.featuredTableId ? " featured" : ""}`);
+      item.type = "button";
+      item.disabled = table.id === nextState.featuredTableId;
+      item.append(
+        node("strong", "", `T${table.id}`),
+        node("span", "", String(table.playerCount)),
+        node("small", "", table.id === nextState.featuredTableId ? "ON AIR" : "FEATURE"),
+      );
+      item.addEventListener("click", () => runAction(`feature/${table.id}`, `Feature table ${table.id}`, item));
+      return item;
+    }));
+  }
+  hostPlays.checked = nextState.hostPlays !== false;
+
+  const entries = nextState.accusations || [];
+  accuseLog.replaceChildren(node("strong", "", "BUSTED / ACCUSE LOG"));
+  if (!entries.length) accuseLog.append(node("span", "log-empty", "No accusations yet."));
+  entries.slice(0, 4).forEach((entry) => {
+    accuseLog.append(node(
+      "span",
+      entry.correct ? "log-hit" : "log-miss",
+      entry.correct
+        ? `✓ @${entry.accuser.login} busted @${entry.target?.login || "suspect"}`
+        : `× @${entry.accuser.login} guessed wrong`,
+    ));
+  });
+}
+
 function updateActions() {
   if (!state) return;
   const phase = state.phase;
@@ -182,6 +219,7 @@ function updateActions() {
     vote: phase === "ROUND",
     next: phase === "REVEAL",
     end: phase !== "IDLE",
+    final: phase === "LOBBY" && Boolean(state.canFinal),
   };
   for (const button of actionButtons) {
     button.disabled = !enabled[button.dataset.action];
@@ -199,13 +237,14 @@ function render(nextState) {
   renderPlayers(state);
   renderChat(state);
   renderConnection(state);
+  renderTables(state);
   cardUrl.textContent = state.cardUrl || "";
   cardUrl.href = state.cardUrl || "#";
   const broadcaster = state.players.find((player) => (
     player.login === state.channelLogin && player.claimed
   ));
   const joined = state.players.some((player) => player.login === state.channelLogin);
-  voiceRosterWarning.hidden = Boolean(broadcaster) || !state.channelLogin;
+  voiceRosterWarning.hidden = Boolean(broadcaster) || !state.channelLogin || state.hostPlays === false;
   voiceRosterWarning.textContent = joined
     ? "You joined. Claim your card to be in the round."
     : "You are not in the game yet: type !join and claim your card";
@@ -477,6 +516,7 @@ function mockState() {
     [demoPlayers[0], "Okay now I suspect everybody", "chat"],
     [demoPlayers[1], "This is getting intense", "chat"],
   ].map(([player, text, source], index) => ({ id: `m${index}`, player, text, source }));
+  const tableCount = Math.min(20, Math.max(1, Number(hostParams.get("tables")) || 1));
   return {
     state: "ROUND",
     phase: "ROUND",
@@ -489,6 +529,14 @@ function mockState() {
     cardUrl: `${location.origin}/card`,
     channelLogin: "streamer",
     twitchConnected: true,
+    hostPlays: true,
+    canFinal: false,
+    featuredTableId: 1,
+    tables: Array.from({ length: tableCount }, (_, index) => ({ id: index + 1, playerCount: 9 + (index % 4) })),
+    accusations: [
+      { correct: true, accuser: demoPlayers[2], target: demoPlayers[0] },
+      { correct: false, accuser: demoPlayers[1], target: null },
+    ],
     round: {
       number: 2,
       hints: { category: "home", letter: null },
@@ -522,6 +570,26 @@ document.querySelector("#copy-card").addEventListener("click", async (event) => 
   await navigator.clipboard.writeText(state.cardUrl);
   event.currentTarget.textContent = "✓";
   setTimeout(() => { event.currentTarget.textContent = "▣"; }, 1_400);
+});
+
+hostPlays.addEventListener("change", async () => {
+  if (mockMode) return;
+  hostPlays.disabled = true;
+  try {
+    const response = await fetch("/api/host/host-plays", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: hostPlays.checked }),
+    });
+    const result = await response.json();
+    if (!result.ok) throw new Error(result.reason || "not accepted");
+  } catch (error) {
+    hostPlays.checked = !hostPlays.checked;
+    actionResult.textContent = `Host plays: ${error.message}`;
+    actionResult.classList.add("error");
+  } finally {
+    hostPlays.disabled = false;
+  }
 });
 
 seeAllPlayers.addEventListener("click", () => {

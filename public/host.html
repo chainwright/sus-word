@@ -22,6 +22,16 @@
         <path d="M 1036 205 L 1151 269 L 1391 219" />
       </svg>
 
+      <section class="table-console" aria-label="Game tables">
+        <strong>TABLES</strong>
+        <div id="table-strip" class="table-strip"></div>
+      </section>
+      <label class="host-plays-switch">
+        <input id="host-plays" type="checkbox" checked>
+        <span>HOST PLAYS</span>
+      </label>
+      <section id="accuse-log" class="accuse-log" aria-label="Accusation log"></section>
+
       <section class="hints" aria-label="Round hints">
         <article id="category-card" class="index-card category-card">
           <span class="pin"></span>
@@ -78,6 +88,7 @@
         <button class="stamp-button ink-black" data-action="vote"><span>VOTE<br>NOW</span></button>
         <button class="stamp-button ink-navy" data-action="next"><span>NEXT</span></button>
         <button class="stamp-button ink-red" data-action="end"><span>END</span></button>
+        <button class="stamp-button final-button" data-action="final"><span>FINAL</span></button>
         <button id="reset" class="reset-link" type="button">reset game</button>
       </nav>
 

@@ -82,6 +82,10 @@ function claimCode(index) {
   }).reverse().join("");
 }
 
+function demoSessionId(player) {
+  return player.sessionId || `demo-session-${String(player.id).replace(/^demo-/, "")}`;
+}
+
 export function avatarDataUri(color, initials) {
   const safeColor = /^#[0-9a-f]{6}$/i.test(color) ? color : "#665374";
   const safeInitials = String(initials).replace(/[^a-z0-9]/gi, "").slice(0, 2).toUpperCase();
@@ -130,22 +134,27 @@ async function populateLobby(game, profiles, fast) {
   }
 }
 
-function postMessage(game, player, text, sequence, voiceSocket, fast) {
+async function postMessage(game, service, player, text, sequence, voiceSocket, fast) {
   if (fast && player.login === "streamer") {
     voiceSocket.send(JSON.stringify({ type: "voice", text }));
     console.log(`[voice] ${player.login}: ${text}`);
     return null;
   }
-  const result = game.recordMessage({
-    userId: player.id,
-    messageId: `demo-${game.roundNumber}-${sequence}`,
-    text,
-  });
+  const tableId = game.playerTables.get(player.id);
+  const result = tableId !== game.featuredTableId
+    ? service.handleCardAction(demoSessionId(player), { type: "tableChat", text })
+    : await service.handleChatMessage({
+      userId: player.id,
+      login: player.login,
+      displayName: player.displayName,
+      id: `demo-${game.roundNumber}-${sequence}`,
+      text,
+    });
   if (result.ok) console.log(`[chat] ${player.login}: ${text}`);
   return result;
 }
 
-async function playRoundChat(game, profiles, fast, voiceSocket) {
+async function playRoundChat(game, service, profiles, fast, voiceSocket) {
   const interval = fast ? 3_500 : 6_000;
   const decoyAt = game.durations.round * .3;
   const smuggleAt = game.durations.round * .55;
@@ -171,7 +180,7 @@ async function playRoundChat(game, profiles, fast, voiceSocket) {
       for (const { table, assignment } of assignments) {
         const decoy = [...table.roster.values()].find(({ id }) => id !== assignment.playerId);
         sequence += 1;
-        postMessage(game, decoy, `I keep a ${assignment.word} near my desk for stormy nights`, sequence, voiceSocket, fast);
+        await postMessage(game, service, decoy, `I keep a ${assignment.word} near my desk for stormy nights`, sequence, voiceSocket, fast);
       }
       decoySent = true;
       continue;
@@ -180,7 +189,7 @@ async function playRoundChat(game, profiles, fast, voiceSocket) {
       for (const { assignment } of assignments) {
         const impostor = profiles.find(({ id }) => id === assignment.playerId);
         sequence += 1;
-        postMessage(game, impostor, `the weather turned so I moved my ${assignment.word} beside the monitor`, sequence, voiceSocket, fast);
+        await postMessage(game, service, impostor, `the weather turned so I moved my ${assignment.word} beside the monitor`, sequence, voiceSocket, fast);
       }
       smuggleSent = true;
       continue;
@@ -194,11 +203,29 @@ async function playRoundChat(game, profiles, fast, voiceSocket) {
           !table.impostors.some(({ playerId }) => playerId === id)
         ));
         if (detectives[0]) {
-          game.accuse(detectives[0].id, impostor.login, assignment.word);
+          if (table.id === game.featuredTableId) {
+            await service.handleChatMessage({
+              userId: detectives[0].id,
+              login: detectives[0].login,
+              text: `!accuse ${impostor.login} ${assignment.word}`,
+            });
+          } else {
+            service.handleCardAction(demoSessionId(detectives[0]), {
+              type: "accuse", target: impostor.login, word: assignment.word,
+            });
+          }
           console.log(`[accuse] @${detectives[0].login} busted @${impostor.login}`);
         }
         if (detectives[1]) {
-          const result = game.accuse(detectives[1].id, impostor.login, "banana");
+          const result = table.id === game.featuredTableId
+            ? await service.handleChatMessage({
+              userId: detectives[1].id,
+              login: detectives[1].login,
+              text: `!accuse ${impostor.login} banana`,
+            })
+            : service.handleCardAction(demoSessionId(detectives[1]), {
+              type: "accuse", target: impostor.login, word: "banana",
+            });
           console.log(`[accuse] @${detectives[1].login} missed (${result.correct ? "right" : "wrong"})`);
         }
       }
@@ -208,11 +235,11 @@ async function playRoundChat(game, profiles, fast, voiceSocket) {
 
     const player = profiles[(sequence - 1) % profiles.length];
     const text = CHAT_LINES[(sequence - 1) % CHAT_LINES.length];
-    postMessage(game, player, text, sequence, voiceSocket, fast);
+    await postMessage(game, service, player, text, sequence, voiceSocket, fast);
   }
 }
 
-async function castVotes(game, fast) {
+async function castVotes(game, service, fast) {
   const seated = [...game.tables.values()].reduce((sum, table) => sum + table.roster.size, 0);
   const pause = seated > 12 ? (fast ? 35 : 75) : fast ? 2_500 : 4_000;
   for (const table of game.tables.values()) {
@@ -223,7 +250,15 @@ async function castVotes(game, fast) {
       await sleep(pause);
       if (game.phase !== PHASES.VOTE) return;
       const target = table.roster.get(player.id === impostorId ? fallback.id : impostorId);
-      game.vote(player.id, target.id);
+      if (table.id === game.featuredTableId) {
+        await service.handleChatMessage({
+          userId: player.id,
+          login: player.login,
+          text: `!vote ${target.login}`,
+        });
+      } else {
+        service.handleCardAction(demoSessionId(player), { type: "vote", target: target.login });
+      }
       console.log(`[vote] T${table.id}: @${player.login} voted for @${target.login}`);
     }
   }
@@ -278,9 +313,9 @@ export async function runDemo(options = {}) {
     round += 1;
     console.log(`[demo] Starting round ${round}`);
     game.go({ word: "candle", category: "home" });
-    await playRoundChat(game, profiles, fast, voiceSocket);
+    await playRoundChat(game, service, profiles, fast, voiceSocket);
     await waitForPhase(game, PHASES.VOTE);
-    await castVotes(game, fast);
+    await castVotes(game, service, fast);
     await waitForPhase(game, PHASES.REVEAL);
     console.log(`[demo] ${game.lastReveal.botMessage}`);
     await waitForPhase(game, PHASES.LOBBY);

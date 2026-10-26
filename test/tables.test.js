@@ -150,6 +150,75 @@ describe("table evidence and privacy", () => {
     assert.deepEqual(card.messages.map(({ text }) => text), ["only table one should read this"]);
     assert.equal(JSON.stringify(card).includes("rocket"), false);
   });
+
+  test("side-table Twitch chat is crowd chatter while card chat is evidence", () => {
+    const { game } = startGame(13);
+    const side = game.tables.get(2);
+    const impostor = side.roster.get(side.impostorId);
+    const spoken = `this ${side.word} fits naturally here`;
+
+    assert.deepEqual(game.recordMessage({
+      userId: impostor.id,
+      text: spoken,
+      transport: "twitch",
+    }), { ok: true, crowd: true, counted: true });
+    assert.equal(side.messages.length, 0);
+    assert.equal(side.impostors[0].smuggle, null);
+
+    const delivered = game.recordMessage({
+      userId: impostor.id,
+      text: spoken,
+      transport: "card",
+    });
+    assert.equal(delivered.delivered, true);
+    assert.equal(side.messages.length, 1);
+    assert.equal(side.impostors[0].smuggle.transport, "card");
+  });
+});
+
+describe("streamer seating", () => {
+  function streamerGame(hostPlays = true) {
+    const game = new Game({
+      clock: TEST_CLOCK,
+      random: () => 0,
+      words: TEST_WORDS,
+      streamerLogin: "streamer",
+      hostPlays,
+    });
+    const streamer = { id: "streamer-id", login: "streamer" };
+    game.join(streamer);
+    game.players.get(streamer.id).claimed = true;
+    addClaimedPlayers(game, 24);
+    game.start();
+    assert.equal(game.go().ok, true);
+    return { game, streamer };
+  }
+
+  test("always seats a participating streamer at the featured table and moves them with it", () => {
+    const { game, streamer } = streamerGame();
+    assert.equal(game.tables.get(1).roster.size, 13);
+    assert.equal(game.playerTables.get(streamer.id), 1);
+    const assignment = game.tables.get(1).impostors.find(({ playerId }) => playerId === streamer.id);
+    assert.ok(assignment);
+
+    assert.equal(game.featureTable(2).ok, true);
+    assert.equal(game.playerTables.get(streamer.id), 2);
+    assert.equal(game.tables.get(1).roster.has(streamer.id), false);
+    assert.equal(game.tables.get(2).roster.has(streamer.id), true);
+    assert.equal(game.recordMessage({
+      userId: streamer.id,
+      source: "voice",
+      text: `I worked ${assignment.word} into this sentence`,
+    }).delivered, true);
+  });
+
+  test("host-plays off keeps the streamer out and persists across reset", () => {
+    const { game, streamer } = streamerGame(false);
+    assert.equal(game.playerTables.has(streamer.id), false);
+    assert.equal([...game.tables.values()].some(({ roster }) => roster.has(streamer.id)), false);
+    game.reset();
+    assert.equal(game.getPublicState().hostPlays, false);
+  });
 });
 
 describe("live accusations", () => {
