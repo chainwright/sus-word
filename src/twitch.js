@@ -97,6 +97,7 @@ export class TwitchClient extends EventEmitter {
     this.chatTail = Promise.resolve();
     this.lastChatAt = -Infinity;
     this.stopped = true;
+    this.connected = false;
   }
 
   async start() {
@@ -119,6 +120,7 @@ export class TwitchClient extends EventEmitter {
 
   stop() {
     this.stopped = true;
+    this.connected = false;
     if (this.watchdogTimer) this.clock.clearTimeout(this.watchdogTimer);
     if (this.reconnectTimer) this.clock.clearTimeout(this.reconnectTimer);
     this.watchdogTimer = null;
@@ -259,6 +261,7 @@ export class TwitchClient extends EventEmitter {
         });
       }
       this.#touchWatchdog();
+      this.connected = true;
       this.emit("connected", { sessionId: session.id, reconnected: context.handoff });
       return;
     }
@@ -303,6 +306,10 @@ export class TwitchClient extends EventEmitter {
 
   #handleClose(socket, context) {
     if (this.expectedCloses.has(socket) || this.stopped) return;
+    if (socket === this.socket) {
+      this.connected = false;
+      this.emit("disconnected");
+    }
     if (context.handoff) {
       this.handoffSocket = null;
       if (context.oldSocket) {

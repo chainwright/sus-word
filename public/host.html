@@ -3,60 +3,100 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Sus Word Host</title>
+    <title>Sus Word Host Desk</title>
     <link rel="stylesheet" href="/host.css">
   </head>
   <body>
-    <main>
-      <header>
-        <div>
-          <p class="eyebrow">STREAMER DESK</p>
-          <h1>SUS WORD CONTROL</h1>
+    <main id="host-stage" aria-label="Sus Word host controls">
+      <header class="desk-header">
+        <h1>SUS WORD</h1>
+        <div id="connection" class="broadcast-status offline">
+          <span class="live-dot" aria-hidden="true"></span>
+          <span id="connection-label">OFFLINE</span>
         </div>
-        <span id="connection">CONNECTING</span>
       </header>
 
-      <section class="status-card">
-        <div><span>PHASE</span><strong id="phase">—</strong></div>
-        <div><span>ROUND</span><strong id="round">—</strong></div>
-        <div><span>TIME</span><strong id="timer">—</strong></div>
+      <svg class="red-string" viewBox="0 0 1440 900" aria-hidden="true">
+        <path d="M 448 244 L 612 337 L 716 207" />
+        <path d="M 448 357 L 612 337 L 716 207" />
+        <path d="M 1036 205 L 1151 269 L 1391 219" />
+      </svg>
+
+      <section class="hints" aria-label="Round hints">
+        <article id="category-card" class="index-card category-card">
+          <span class="pin"></span>
+          <span class="hint-label">CATEGORY:</span>
+          <strong id="category-hint" class="hint-value">🔒</strong>
+        </article>
+        <article id="letter-card" class="index-card letter-card">
+          <span class="pin"></span>
+          <span class="hint-label">STARTS WITH:</span>
+          <strong id="letter-hint" class="hint-value">🔒</strong>
+        </article>
       </section>
 
-      <nav aria-label="Game controls">
-        <button data-action="start">Start</button>
-        <button data-action="go">Go</button>
-        <button data-action="vote">Vote now</button>
-        <button data-action="next">Next</button>
-        <button data-action="end" class="secondary">End</button>
-        <button data-action="reset" class="danger">Reset</button>
-      </nav>
-      <section class="voice-panel" aria-labelledby="voice-title">
-        <div class="voice-control">
-          <span id="mic-dot" class="mic-dot" aria-hidden="true"></span>
-          <button id="mic-toggle" type="button" aria-pressed="false">🎙 Mic</button>
-          <strong id="voice-title">STREAMER VOICE</strong>
+      <section class="timer-file" aria-label="Game timer">
+        <span class="paper-pin pin-left"></span>
+        <span class="paper-pin pin-right"></span>
+        <div id="phase-label" class="phase-label">IDLE</div>
+        <div class="stopwatch-wrap">
+          <img src="/img/stopwatch.webp" alt="" class="stopwatch">
+          <span id="timer" class="timer-time">--:--</span>
+          <span id="timer-hand" class="timer-hand" aria-hidden="true"></span>
+          <span class="timer-pivot" aria-hidden="true"></span>
         </div>
-        <p id="voice-interim" class="voice-interim" aria-live="polite">Mic is off.</p>
-        <p id="voice-help" class="voice-help"></p>
-        <p id="voice-roster-warning" class="voice-warning" hidden>You are not in the game yet: type !join and claim your card</p>
       </section>
-      <p id="action-result" role="status"></p>
 
-      <div class="grid">
-        <section class="panel">
-          <h2>PLAYERS <span id="player-total"></span></h2>
-          <div id="players" class="players"></div>
+      <section class="audio-desk" aria-label="Streamer voice controls">
+        <button id="mic-toggle" class="mic-control" type="button" aria-pressed="false" aria-label="Turn streamer microphone on">
+          <span class="mic-glow" aria-hidden="true"></span>
+          <img src="/img/microphone.webp" alt="" class="microphone">
+          <span class="toggle-plate" aria-hidden="true">
+            <span class="toggle-title">MIC</span>
+            <span id="toggle-state" class="toggle-state">OFF</span>
+            <span class="brass-switch"><span></span></span>
+          </span>
+        </button>
+        <div class="vu-wrap" aria-label="Microphone level">
+          <img src="/img/vu_meter.webp" alt="" class="vu-meter">
+          <span id="vu-needle" class="vu-needle" aria-hidden="true"></span>
+        </div>
+        <span id="mic-dot" class="mic-dot" aria-hidden="true"></span>
+      </section>
+
+      <section class="heard-strip" aria-live="polite">
+        <strong>LAST HEARD:</strong>
+        <span id="voice-interim">Mic is off.</span>
+      </section>
+      <p id="voice-help" class="voice-help"></p>
+      <p id="voice-roster-warning" class="typed-warning" hidden>You are not in the game yet: type !join and claim your card</p>
+      <p id="action-result" class="action-result" role="status"></p>
+
+      <nav class="stamp-controls" aria-label="Game controls">
+        <button class="stamp-button ink-black" data-action="start"><span>START</span></button>
+        <button class="stamp-button ink-green" data-action="go"><span>GO</span></button>
+        <button class="stamp-button ink-black" data-action="vote"><span>VOTE<br>NOW</span></button>
+        <button class="stamp-button ink-navy" data-action="next"><span>NEXT</span></button>
+        <button class="stamp-button ink-red" data-action="end"><span>END</span></button>
+        <button id="reset" class="reset-link" type="button">reset game</button>
+      </nav>
+
+      <aside class="players-folder" aria-label="Players and recent chat">
+        <h2>PLAYERS <span id="player-total">0</span></h2>
+        <div id="players" class="players"></div>
+        <div id="player-overflow" class="player-overflow"></div>
+        <section class="chat-note" aria-label="Recent player messages">
+          <span class="binder-clip" aria-hidden="true"></span>
+          <div id="chat-feed" class="chat-feed"></div>
         </section>
-        <section class="panel">
-          <h2>PLAYER CARD</h2>
-          <a id="card-url" target="_blank" rel="noreferrer"></a>
-          <button id="copy-card" class="copy">Copy card URL</button>
-          <details>
-            <summary>Live state JSON</summary>
-            <pre id="state-json"></pre>
-          </details>
-        </section>
-      </div>
+      </aside>
+
+      <section class="card-tag">
+        <span class="tag-pin" aria-hidden="true"></span>
+        <strong>PLAYER CARD LINK</strong>
+        <a id="card-url" target="_blank" rel="noreferrer"></a>
+        <button id="copy-card" type="button" aria-label="Copy player card link" title="Copy player card link">▣</button>
+      </section>
     </main>
     <script type="module" src="/host.js"></script>
   </body>

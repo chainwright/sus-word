@@ -514,6 +514,7 @@ export class Game extends EventEmitter {
       claimedCount: [...this.players.values()].filter((player) => player.claimed).length,
       scores: this.#leaderboard(),
       phaseEndsAt: this.#phaseEndsAt(),
+      phaseDurationMs: this.durations[this.state.toLowerCase()] ?? 0,
       remainingMs: Math.max(0, (this.#phaseEndsAt() ?? now) - now),
     };
     if (!this.currentRound) return state;
@@ -533,6 +534,9 @@ export class Game extends EventEmitter {
         : undefined,
       messageCounts: Object.fromEntries(this.currentRound.messageCounts),
       latestMessages: this.currentRound.messages.slice(-3).map((message) => (
+        this.#publicMessage(message)
+      )),
+      recentMessages: this.currentRound.messages.slice(-6).map((message) => (
         this.#publicMessage(message)
       )),
       tallies: this.state === PHASES.VOTE ? this.getTallies() : undefined,

@@ -197,6 +197,7 @@ export function createSusWordServer(options = {}) {
       ...game.getPublicState(),
       cardUrl: `${publicUrl}/card`,
       channelLogin: String(env.CHANNEL_LOGIN ?? "").trim().replace(/^@/, "").toLowerCase(),
+      twitchConnected: Boolean(twitch?.connected),
     };
   }
 
@@ -354,6 +355,8 @@ export function createSusWordServer(options = {}) {
     twitch.on("message", (message) => {
       handleChatMessage(message).catch((error) => logger.error?.(`[command] ${error.message}`));
     });
+    twitch.on("connected", broadcastPublicState);
+    twitch.on("disconnected", broadcastPublicState);
     twitch.on("twitchError", (error) => logger.error?.(`[eventsub] ${error.message}`));
   }
 

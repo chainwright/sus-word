@@ -1,54 +1,594 @@
-@font-face { font-family: "Courier Prime"; src: url("/fonts/CourierPrime-Regular.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: swap; }
-@font-face { font-family: "Oswald"; src: url("/fonts/Oswald-Variable.ttf") format("truetype-variations"); font-weight: 200 700; font-style: normal; font-display: swap; }
-:root { --ink: #21182d; --red: #9f2f36; --paper: #f6e7c9; --cork: #c38a55; }
+@font-face {
+  font-family: "Courier Prime";
+  src: url("/fonts/CourierPrime-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Courier Prime";
+  src: url("/fonts/CourierPrime-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Oswald";
+  src: url("/fonts/Oswald-Variable.ttf") format("truetype-variations");
+  font-weight: 200 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --ink: #271b17;
+  --red: #a63131;
+  --paper: #ead2a8;
+  --paper-light: #f5e5c1;
+  --kraft: #b68854;
+  --green: #356d42;
+  --navy: #283a69;
+}
+
 * { box-sizing: border-box; }
-body { margin: 0; min-height: 100vh; color: var(--ink); background: #c58e59; font-family: "Courier Prime", monospace; }
-main { width: min(1100px, calc(100% - 32px)); margin: 0 auto; padding: 34px 0 60px; }
-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
-h1, h2 { margin: 0; font-family: "Oswald", sans-serif; }
-h1 { font-size: clamp(38px, 7vw, 66px); line-height: 1; }
-.eyebrow { margin: 0 0 7px; color: #603c27; font: 600 16px/1 "Oswald", sans-serif; letter-spacing: .16em; }
-#connection { padding: 9px 12px; border: 2px solid var(--red); color: var(--red); background: var(--paper); font: 600 15px/1 "Oswald", sans-serif; }
-#connection.online { color: #295c39; border-color: #295c39; }
-.status-card, .panel { background: var(--paper); box-shadow: 0 8px 20px #321f2940; }
-.status-card { display: grid; grid-template-columns: repeat(3, 1fr); margin-bottom: 18px; }
-.status-card div { padding: 20px 24px; border-right: 2px solid #b99b76; }
-.status-card div:last-child { border: 0; }
-.status-card span { display: block; font: 600 14px/1 "Oswald", sans-serif; letter-spacing: .12em; }
-.status-card strong { display: block; margin-top: 6px; font: 700 42px/1 "Oswald", sans-serif; }
-nav { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
-button { min-height: 54px; border: 0; border-radius: 3px; color: #fff8e9; background: var(--ink); font: 600 19px/1 "Oswald", sans-serif; cursor: pointer; }
-button:hover { filter: brightness(1.18); }
-button:disabled { cursor: wait; opacity: .5; }
-button.secondary { background: #65566e; }
-button.danger { background: var(--red); }
-.voice-panel { margin-top: 16px; padding: 16px 20px; background: var(--paper); box-shadow: 0 8px 20px #321f2940; }
-.voice-control { display: flex; align-items: center; gap: 12px; }
-.voice-control strong { font: 600 18px/1 "Oswald", sans-serif; letter-spacing: .08em; }
-#mic-toggle { min-width: 116px; min-height: 48px; }
-#mic-toggle.active { background: var(--red); }
-.mic-dot { width: 13px; height: 13px; flex: 0 0 auto; border-radius: 50%; background: #8b8175; box-shadow: 0 0 0 4px #8b817529; }
-.mic-dot.listening { background: #35834e; box-shadow: 0 0 0 4px #35834e29; }
-.mic-dot.speaking { background: var(--red); box-shadow: 0 0 0 7px #9f2f3630; animation: mic-pulse .7s infinite alternate; }
-.mic-dot.error { background: #c33a30; box-shadow: 0 0 0 4px #c33a3030; }
-.voice-interim { min-height: 27px; margin: 13px 0 5px 25px; font-size: 18px; font-style: italic; }
-.voice-help, .voice-warning { margin: 6px 0 0 25px; font-size: 15px; }
-.voice-warning { color: #75141d; font-weight: 700; }
-@keyframes mic-pulse { to { transform: scale(1.25); } }
-#action-result { min-height: 24px; margin: 11px 0 15px; font-weight: 700; }
-#action-result.error { color: #75141d; }
-.grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 18px; }
-.panel { min-height: 330px; padding: 24px; }
-.panel h2 { padding-bottom: 10px; border-bottom: 4px solid var(--ink); font-size: 32px; }
-.players { display: grid; gap: 9px; margin-top: 17px; }
-.player { display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 12px; padding: 9px; background: #ead5b2; }
-.avatar { width: 44px; height: 44px; display: grid; place-items: center; overflow: hidden; color: #fff; background: #665374; font: 600 18px/1 "Oswald", sans-serif; }
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #130c09;
+}
+
+body { color: var(--ink); font-family: "Courier Prime", monospace; }
+button, a { font: inherit; }
+
+#host-stage {
+  position: absolute;
+  width: 1440px;
+  height: 900px;
+  overflow: hidden;
+  transform-origin: 0 0;
+  background:
+    linear-gradient(90deg, transparent 72%, #120b0738 100%),
+    url("/img/desk.jpg") center / cover no-repeat;
+  box-shadow: inset 0 0 110px #08040296;
+}
+
+.desk-header { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+.desk-header h1 {
+  position: absolute;
+  top: 22px;
+  left: 510px;
+  width: 420px;
+  height: 102px;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  color: #301f18;
+  background:
+    linear-gradient(#b8834e16, #6d421322),
+    #d5aa72;
+  clip-path: polygon(1% 5%, 6% 2%, 27% 4%, 42% 1%, 59% 4%, 78% 2%, 98% 5%, 97% 93%, 81% 96%, 64% 93%, 47% 97%, 28% 94%, 3% 97%);
+  filter: drop-shadow(0 7px 5px #1308058c);
+  font: 700 70px/.95 "Oswald", sans-serif;
+  letter-spacing: .02em;
+  text-shadow: 0 1px #f0ca92;
+}
+
+.broadcast-status {
+  position: absolute;
+  top: 61px;
+  left: 952px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #c29d70;
+  font: 600 24px/1 "Oswald", sans-serif;
+  letter-spacing: .03em;
+  text-shadow: 0 2px 4px #000;
+}
+.live-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #665752;
+  box-shadow: 0 0 0 5px #30211d;
+}
+.broadcast-status.online .live-dot {
+  background: #ff4139;
+  box-shadow: 0 0 11px 5px #ef2d2d82;
+  animation: live-pulse 1.4s ease-in-out infinite;
+}
+@keyframes live-pulse { 50% { opacity: .62; transform: scale(.88); } }
+
+.red-string {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 1px #24100b99);
+}
+.red-string path { fill: none; stroke: #9d3233; stroke-width: 3; stroke-linecap: round; }
+
+.hints { position: absolute; inset: 0; z-index: 4; }
+.index-card {
+  position: absolute;
+  width: 250px;
+  height: 142px;
+  padding: 25px 20px 15px;
+  background:
+    repeating-linear-gradient(to bottom, transparent 0 27px, #7295a358 28px 29px),
+    linear-gradient(94deg, #f4dfb8, #e6c996);
+  border: 1px solid #9d714a;
+  box-shadow: 0 8px 13px #170c0875, inset 0 0 22px #9a693821;
+  transform-style: preserve-3d;
+}
+.category-card { left: 222px; top: 175px; transform: rotate(-1deg); }
+.letter-card { left: 343px; top: 288px; transform: rotate(.7deg); }
+.index-card::before {
+  content: "";
+  position: absolute;
+  top: 35px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #bd5b5663;
+}
+.pin,
+.paper-pin,
+.tag-pin {
+  position: absolute;
+  z-index: 4;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #b27d53 0 22%, #725038 52%, #37251f 100%);
+  box-shadow: 0 4px 4px #2b150a80;
+}
+.index-card .pin { top: 9px; right: 22px; }
+.hint-label {
+  display: block;
+  font: 700 25px/1 "Oswald", sans-serif;
+  letter-spacing: .015em;
+}
+.hint-value {
+  display: block;
+  margin-top: 14px;
+  text-align: center;
+  text-transform: uppercase;
+  font: 700 43px/.9 "Oswald", sans-serif;
+}
+.letter-card .hint-value { font-size: 52px; }
+
+.timer-file {
+  position: absolute;
+  z-index: 2;
+  left: 655px;
+  top: 170px;
+  width: 410px;
+  height: 435px;
+  padding-top: 18px;
+  background:
+    linear-gradient(107deg, transparent 0 54%, #a3734930 54.3% 54.7%, transparent 55%),
+    linear-gradient(92deg, #ebd0a3, #f4dfb9 53%, #dfbd89);
+  clip-path: polygon(1% 2%, 97% 0, 100% 9%, 98% 37%, 100% 63%, 98% 97%, 74% 99%, 44% 97%, 2% 99%, 0 73%, 2% 44%, 0 14%);
+  filter: drop-shadow(0 12px 9px #160a0675);
+}
+.timer-file::before,
+.timer-file::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 12px -10px -9px 8px;
+  background: #b98d59;
+  transform: rotate(1.5deg);
+}
+.timer-file::after { inset: 22px 9px -14px -7px; transform: rotate(-1.2deg); background: #d6ae78; }
+.paper-pin { top: 14px; }
+.pin-left { left: 28px; }
+.pin-right { right: 26px; }
+.phase-label {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  font: 700 39px/1 "Oswald", sans-serif;
+  letter-spacing: .03em;
+}
+.stopwatch-wrap { position: absolute; left: 47px; top: 67px; width: 316px; height: 330px; }
+.stopwatch { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 8px 7px #43240c7f); }
+.timer-time {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  top: 56.5%;
+  min-width: 150px;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  font: 700 54px/.9 "Oswald", sans-serif;
+  color: #2d2019;
+  letter-spacing: -.025em;
+  text-shadow: 0 1px #f6e5c5;
+}
+.timer-hand {
+  position: absolute;
+  z-index: 3;
+  left: calc(50% - 1px);
+  top: 36.8%;
+  width: 2px;
+  height: 20%;
+  background: #a72626;
+  transform-origin: 50% 100%;
+  transform: rotate(0deg);
+  box-shadow: 1px 0 #61201c;
+}
+.timer-pivot {
+  position: absolute;
+  z-index: 4;
+  left: calc(50% - 5px);
+  top: calc(56.8% - 5px);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #7d241e;
+  box-shadow: 0 1px 2px #210c08;
+}
+
+.audio-desk { position: absolute; z-index: 4; left: 112px; top: 456px; width: 510px; height: 237px; }
+.mic-control {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 245px;
+  height: 230px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: var(--ink);
+  background: transparent;
+  cursor: pointer;
+}
+.microphone { position: absolute; z-index: 2; left: 0; top: -4px; width: 178px; height: 239px; object-fit: contain; filter: drop-shadow(0 7px 5px #080302aa); }
+.mic-glow {
+  position: absolute;
+  z-index: 1;
+  left: 10px;
+  top: 31px;
+  width: 162px;
+  height: 165px;
+  border-radius: 50%;
+  opacity: 0;
+  background: #e8a7456b;
+  box-shadow: 0 0 38px 20px #e39a3952;
+  transition: opacity .25s;
+}
+.mic-control.active .mic-glow { opacity: 1; animation: mic-glow 1.1s ease-in-out infinite alternate; }
+@keyframes mic-glow { to { opacity: .7; transform: scale(1.04); } }
+.toggle-plate {
+  position: absolute;
+  z-index: 3;
+  right: 2px;
+  bottom: 21px;
+  width: 88px;
+  height: 134px;
+  padding-top: 12px;
+  border: 4px solid #7f766d;
+  border-radius: 8px;
+  background: linear-gradient(120deg, #b6b1a7, #69655f 45%, #bbb5a8);
+  box-shadow: inset 0 0 0 2px #ddd7c9, 0 6px 7px #100906a3;
+  font: 700 25px/.9 "Oswald", sans-serif;
+  text-align: center;
+  text-shadow: 0 1px #d9cebd;
+}
+.toggle-title, .toggle-state { display: block; }
+.toggle-state { margin-top: 5px; font-size: 20px; color: #722620; }
+.mic-control.active .toggle-state { color: #315d39; }
+.brass-switch {
+  position: absolute;
+  left: 23px;
+  bottom: 10px;
+  width: 40px;
+  height: 58px;
+  padding: 5px;
+  border: 2px solid #4f2d13;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #6d3a18, #d49a45, #74401b);
+  box-shadow: inset 0 2px 3px #f5cc73, 0 2px 4px #32190d;
+}
+.brass-switch span {
+  display: block;
+  width: 26px;
+  height: 31px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #91612e, #f0bb5f 48%, #815027);
+  box-shadow: 0 5px 4px #2e180dc2;
+  transition: transform .18s;
+}
+.mic-control.active .brass-switch span { transform: translateY(15px); box-shadow: 0 -4px 4px #2e180d9e; }
+.mic-control:focus-visible { outline: 3px solid #f0bb5f; outline-offset: 6px; }
+.mic-control:disabled { cursor: default; filter: grayscale(.55); }
+
+.vu-wrap { position: absolute; left: 250px; top: 49px; width: 260px; height: 137px; filter: drop-shadow(0 7px 5px #0a0504a8); }
+.vu-meter { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.vu-needle {
+  position: absolute;
+  z-index: 3;
+  left: calc(50% - 1px);
+  bottom: 20px;
+  width: 2px;
+  height: 83px;
+  background: #17110e;
+  transform-origin: 50% 100%;
+  transform: rotate(-20deg);
+  box-shadow: 1px 0 #ffffff42;
+}
+.vu-needle::after { content: ""; position: absolute; left: -4px; bottom: -5px; width: 10px; height: 10px; border-radius: 50%; background: #18100d; }
+.mic-dot { position: absolute; left: 478px; top: 202px; width: 12px; height: 12px; border-radius: 50%; background: #635a52; box-shadow: 0 0 0 4px #18100c; }
+.mic-dot.listening { background: #d9a13c; box-shadow: 0 0 9px 3px #dc9b3975; }
+.mic-dot.speaking { background: #dc3930; box-shadow: 0 0 12px 4px #dc393080; animation: live-pulse .7s infinite alternate; }
+.mic-dot.error { background: #a32924; }
+
+.heard-strip {
+  position: absolute;
+  z-index: 4;
+  left: 390px;
+  top: 660px;
+  width: 664px;
+  min-height: 62px;
+  padding: 16px 26px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  background: linear-gradient(95deg, #e4c391, #f0d7aa 52%, #cfa36e);
+  clip-path: polygon(1% 8%, 9% 3%, 23% 7%, 41% 2%, 57% 6%, 74% 1%, 99% 7%, 98% 94%, 82% 98%, 65% 93%, 48% 99%, 26% 94%, 2% 98%);
+  filter: drop-shadow(0 5px 4px #1208058c);
+  font-size: 21px;
+}
+.heard-strip strong { font: 700 24px/1 "Oswald", sans-serif; }
+.heard-strip.interim #voice-interim { color: #6c6257; font-style: italic; }
+.voice-help,
+.typed-warning,
+.action-result {
+  position: absolute;
+  z-index: 7;
+  margin: 0;
+  padding: 4px 9px;
+  color: #261a15;
+  background: #ead1a6e8;
+  font-size: 14px;
+  box-shadow: 0 2px 3px #150a076b;
+}
+.voice-help { left: 124px; top: 692px; max-width: 248px; }
+.typed-warning { left: 1092px; bottom: 117px; width: 318px; color: #711d1d; font-weight: 700; }
+.action-result { left: 554px; top: 726px; max-width: 360px; }
+.action-result:empty, .voice-help:empty { display: none; }
+.action-result.error { color: #8f201f; font-weight: 700; }
+
+.stamp-controls {
+  position: absolute;
+  z-index: 7;
+  left: 386px;
+  top: 751px;
+  width: 685px;
+  height: 132px;
+  display: flex;
+  gap: 17px;
+  align-items: flex-start;
+}
+.stamp-button {
+  position: relative;
+  width: 123px;
+  height: 107px;
+  flex: 0 0 123px;
+  border: 0;
+  border-radius: 10px;
+  padding: 9px;
+  color: #27201a;
+  background: linear-gradient(135deg, #b58b61, #e1be8b 43%, #8d613e);
+  box-shadow: inset 0 0 0 4px #5c3424, inset 0 0 0 7px #d5af7a, 0 9px 0 #4a271d, 0 13px 12px #0d0605b8;
+  cursor: pointer;
+  transform: translateY(0);
+  transition: filter .18s, transform .09s, box-shadow .09s;
+}
+.stamp-button span {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border: 4px solid currentColor;
+  transform: rotate(-3deg);
+  font: 700 37px/.86 "Oswald", sans-serif;
+  opacity: .94;
+  text-shadow: 1px 1px #f3d7a4;
+}
+.stamp-button:nth-child(even) span { transform: rotate(2deg); }
+.stamp-button.ink-green { color: var(--green); }
+.stamp-button.ink-navy { color: var(--navy); }
+.stamp-button.ink-red { color: var(--red); }
+.stamp-button:hover:not(:disabled) { filter: brightness(1.12); }
+.stamp-button:active:not(:disabled), .stamp-button.pressed {
+  transform: translateY(8px);
+  box-shadow: inset 0 0 0 4px #5c3424, inset 0 0 0 7px #d5af7a, 0 2px 0 #4a271d, 0 5px 5px #0d0605a8;
+}
+.stamp-button:disabled { opacity: .38; filter: grayscale(.7); cursor: not-allowed; }
+.reset-link {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 115px;
+  margin: auto;
+  width: max-content;
+  border: 0;
+  padding: 0;
+  color: #ceb391;
+  background: transparent;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  text-shadow: 0 1px #000;
+}
+
+.players-folder {
+  position: absolute;
+  z-index: 5;
+  left: 1100px;
+  top: 150px;
+  width: 310px;
+  height: 622px;
+  padding: 34px 22px 20px;
+  background:
+    linear-gradient(90deg, #7b4e2440, transparent 11% 89%, #6a411c3b),
+    #b78751;
+  border-radius: 7px 5px 10px 8px;
+  clip-path: polygon(0 6%, 8% 6%, 8% 1%, 41% 1%, 45% 6%, 100% 6%, 100% 96%, 97% 100%, 4% 99%, 0 94%);
+  filter: drop-shadow(0 10px 9px #100704b5);
+}
+.players-folder::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 20% 30%, #f3c67a2b 0 1px, transparent 2px) 0 0 / 18px 17px;
+  pointer-events: none;
+}
+.players-folder h2 {
+  position: relative;
+  z-index: 2;
+  margin: 0 0 11px;
+  text-align: center;
+  font: 700 38px/1 "Oswald", sans-serif;
+}
+.players-folder h2 span { font-size: 17px; vertical-align: middle; }
+.players {
+  position: relative;
+  z-index: 2;
+  min-height: 190px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-auto-rows: 103px;
+  gap: 9px 12px;
+}
+.player {
+  position: relative;
+  min-width: 0;
+  padding: 6px 6px 25px;
+  background: #f0dfbd;
+  box-shadow: 0 5px 5px #331b0d67;
+  transform: rotate(-1.3deg);
+}
+.player:nth-child(even) { transform: rotate(1.3deg); }
+.avatar {
+  width: 100%;
+  height: 71px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: #efe3cc;
+  background: #5a445d;
+  font: 700 27px/1 "Oswald", sans-serif;
+}
 .avatar img { width: 100%; height: 100%; object-fit: cover; }
-.player-name { font-size: 19px; }
-.lock { font-size: 21px; }
-#card-url { display: block; margin: 22px 0 14px; color: #632029; font-size: 18px; overflow-wrap: anywhere; }
-.copy { width: 100%; color: var(--ink); background: transparent; border: 2px solid var(--ink); }
-details { margin-top: 26px; }
-summary { cursor: pointer; font-weight: 700; }
-pre { max-height: 310px; overflow: auto; padding: 12px; color: #eee7da; background: #21182d; font-size: 12px; white-space: pre-wrap; }
-@media (max-width: 760px) { nav { grid-template-columns: repeat(3, 1fr); } .grid { grid-template-columns: 1fr; } .status-card strong { font-size: 30px; } }
+.player-name {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-align: center;
+  text-overflow: ellipsis;
+  font: 700 16px/1 "Courier Prime", monospace;
+}
+.player-pin {
+  position: absolute;
+  z-index: 3;
+  top: -7px;
+  left: calc(50% - 6px);
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #76553d;
+  box-shadow: 0 2px 3px #25130d;
+}
+.message-badge {
+  position: absolute;
+  z-index: 4;
+  right: -5px;
+  top: -5px;
+  min-width: 25px;
+  height: 25px;
+  padding: 2px 5px;
+  border-radius: 5px;
+  color: #ebdcc5;
+  background: #493e36;
+  font: 700 16px/21px "Oswald", sans-serif;
+  text-align: center;
+  box-shadow: 0 2px 2px #29140d7d;
+}
+.claim-lock { position: absolute; z-index: 4; left: 7px; top: 6px; font-size: 16px; filter: drop-shadow(0 1px 1px #000); }
+.player-overflow { position: absolute; z-index: 2; top: 361px; right: 27px; font-size: 13px; font-weight: 700; }
+.players.compact { grid-auto-rows: 68px; gap: 6px 12px; }
+.players.compact .player { padding: 5px 5px 20px; }
+.players.compact .avatar { height: 44px; }
+.players.compact .player-name { bottom: 3px; font-size: 13px; }
+.players.compact .message-badge { min-width: 22px; height: 22px; font-size: 14px; line-height: 18px; }
+.chat-note {
+  position: absolute;
+  z-index: 3;
+  left: 15px;
+  right: 14px;
+  bottom: 17px;
+  height: 236px;
+  padding: 31px 17px 15px;
+  background: linear-gradient(100deg, #efddb9, #f5e8ce 55%, #d8bd8e);
+  box-shadow: 0 7px 7px #32190d7d;
+  transform: rotate(.7deg);
+}
+.binder-clip {
+  position: absolute;
+  left: calc(50% - 20px);
+  top: -9px;
+  width: 40px;
+  height: 27px;
+  border-radius: 3px 3px 8px 8px;
+  background: #171315;
+  box-shadow: 0 3px 3px #3a21158a;
+}
+.binder-clip::before, .binder-clip::after { content: ""; position: absolute; bottom: 20px; width: 16px; height: 25px; border: 2px solid #241d1c; border-bottom: 0; border-radius: 8px 8px 0 0; }
+.binder-clip::before { left: 2px; transform: rotate(-12deg); }
+.binder-clip::after { right: 2px; transform: rotate(12deg); }
+.chat-feed { display: flex; height: 100%; flex-direction: column; justify-content: flex-end; gap: 5px; overflow: hidden; font-size: 15px; line-height: 1.12; }
+.chat-line { margin: 0; display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.chat-line strong { font-weight: 700; }
+.chat-line.voice { color: #6f2724; }
+.chat-empty { color: #6d6255; font-style: italic; }
+
+.card-tag {
+  position: absolute;
+  z-index: 7;
+  right: 27px;
+  bottom: 24px;
+  width: 316px;
+  height: 95px;
+  padding: 18px 54px 10px 19px;
+  background: linear-gradient(94deg, #d6ae78, #ecd2a5 57%, #ba8d57);
+  clip-path: polygon(1% 7%, 20% 3%, 37% 7%, 58% 2%, 82% 6%, 99% 3%, 98% 93%, 79% 97%, 60% 92%, 35% 98%, 2% 94%);
+  filter: drop-shadow(0 5px 4px #0e0604b5);
+}
+.card-tag strong { display: block; font: 700 23px/1 "Oswald", sans-serif; }
+.card-tag a { display: block; margin-top: 8px; overflow: hidden; color: #53251f; font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
+.card-tag button { position: absolute; right: 13px; top: 24px; width: 39px; height: 39px; border: 2px solid #4d3123; border-radius: 5px; color: #38251c; background: #cda673; font: 700 26px/1 "Oswald", sans-serif; cursor: pointer; }
+.card-tag button:hover { background: #e6c595; }
+.tag-pin { right: 25px; top: -4px; width: 13px; height: 13px; background: #a82e2b; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+}
+
+/* Review fixes: disabled stamps keep their wood, only the ink fades; roomier chat note. */
+.stamp-button:disabled { opacity: 1; filter: none; cursor: not-allowed; }
+.stamp-button:disabled span { opacity: .28; }
+.chat-feed { gap: 9px; font-size: 15px; line-height: 1.32; }
+.chat-feed > * { flex: 0 0 auto; }
