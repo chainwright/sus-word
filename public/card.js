@@ -36,10 +36,10 @@ function avatar(player) {
 }
 
 function renderLogin(message = "") {
-  const section = paper("GET YOUR CASE FILE", "PRIVATE PLAYER CARD");
+  const section = paper("YOUR TWITCH NAME", "PRIVATE PLAYER CARD");
   section.append(node("p", "body-copy", "Enter the Twitch name you will use in chat. No Twitch login needed."));
   const form = node("form", "claim-form");
-  const label = node("label", "", "TWITCH NAME");
+  const label = node("label", "", "Your Twitch name");
   const input = node("input");
   input.name = "login";
   input.autocomplete = "username";
@@ -47,7 +47,7 @@ function renderLogin(message = "") {
   input.required = true;
   input.pattern = "[A-Za-z0-9_]{1,25}";
   label.append(input);
-  const submit = node("button", "primary", "GET CLAIM CODE");
+  const submit = node("button", "primary", "GET MY CLAIM CODE");
   submit.type = "submit";
   form.append(label, submit);
   if (message) form.append(node("div", "error", message));
@@ -58,8 +58,8 @@ function renderLogin(message = "") {
 
 function renderClaim(claim) {
   const section = paper("LINK THIS CARD", `FOR @${claim.login}`);
-  section.append(node("p", "body-copy", "Type this exact command in the Twitch chat:"));
-  const code = node("div", "claim-code", `!claim ${claim.code}`);
+  section.append(node("p", "claim-command", `Type !claim ${claim.code} in chat`));
+  const code = node("div", "claim-code", claim.code);
   const copy = node("button", "copy-button", "COPY COMMAND");
   copy.type = "button";
   copy.addEventListener("click", async () => {
@@ -94,8 +94,9 @@ function renderWaiting() {
 }
 
 function renderImposter() {
-  const section = paper("YOU ARE THE IMPOSTER", `ROUND ${state.roundNumber}`);
-  section.prepend(node("div", "secret-stamp", "TOP SECRET"));
+  const section = paper("YOUR ASSIGNMENT", `ROUND ${state.roundNumber}`);
+  const stamp = node("div", "role-stamp imposter-role-stamp", "IMPOSTER");
+  section.prepend(stamp);
   section.append(avatar(state.player));
   const slip = node("div", "word-slip");
   slip.append(node("strong", "", state.word));
@@ -105,17 +106,27 @@ function renderImposter() {
   section.append(timer);
   section.append(node("p", `delivery${state.delivered ? " done" : ""}`, state.delivered ? "✓ Delivered" : "Not delivered yet"));
   root.replaceChildren(section);
+  stamp.animate(
+    [{ transform: "rotate(-7deg) scale(1.65)", opacity: 0 }, { transform: "rotate(-7deg) scale(1)", opacity: 1 }],
+    { duration: 380, easing: "cubic-bezier(.2,.9,.2,1.2)", fill: "both" },
+  );
   updateTimers();
 }
 
 function renderDetective() {
-  const section = paper("YOU ARE A DETECTIVE", `ROUND ${state.roundNumber}`);
-  section.append(avatar(state.player), node("div", "detective-badge", "⌕"));
-  section.append(node("p", "mission", "Someone is hiding a word. Watch the chat, trust your instincts, and vote when the case opens."));
+  const section = paper("CASE BRIEFING", `ROUND ${state.roundNumber}`);
+  const stamp = node("div", "role-stamp detective-role-stamp", "DETECTIVE");
+  section.prepend(stamp);
+  section.append(avatar(state.player), node("div", "detective-badge", "🔎"));
+  section.append(node("p", "mission", "Someone in chat is hiding a word. Watch closely."));
   const timer = node("time", "role-timer");
   timer.dataset.timer = "phase";
   section.append(timer);
   root.replaceChildren(section);
+  stamp.animate(
+    [{ transform: "rotate(-5deg) scale(1.5)", opacity: 0 }, { transform: "rotate(-5deg) scale(1)", opacity: 1 }],
+    { duration: 360, easing: "cubic-bezier(.2,.9,.2,1.2)", fill: "both" },
+  );
   updateTimers();
 }
 
@@ -198,5 +209,36 @@ function connect() {
   });
 }
 
+function mockAvatar() {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><rect width="160" height="160" fill="#8261a8"/><circle cx="80" cy="68" r="41" fill="#efbd91"/><path d="M37 67c4-39 21-54 44-54 29 0 44 26 39 60-13-18-27-27-41-28-12 12-24 20-42 22Z" fill="#302239"/><path d="M23 160c7-43 27-62 57-62s50 19 57 62" fill="#443650"/></svg>';
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+function mockCard(kind) {
+  const player = { id: "p1", login: "pixel_mara", displayName: "pixel_mara", avatar: mockAvatar(), claimed: true };
+  if (kind === "claim") {
+    return { linked: false, role: null, pendingClaim: { login: "pixel_mara", code: "M7K2", expiresAt: Date.now() + 570_000 } };
+  }
+  return {
+    linked: true,
+    joined: true,
+    state: "ROUND",
+    roundNumber: 2,
+    player,
+    role: kind === "imposter" ? "IMPOSTER" : "DETECTIVE",
+    word: kind === "imposter" ? "candle" : undefined,
+    mission: "Get this word into chat naturally in a real sentence before time runs out.",
+    delivered: false,
+    remainingMs: 133_000,
+    phaseEndsAt: Date.now() + 133_000,
+  };
+}
+
 setInterval(updateTimers, 500);
-loadCard().finally(connect);
+const mock = new URLSearchParams(location.search).get("mock");
+if (["claim", "imposter", "detective"].includes(mock)) {
+  connection.textContent = "PREVIEW";
+  render(mockCard(mock));
+} else {
+  loadCard().finally(connect);
+}

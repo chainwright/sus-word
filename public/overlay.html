@@ -16,6 +16,11 @@
           <small id="round-label"></small>
         </header>
 
+        <svg class="board-string" viewBox="0 0 528 1010" aria-hidden="true">
+          <path d="M 246 260 L 416 174 L 452 397" />
+          <path d="M 244 477 L 404 708 L 126 708 L 406 938 L 128 938" />
+        </svg>
+
         <section id="lobby-view" class="phase-view lobby-view" hidden>
           <div id="lobby-roster" class="lobby-roster"></div>
           <div class="join-slip paper-slip">
@@ -27,11 +32,10 @@
 
         <section id="round-view" class="phase-view round-view" hidden>
           <div class="timer-wrap">
-            <svg class="timer-ring" viewBox="0 0 240 240" aria-hidden="true">
-              <circle class="timer-track" cx="120" cy="120" r="101"></circle>
-              <circle id="timer-arc" class="timer-arc" cx="120" cy="120" r="101"></circle>
-            </svg>
+            <img src="/img/stopwatch.webp" alt="" class="board-stopwatch">
             <time id="round-timer">3:00</time>
+            <span id="round-timer-hand" class="round-timer-hand" aria-hidden="true"></span>
+            <span class="round-timer-pivot" aria-hidden="true"></span>
           </div>
           <div class="hint-row">
             <div id="category-hint" class="hint-card">

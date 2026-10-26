@@ -7,7 +7,6 @@ const voteView = document.querySelector("#vote-view");
 const revealView = document.querySelector("#reveal-view");
 const evidenceTray = document.querySelector("#evidence-tray");
 const connectionBadge = document.querySelector("#connection-badge");
-const circumference = 2 * Math.PI * 101;
 
 let currentState = null;
 let receivedAt = Date.now();
@@ -89,8 +88,8 @@ function setViews(phase) {
 }
 
 function renderLobby(state) {
-  document.querySelector("#phase-title").textContent = "SUS WORD · LOBBY";
-  document.querySelector("#round-label").textContent = state.roundNumber ? `AFTER ROUND ${state.roundNumber}` : "OPEN CASE";
+  document.querySelector("#phase-title").textContent = "SUS WORD";
+  document.querySelector("#round-label").textContent = state.roundNumber ? `· LOBBY · AFTER ROUND ${state.roundNumber}` : "· LOBBY";
   const roster = document.querySelector("#lobby-roster");
   roster.replaceChildren(...state.players.slice(0, 9).map((player, index) => (
     polaroid(player, { locked: player.claimed, tilt: [-2, 1, -1, 2][index % 4] })
@@ -103,7 +102,7 @@ function revealHint(selector, label, value) {
   const card = document.querySelector(selector);
   const strong = card.querySelector("strong");
   const prior = strong.dataset.value || "";
-  const next = value || "?";
+  const next = value || "🔒";
   card.querySelector("span").textContent = label;
   strong.textContent = next;
   strong.dataset.value = next;
@@ -123,6 +122,7 @@ function renderRound(state) {
   revealHint("#letter-hint", "STARTS WITH", state.round?.hints?.letter);
 
   const players = document.querySelector("#round-players");
+  players.classList.toggle("compact", state.players.length > 4);
   const cards = state.players.slice(0, 8).map((player, index) => {
     const card = polaroid(player, { className: "round-player", tilt: [-2, 1, -1, 2][index % 4] });
     const count = state.round?.messageCounts?.[player.id] || 0;
@@ -181,8 +181,8 @@ function tallyMarks(count, previous) {
 }
 
 function renderVote(state) {
-  document.querySelector("#phase-title").textContent = "SUS WORD · VOTE";
-  document.querySelector("#round-label").textContent = `ROUND ${state.roundNumber}`;
+  document.querySelector("#phase-title").textContent = "SUS WORD";
+  document.querySelector("#round-label").textContent = `· VOTE · ROUND ${state.roundNumber}`;
   const rows = (state.round?.tallies || []).map(({ player, votes }) => {
     const row = node("article", "vote-row");
     row.append(polaroid(player, { tilt: -1 }));
@@ -209,7 +209,9 @@ function updateClocks() {
   const remaining = remainingMs();
   if (currentState.phase === "ROUND") {
     document.querySelector("#round-timer").textContent = formatTime(remaining);
-    document.querySelector("#timer-arc").style.strokeDashoffset = String(circumference * (1 - Math.min(1, remaining / 180_000)));
+    const duration = Math.max(1, Number(currentState.phaseDurationMs) || 180_000);
+    const progress = Math.min(1, Math.max(0, 1 - remaining / duration));
+    document.querySelector("#round-timer-hand").style.transform = `rotate(${progress * 360}deg)`;
     const second = Math.ceil(remaining / 1_000);
     if (second <= 10 && second > 0 && second !== lastTickSecond) playTick();
     lastTickSecond = second;
@@ -324,7 +326,14 @@ function showReveal(state) {
     deck.replaceChildren();
     const finalCard = polaroid(reveal.impostor, { className: "shuffle-card final", atName: true });
     deck.append(finalCard);
-    finalCard.animate([{ transform: "rotateY(90deg) scale(.9)" }, { transform: "rotateY(0deg) scale(1)" }], { duration: 620 * speed, easing: "cubic-bezier(.2,.8,.2,1)", fill: "both" });
+    finalCard.animate(
+      [
+        { transform: "translateY(-190px) rotateY(90deg) scale(.88)", opacity: 0 },
+        { transform: "translateY(12px) rotateY(0deg) scale(1.03)", opacity: 1, offset: .82 },
+        { transform: "translateY(0) rotateY(0deg) scale(1)", opacity: 1 },
+      ],
+      { duration: 620 * speed, easing: "cubic-bezier(.18,.82,.2,1)", fill: "both" },
+    );
     const stamp = node("div", "imposter-stamp", "IMPOSTER");
     revealView.append(stamp);
     stamp.animate([{ transform: "rotate(-10deg) scale(1.6)", opacity: 0 }, { transform: "rotate(-10deg) scale(1)", opacity: 1 }], { duration: 320 * speed, delay: 420 * speed, easing: "cubic-bezier(.2,.9,.2,1.2)", fill: "both" });
@@ -393,7 +402,8 @@ function showVerdict(reveal, speed) {
   const slip = node("div", "verdict-slip reveal-paper");
   const stamp = node("div", `verdict-stamp${reveal.verdict.length > 12 ? " long" : ""}`, reveal.verdict);
   const imposterChange = reveal.scoreChanges.find(({ player }) => player.id === reveal.impostor.id)?.delta || 0;
-  slip.append(stamp, node("strong", "verdict-points", `+${imposterChange}`));
+  slip.append(stamp);
+  if (imposterChange) slip.append(node("strong", "verdict-points", `+${imposterChange}`));
   panel.append(slip);
   revealView.append(panel);
   panel.animate([{ opacity: 0, transform: "translateX(80px)" }, { opacity: 1, transform: "translateX(0)" }], { duration: 500 * speed, fill: "both" });
@@ -457,17 +467,22 @@ function render(state) {
   updateClocks();
 }
 
+function mockAvatar(initials, background, hair) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><rect width="160" height="160" fill="${background}"/><circle cx="80" cy="69" r="40" fill="#efbd91"/><path d="M39 67c2-39 21-54 43-54 28 0 44 24 40 60-15-17-26-27-42-28-12 13-24 20-41 22Z" fill="${hair}"/><path d="M25 160c6-43 25-62 55-62s49 19 55 62" fill="#3e3347"/><text x="80" y="82" text-anchor="middle" font-size="22" font-family="sans-serif" fill="#3a2a23">${initials}</text></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
 const demoPlayers = [
-  { id: "p1", login: "pixel_mara", displayName: "pixel_mara", avatar: "", claimed: true, score: 6 },
-  { id: "p2", login: "tomtom_irl", displayName: "tomtom_irl", avatar: "", claimed: true, score: 4 },
-  { id: "p3", login: "quietfox", displayName: "quietfox", avatar: "", claimed: true, score: 2 },
-  { id: "p4", login: "romabuilds", displayName: "romabuilds", avatar: "", claimed: true, score: 1 },
+  { id: "p1", login: "pixel_mara", displayName: "pixel_mara", avatar: mockAvatar("PM", "#9a65ca", "#31213d"), claimed: true, score: 6 },
+  { id: "p2", login: "tomtom_irl", displayName: "tomtom_irl", avatar: mockAvatar("TT", "#6fbd8b", "#513126"), claimed: true, score: 4 },
+  { id: "p3", login: "quietfox", displayName: "quietfox", avatar: mockAvatar("QF", "#db8450", "#b84d24"), claimed: true, score: 2 },
+  { id: "p4", login: "romabuilds", displayName: "romabuilds", avatar: mockAvatar("RB", "#72a9d2", "#a66b2e"), claimed: true, score: 1 },
 ];
 
 const demoMessages = [
   { id: "m1", player: demoPlayers[1], text: "who else is eating dinner rn", elapsedMs: 38_000, elapsed: "0:38" },
   { id: "m2", player: demoPlayers[2], text: "the lights in my room keep flickering", elapsedMs: 57_000, elapsed: "0:57" },
-  { id: "m3", player: demoPlayers[0], text: "same, storm season is brutal", elapsedMs: 65_000, elapsed: "1:05" },
+  { id: "m3", player: demoPlayers[3], text: "storm season is brutal", source: "voice", elapsedMs: 65_000, elapsed: "1:05" },
   { id: "m4", player: demoPlayers[0], text: "ugh the power went out so I lit a candle lol", elapsedMs: 72_000, elapsed: "1:12" },
   { id: "m5", player: demoPlayers[1], text: "that is such a cozy emergency plan", elapsedMs: 84_000, elapsed: "1:24" },
   { id: "m6", player: demoPlayers[2], text: "honestly I need one for my desk", elapsedMs: 93_000, elapsed: "1:33" },
@@ -475,7 +490,8 @@ const demoMessages = [
 
 function mockState(kind) {
   const base = { state: kind.toUpperCase(), phase: kind.toUpperCase(), roundNumber: 2, players: demoPlayers, claimedCount: 4, cardUrl: "susword.example/card", scores: demoPlayers.map((player) => ({ player, score: player.score })) };
-  if (kind === "round") return { ...base, phaseEndsAt: Date.now() + 108_000, round: { remainingMs: 108_000, hints: { category: "home", letter: null }, messageCounts: { p1: 7, p2: 5, p3: 3, p4: 4 }, latestMessages: demoMessages.slice(0, 3) } };
+  if (kind === "lobby") return { ...base, state: "LOBBY", phase: "LOBBY", roundNumber: 1, claimedCount: 3 };
+  if (kind === "round") return { ...base, phaseEndsAt: Date.now() + 108_000, phaseDurationMs: 180_000, remainingMs: 108_000, round: { remainingMs: 108_000, hints: { category: "home", letter: null }, messageCounts: { p1: 7, p2: 5, p3: 3, p4: 4 }, latestMessages: demoMessages.slice(0, 3) } };
   if (kind === "vote") return { ...base, phaseEndsAt: Date.now() + 21_000, round: { tallies: [{ player: demoPlayers[2], votes: 12 }, { player: demoPlayers[0], votes: 6 }, { player: demoPlayers[1], votes: 0 }, { player: demoPlayers[3], votes: 0 }] } };
   const evidence = { ...demoMessages[3], index: 34, length: 6 };
   return {
@@ -516,5 +532,5 @@ fitStage();
 setInterval(updateClocks, 250);
 
 const mock = new URLSearchParams(location.search).get("mock");
-if (["round", "vote", "reveal"].includes(mock)) render(mockState(mock));
+if (["lobby", "round", "vote", "reveal"].includes(mock)) render(mockState(mock));
 else connect();
