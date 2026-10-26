@@ -9,6 +9,9 @@ const letterHint = document.querySelector("#letter-hint");
 const players = document.querySelector("#players");
 const playerTotal = document.querySelector("#player-total");
 const playerOverflow = document.querySelector("#player-overflow");
+const seeAllPlayers = document.querySelector("#see-all-players");
+const allPlayersPanel = document.querySelector("#all-players-panel");
+const allPlayersList = document.querySelector("#all-players-list");
 const chatFeed = document.querySelector("#chat-feed");
 const cardUrl = document.querySelector("#card-url");
 const actionResult = document.querySelector("#action-result");
@@ -24,7 +27,8 @@ const voiceHelp = document.querySelector("#voice-help");
 const voiceRosterWarning = document.querySelector("#voice-roster-warning");
 const actionButtons = [...document.querySelectorAll(".stamp-button[data-action]")];
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const mockMode = new URLSearchParams(location.search).get("mock") === "round";
+const hostParams = new URLSearchParams(location.search);
+const mockMode = hostParams.get("mock") === "round";
 
 let state = null;
 let stateReceivedAt = Date.now();
@@ -105,7 +109,7 @@ function renderHints(nextState) {
 }
 
 function renderPlayers(nextState) {
-  const visible = nextState.players.slice(0, 6);
+  const visible = nextState.players.slice(0, 8);
   players.classList.toggle("compact", visible.length > 4);
   const rows = visible.map((player, index) => {
     const row = node("article", "player");
@@ -124,7 +128,24 @@ function renderPlayers(nextState) {
   players.replaceChildren(...rows);
   playerTotal.textContent = String(nextState.players.length);
   playerOverflow.textContent = nextState.players.length > visible.length
-    ? `+${nextState.players.length - visible.length} more` : "";
+    ? `+${nextState.players.length - visible.length}` : "";
+  const hasOverflow = nextState.players.length > visible.length;
+  seeAllPlayers.hidden = !hasOverflow;
+  if (!hasOverflow) {
+    allPlayersPanel.hidden = true;
+    seeAllPlayers.setAttribute("aria-expanded", "false");
+    seeAllPlayers.textContent = "see all";
+  }
+  allPlayersList.replaceChildren(...nextState.players.map((player) => {
+    const row = node("div", "full-player-row");
+    const count = nextState.round?.messageCounts?.[player.id] ?? player.messageCount ?? 0;
+    row.append(
+      node("span", "", `@${player.login}`),
+      node("span", "full-player-count", String(count)),
+      node("span", "", player.claimed ? "🔒" : ""),
+    );
+    return row;
+  }));
 }
 
 function renderChat(nextState) {
@@ -431,12 +452,23 @@ function mockAvatar(initials, background) {
 }
 
 function mockState() {
-  const demoPlayers = [
-    { id: "p1", login: "pixel_mara", displayName: "pixel_mara", avatar: mockAvatar("PM", "#8062a8"), claimed: true },
-    { id: "p2", login: "tomtom_irl", displayName: "tomtom_irl", avatar: mockAvatar("TT", "#62a87c"), claimed: true },
-    { id: "p3", login: "quietfox", displayName: "quietfox", avatar: mockAvatar("QF", "#d67842"), claimed: true },
-    { id: "p4", login: "streamer", displayName: "streamer", avatar: mockAvatar("ST", "#5287ae"), claimed: true },
+  const count = Math.min(60, Math.max(4, Number(hostParams.get("players")) || 4));
+  const featured = [
+    ["pixel_mara", "PM", "#8062a8"],
+    ["tomtom_irl", "TT", "#62a87c"],
+    ["quietfox", "QF", "#d67842"],
+    ["streamer", "ST", "#5287ae"],
   ];
+  const demoPlayers = Array.from({ length: count }, (_, index) => {
+    const login = featured[index]?.[0] || `detective_${String(index + 1).padStart(2, "0")}`;
+    return {
+      id: `p${index + 1}`,
+      login,
+      displayName: login,
+      avatar: mockAvatar(featured[index]?.[1] || `D${(index + 1) % 10}`, featured[index]?.[2] || `hsl(${index * 43 % 360} 42% 55%)`),
+      claimed: index % 6 !== 5,
+    };
+  });
   const messages = [
     [demoPlayers[0], "The kitchen light just flickered again", "chat"],
     [demoPlayers[1], "I am making tea between rounds", "chat"],
@@ -449,7 +481,7 @@ function mockState() {
     state: "ROUND",
     phase: "ROUND",
     roundNumber: 2,
-    claimedCount: 4,
+    claimedCount: demoPlayers.filter(({ claimed }) => claimed).length,
     players: demoPlayers,
     phaseEndsAt: Date.now() + 108_000,
     phaseDurationMs: 180_000,
@@ -460,7 +492,8 @@ function mockState() {
     round: {
       number: 2,
       hints: { category: "home", letter: null },
-      messageCounts: { p1: 7, p2: 5, p3: 3, p4: 4 },
+      players: demoPlayers,
+      messageCounts: Object.fromEntries(demoPlayers.map((player, index) => [player.id, (index * 7 + 3) % 19])),
       latestMessages: messages.slice(-3),
       recentMessages: messages,
     },
@@ -489,6 +522,13 @@ document.querySelector("#copy-card").addEventListener("click", async (event) => 
   await navigator.clipboard.writeText(state.cardUrl);
   event.currentTarget.textContent = "✓";
   setTimeout(() => { event.currentTarget.textContent = "▣"; }, 1_400);
+});
+
+seeAllPlayers.addEventListener("click", () => {
+  const opening = allPlayersPanel.hidden;
+  allPlayersPanel.hidden = !opening;
+  seeAllPlayers.setAttribute("aria-expanded", String(opening));
+  seeAllPlayers.textContent = opening ? "close list" : "see all";
 });
 
 micToggle.addEventListener("click", () => {

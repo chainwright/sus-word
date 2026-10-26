@@ -528,12 +528,43 @@ button, a { font: inherit; }
   box-shadow: 0 2px 2px #29140d7d;
 }
 .claim-lock { position: absolute; z-index: 4; left: 7px; top: 6px; font-size: 16px; filter: drop-shadow(0 1px 1px #000); }
-.player-overflow { position: absolute; z-index: 2; top: 361px; right: 27px; font-size: 13px; font-weight: 700; }
-.players.compact { grid-auto-rows: 68px; gap: 6px 12px; }
+.player-overflow { position: absolute; z-index: 4; top: 342px; right: 28px; font-size: 13px; font-weight: 700; }
+.players.compact { grid-auto-rows: 60px; gap: 5px 12px; }
 .players.compact .player { padding: 5px 5px 20px; }
-.players.compact .avatar { height: 44px; }
+.players.compact .avatar { height: 35px; }
 .players.compact .player-name { bottom: 3px; font-size: 13px; }
 .players.compact .message-badge { min-width: 22px; height: 22px; font-size: 14px; line-height: 18px; }
+.see-all-players {
+  position: absolute;
+  z-index: 10;
+  top: 337px;
+  left: 24px;
+  min-height: 0;
+  padding: 3px 7px;
+  border: 0;
+  color: #3d291e;
+  background: #e1bc84;
+  font: 700 12px/1 "Courier Prime", monospace;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.all-players-panel {
+  position: absolute;
+  z-index: 9;
+  left: 14px;
+  right: 14px;
+  top: 73px;
+  height: 286px;
+  padding: 17px 12px 12px;
+  background: linear-gradient(100deg, #ead1a5, #f2e0bd 56%, #d2aa72);
+  box-shadow: 0 9px 12px #241108a6, inset 0 0 16px #7b512725;
+  transform: rotate(-.4deg);
+}
+.all-players-panel h3 { margin: 0 0 9px; padding-bottom: 6px; border-bottom: 2px solid #493226; font: 700 23px/1 "Oswald", sans-serif; }
+.all-players-list { height: 225px; overflow-y: auto; padding-right: 5px; scrollbar-color: #745037 #d9b781; scrollbar-width: thin; }
+.full-player-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; padding: 5px 3px; border-bottom: 1px solid #77583d42; font-size: 13px; }
+.full-player-row span:first-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.full-player-count { font-weight: 700; }
 .chat-note {
   position: absolute;
   z-index: 3;

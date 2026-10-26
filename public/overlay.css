@@ -185,15 +185,25 @@ body { color: var(--ink); font-family: "Courier Prime", monospace; }
 
 .lobby-view { padding: 145px 19px 0; }
 .lobby-roster {
-  height: 625px;
+  height: 570px;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  grid-auto-rows: 172px;
+  grid-auto-rows: 158px;
   gap: 24px 13px;
   align-content: start;
 }
 .lobby-roster .polaroid { padding: 7px 7px 25px; }
 .lobby-roster .polaroid-name { font-size: 22px; }
+.roster-overflow {
+  z-index: 8;
+  width: max-content;
+  max-width: 250px;
+  padding: 9px 15px 8px;
+  font: 700 19px/1 "Oswald", sans-serif;
+  transform: rotate(-1deg);
+}
+.roster-overflow::before { width: 14px; height: 14px; top: -7px; left: calc(50% - 7px); }
+.lobby-view > .roster-overflow { position: absolute; top: 680px; right: 25px; }
 .join-slip {
   margin-top: 5px;
   padding: 18px 20px 16px;
@@ -299,10 +309,11 @@ body { color: var(--ink); font-family: "Courier Prime", monospace; }
   font: 700 26px/35px "Oswald", sans-serif;
   text-align: center;
 }
-.round-players.compact { grid-auto-rows: 92px; gap: 16px 20px; }
+.round-players.compact { grid-auto-rows: 80px; gap: 12px 20px; }
 .round-players.compact .round-player { display: grid; grid-template-columns: 78px 1fr; align-items: center; column-gap: 10px; padding: 7px 9px; }
-.round-players.compact .polaroid-photo { width: 78px; aspect-ratio: 1; }
+.round-players.compact .polaroid-photo { width: 66px; aspect-ratio: 1; }
 .round-players.compact .polaroid-name { position: static; text-align: left; font-size: 25px; }
+.round-overflow { position: absolute; right: 24px; top: 941px; }
 
 .evidence-tray {
   position: absolute;
@@ -342,17 +353,19 @@ body { color: var(--ink); font-family: "Courier Prime", monospace; }
 .vote-heading { display: flex; gap: 13px; align-items: stretch; }
 .vote-heading .paper-label { flex: 1; padding: 14px 16px 16px; font: 700 50px/1 "Oswald", sans-serif; }
 .vote-heading time { flex: 0 0 118px; display: grid; place-items: center; font: 700 45px/1 "Oswald", sans-serif; }
-.vote-rows { display: grid; gap: 15px; margin: 24px 0 18px; }
+.vote-rows { display: grid; gap: 10px; margin: 19px 0 9px; }
 .vote-row { min-width: 0; display: grid; grid-template-columns: 188px minmax(0, 1fr); align-items: center; gap: 14px; }
-.vote-row .polaroid { height: 112px; display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: center; gap: 8px; padding: 7px; }
-.vote-row .polaroid-photo { width: 72px; aspect-ratio: 1; }
+.vote-row .polaroid { height: 94px; display: grid; grid-template-columns: 61px minmax(0, 1fr); align-items: center; gap: 8px; padding: 6px; }
+.vote-row .polaroid-photo { width: 61px; aspect-ratio: 1; }
 .vote-row .polaroid-name { position: static; min-width: 0; text-align: left; font-size: 23px; }
-.tally-slip { height: 99px; padding: 14px 12px; display: flex; gap: 6px; align-items: center; overflow: hidden; }
-.tally-group { position: relative; flex: 0 0 76px; display: flex; gap: 4px; height: 67px; }
-.tally-stroke { display: block; width: 7px; height: 62px; border-radius: 5px; background: var(--red); transform: rotate(5deg); transform-origin: center; }
+.tally-slip { height: 84px; padding: 10px 12px; display: flex; gap: 6px; align-items: center; overflow: hidden; }
+.tally-group { position: relative; flex: 0 0 76px; display: flex; gap: 4px; height: 61px; }
+.tally-stroke { display: block; width: 7px; height: 57px; border-radius: 5px; background: var(--red); transform: rotate(5deg); transform-origin: center; }
 .tally-stroke:nth-child(even) { transform: rotate(-4deg); }
-.tally-stroke.fifth { position: absolute; width: 8px; height: 80px; left: 31px; top: -8px; transform: rotate(77deg); }
-.vote-command { padding: 18px 20px; font-size: 25px; transform: rotate(-.5deg); }
+.tally-stroke.fifth { position: absolute; width: 8px; height: 73px; left: 31px; top: -7px; transform: rotate(77deg); }
+.tally-total { color: var(--red); font: 700 55px/.9 "Courier Prime", monospace; letter-spacing: -.08em; transform: rotate(-4deg); }
+.vote-summary { margin: 7px 0 10px; text-align: center; font: 700 20px/1 "Oswald", sans-serif; }
+.vote-command { padding: 14px 18px; font-size: 23px; transform: rotate(-.5deg); }
 
 .reveal-view {
   position: absolute;

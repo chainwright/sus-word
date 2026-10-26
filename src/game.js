@@ -45,6 +45,7 @@ function publicPlayer(player, score = 0) {
     displayName: player.displayName,
     avatar: player.avatar,
     claimed: Boolean(player.claimed),
+    joinedAt: player.joinedAt ?? null,
     messageCount: player.messageCount ?? 0,
     score,
   };
@@ -532,7 +533,13 @@ export class Game extends EventEmitter {
       delivered: this.state === PHASES.REVEAL
         ? Boolean(this.currentRound.smuggle)
         : undefined,
+      players: [...this.currentRound.roster.values()].map((player) => (
+        this.#publicPlayer(player)
+      )),
       messageCounts: Object.fromEntries(this.currentRound.messageCounts),
+      messageRecency: Object.fromEntries(
+        this.currentRound.messages.map((message, index) => [message.userId, index + 1]),
+      ),
       latestMessages: this.currentRound.messages.slice(-3).map((message) => (
         this.#publicMessage(message)
       )),

@@ -22,6 +22,7 @@
 
         <section id="lobby-view" class="phase-view lobby-view" hidden>
           <div id="lobby-roster" class="lobby-roster"></div>
+          <div id="lobby-overflow" class="roster-overflow paper-slip" hidden></div>
           <div class="join-slip paper-slip">
             <strong>JOIN THE CASE</strong>
             <span id="join-line"></span>
@@ -45,6 +46,7 @@
             </div>
           </div>
           <div id="round-players" class="round-players"></div>
+          <div id="round-overflow" class="roster-overflow round-overflow paper-slip" hidden></div>
         </section>
 
         <section id="vote-view" class="phase-view vote-view" hidden>
@@ -53,6 +55,7 @@
             <time id="vote-timer" class="paper-label">0:30</time>
           </div>
           <div id="vote-rows" class="vote-rows"></div>
+          <p id="vote-summary" class="vote-summary"></p>
           <div class="vote-command paper-slip">Vote in chat: <strong>!vote name</strong></div>
         </section>
       </aside>

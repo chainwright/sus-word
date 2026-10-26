@@ -1,3 +1,9 @@
+import {
+  selectLobbyPlayers,
+  selectRoundPlayers,
+  selectVoteSuspects,
+} from "/display.js";
+
 const stage = document.querySelector("#stage");
 const idleTag = document.querySelector("#idle-tag");
 const board = document.querySelector("#case-board");
@@ -14,6 +20,7 @@ let reconnectDelay = 1_000;
 let previousCounts = {};
 let previousTallies = {};
 let previousMessages = [];
+let previousTopPlayerIds = [];
 let revealKey = null;
 let revealTimers = [];
 let lastTickSecond = null;
@@ -91,11 +98,18 @@ function renderLobby(state) {
   document.querySelector("#phase-title").textContent = "SUS WORD";
   document.querySelector("#round-label").textContent = state.roundNumber ? `· LOBBY · AFTER ROUND ${state.roundNumber}` : "· LOBBY";
   const roster = document.querySelector("#lobby-roster");
-  roster.replaceChildren(...state.players.slice(0, 9).map((player, index) => (
+  const visible = selectLobbyPlayers(state.players);
+  roster.replaceChildren(...visible.map((player, index) => (
     polaroid(player, { locked: player.claimed, tilt: [-2, 1, -1, 2][index % 4] })
   )));
+  const overflow = document.querySelector("#lobby-overflow");
+  const hiddenCount = Math.max(0, state.players.length - visible.length);
+  overflow.hidden = hiddenCount === 0;
+  overflow.textContent = `+${hiddenCount} more joined`;
   document.querySelector("#join-line").textContent = `Type !join · get your card at ${state.cardUrl || `${location.origin}/card`}`;
-  document.querySelector("#claim-count").textContent = `Need 3 card holders · ${state.claimedCount}/3`;
+  document.querySelector("#claim-count").textContent = state.claimedCount >= 3
+    ? `${state.claimedCount} card holders · ready`
+    : `Need 3 card holders · ${state.claimedCount}/3`;
 }
 
 function revealHint(selector, label, value) {
@@ -121,26 +135,65 @@ function renderRound(state) {
   revealHint("#category-hint", "CATEGORY", state.round?.hints?.category);
   revealHint("#letter-hint", "STARTS WITH", state.round?.hints?.letter);
 
+  const roster = state.round?.players || state.players;
+  const visible = selectRoundPlayers(
+    roster,
+    state.round?.messageCounts,
+    state.round?.messageRecency,
+  );
+  const priorTop = new Set(previousTopPlayerIds);
   const players = document.querySelector("#round-players");
-  players.classList.toggle("compact", state.players.length > 4);
-  const cards = state.players.slice(0, 8).map((player, index) => {
-    const card = polaroid(player, { className: "round-player", tilt: [-2, 1, -1, 2][index % 4] });
+  const priorPositions = new Map([...players.children].map((card) => [
+    card.dataset.playerId,
+    { left: card.offsetLeft, top: card.offsetTop },
+  ]));
+  players.classList.toggle("compact", visible.length > 4);
+  const cards = visible.map((player, index) => {
+    const tilt = [-2, 1, -1, 2][index % 4];
+    const card = polaroid(player, { className: "round-player", tilt });
     const count = state.round?.messageCounts?.[player.id] || 0;
     card.append(node("span", "round-player-count", String(count)));
-    if (count > (previousCounts[player.id] || 0)) {
+    card.dataset.entering = String(previousTopPlayerIds.length > 0 && !priorTop.has(player.id));
+    card.dataset.bumped = String(count > (previousCounts[player.id] || 0));
+    return card;
+  });
+  players.replaceChildren(...cards);
+  cards.forEach((card, index) => {
+    const tilt = [-2, 1, -1, 2][index % 4];
+    const prior = priorPositions.get(card.dataset.playerId);
+    if (card.dataset.entering === "true") {
       card.animate(
         [
-          { transform: `rotate(${[-2, 1, -1, 2][index % 4]}deg) scale(1)` },
+          { opacity: 0, transform: `translateY(14px) rotate(${tilt}deg) scale(.96)` },
+          { opacity: 1, transform: `translateY(0) rotate(${tilt}deg) scale(1)` },
+        ],
+        { duration: 420, easing: "cubic-bezier(.2,.8,.2,1)" },
+      );
+    } else if (prior && (prior.left !== card.offsetLeft || prior.top !== card.offsetTop)) {
+      card.animate(
+        [
+          { transform: `translate(${prior.left - card.offsetLeft}px, ${prior.top - card.offsetTop}px) rotate(${tilt}deg)` },
+          { transform: `translate(0, 0) rotate(${tilt}deg)` },
+        ],
+        { duration: 420, easing: "cubic-bezier(.2,.8,.2,1)" },
+      );
+    } else if (card.dataset.bumped === "true") {
+      card.animate(
+        [
+          { transform: `rotate(${tilt}deg) scale(1)` },
           { transform: "rotate(-4deg) scale(1.11)" },
           { transform: "rotate(3deg) scale(1.05)" },
-          { transform: `rotate(${[-2, 1, -1, 2][index % 4]}deg) scale(1)` },
+          { transform: `rotate(${tilt}deg) scale(1)` },
         ],
         { duration: 520, easing: "ease-out" },
       );
     }
-    return card;
   });
-  players.replaceChildren(...cards);
+  previousTopPlayerIds = visible.map(({ id }) => id);
+  const overflow = document.querySelector("#round-overflow");
+  const hiddenCount = Math.max(0, roster.length - visible.length);
+  overflow.hidden = hiddenCount === 0;
+  overflow.textContent = `+${hiddenCount} detectives`;
   previousCounts = { ...(state.round?.messageCounts || {}) };
 
   const messages = state.round?.latestMessages || [];
@@ -183,16 +236,32 @@ function tallyMarks(count, previous) {
 function renderVote(state) {
   document.querySelector("#phase-title").textContent = "SUS WORD";
   document.querySelector("#round-label").textContent = `· VOTE · ROUND ${state.roundNumber}`;
-  const rows = (state.round?.tallies || []).map(({ player, votes }) => {
+  const allTallies = state.round?.tallies || [];
+  const visibleTallies = selectVoteSuspects(allTallies);
+  const rows = visibleTallies.map(({ player, votes }) => {
     const row = node("article", "vote-row");
     row.append(polaroid(player, { tilt: -1 }));
     const slip = node("div", "tally-slip paper-slip");
-    slip.append(tallyMarks(votes, previousTallies[player.id] || 0));
+    if (votes > 12) {
+      const total = node("strong", "tally-total", `×${votes}`);
+      slip.append(total);
+      if (votes > (previousTallies[player.id] || 0)) {
+        total.animate(
+          [{ opacity: 0, transform: "rotate(-4deg) scale(.75)" }, { opacity: 1, transform: "rotate(-4deg) scale(1)" }],
+          { duration: 320, easing: "cubic-bezier(.2,.9,.2,1.15)" },
+        );
+      }
+    } else {
+      slip.append(tallyMarks(votes, previousTallies[player.id] || 0));
+    }
     row.append(slip);
     return row;
   });
   document.querySelector("#vote-rows").replaceChildren(...rows);
-  previousTallies = Object.fromEntries((state.round?.tallies || []).map(({ player, votes }) => [player.id, votes]));
+  const votesCast = allTallies.reduce((sum, { votes }) => sum + votes, 0);
+  const playerCount = state.round?.players?.length || allTallies.length || state.players.length;
+  document.querySelector("#vote-summary").textContent = `${votesCast} votes cast · ${playerCount} players`;
+  previousTallies = Object.fromEntries(allTallies.map(({ player, votes }) => [player.id, votes]));
 }
 
 function remainingMs() {
@@ -420,7 +489,7 @@ function showSneakiness(reveal, speed) {
 function showLeaderboard(reveal, speed) {
   const boardElement = node("section", "leaderboard reveal-paper");
   boardElement.append(node("h2", "", "LEADERBOARD"));
-  for (const entry of reveal.leaderboard) {
+  for (const entry of reveal.leaderboard.slice(0, 5)) {
     const row = node("div", "leader-row");
     const avatar = node("img", "mini-avatar");
     avatar.src = entry.player.avatar || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='46' height='46'%3E%3Crect width='46' height='46' fill='%236b5b85'/%3E%3C/svg%3E";
@@ -449,6 +518,7 @@ function render(state) {
   currentState = state;
   receivedAt = Date.now();
   const phase = state.phase || state.state;
+  if (phase !== "ROUND") previousTopPlayerIds = [];
   setViews(phase);
   if (phase !== "REVEAL" && revealKey !== null) {
     clearReveal();
@@ -472,12 +542,30 @@ function mockAvatar(initials, background, hair) {
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
-const demoPlayers = [
-  { id: "p1", login: "pixel_mara", displayName: "pixel_mara", avatar: mockAvatar("PM", "#9a65ca", "#31213d"), claimed: true, score: 6 },
-  { id: "p2", login: "tomtom_irl", displayName: "tomtom_irl", avatar: mockAvatar("TT", "#6fbd8b", "#513126"), claimed: true, score: 4 },
-  { id: "p3", login: "quietfox", displayName: "quietfox", avatar: mockAvatar("QF", "#db8450", "#b84d24"), claimed: true, score: 2 },
-  { id: "p4", login: "romabuilds", displayName: "romabuilds", avatar: mockAvatar("RB", "#72a9d2", "#a66b2e"), claimed: true, score: 1 },
+const previewParams = new URLSearchParams(location.search);
+const previewPlayerCount = Math.min(60, Math.max(4, Number(previewParams.get("players")) || 4));
+const featuredPlayers = [
+  ["pixel_mara", "PM", "#9a65ca", "#31213d"],
+  ["tomtom_irl", "TT", "#6fbd8b", "#513126"],
+  ["quietfox", "QF", "#db8450", "#b84d24"],
+  ["romabuilds", "RB", "#72a9d2", "#a66b2e"],
 ];
+const demoPlayers = Array.from({ length: previewPlayerCount }, (_, index) => {
+  const featured = featuredPlayers[index];
+  const login = featured?.[0] || `detective_${String(index + 1).padStart(2, "0")}`;
+  const initials = featured?.[1] || `D${(index + 1) % 10}`;
+  const background = featured?.[2] || `hsl(${(index * 47) % 360} 45% 58%)`;
+  const hair = featured?.[3] || `hsl(${(index * 29 + 18) % 360} 34% 25%)`;
+  return {
+    id: `p${index + 1}`,
+    login,
+    displayName: login,
+    avatar: mockAvatar(initials, background, hair),
+    claimed: index % 6 !== 5,
+    joinedAt: Date.now() - (previewPlayerCount - index) * 1_000,
+    score: Math.max(0, 12 - Math.floor(index / 2)),
+  };
+});
 
 const demoMessages = [
   { id: "m1", player: demoPlayers[1], text: "who else is eating dinner rn", elapsedMs: 38_000, elapsed: "0:38" },
@@ -490,9 +578,19 @@ const demoMessages = [
 
 function mockState(kind) {
   const base = { state: kind.toUpperCase(), phase: kind.toUpperCase(), roundNumber: 2, players: demoPlayers, claimedCount: 4, cardUrl: "susword.example/card", scores: demoPlayers.map((player) => ({ player, score: player.score })) };
-  if (kind === "lobby") return { ...base, state: "LOBBY", phase: "LOBBY", roundNumber: 1, claimedCount: 3 };
-  if (kind === "round") return { ...base, phaseEndsAt: Date.now() + 108_000, phaseDurationMs: 180_000, remainingMs: 108_000, round: { remainingMs: 108_000, hints: { category: "home", letter: null }, messageCounts: { p1: 7, p2: 5, p3: 3, p4: 4 }, latestMessages: demoMessages.slice(0, 3) } };
-  if (kind === "vote") return { ...base, phaseEndsAt: Date.now() + 21_000, round: { tallies: [{ player: demoPlayers[2], votes: 12 }, { player: demoPlayers[0], votes: 6 }, { player: demoPlayers[1], votes: 0 }, { player: demoPlayers[3], votes: 0 }] } };
+  const messageCounts = Object.fromEntries(demoPlayers.map((player, index) => [player.id, (index * 7 + 3) % 19]));
+  const messageRecency = Object.fromEntries(demoPlayers.map((player, index) => [player.id, (index * 11) % previewPlayerCount]));
+  const voteCounts = Array(previewPlayerCount).fill(0);
+  let votesRemaining = previewPlayerCount;
+  const preferred = previewPlayerCount >= 20 ? [17, 5, 3, 2, 1, 1, 1] : [Math.ceil(previewPlayerCount / 2), 2, 1];
+  for (let index = 0; index < voteCounts.length && votesRemaining > 0; index += 1) {
+    const votes = Math.min(votesRemaining, preferred[index] ?? 1);
+    voteCounts[index] = votes;
+    votesRemaining -= votes;
+  }
+  if (kind === "lobby") return { ...base, state: "LOBBY", phase: "LOBBY", roundNumber: 1, claimedCount: demoPlayers.filter(({ claimed }) => claimed).length };
+  if (kind === "round") return { ...base, phaseEndsAt: Date.now() + 108_000, phaseDurationMs: 180_000, remainingMs: 108_000, round: { players: demoPlayers, remainingMs: 108_000, hints: { category: "home", letter: null }, messageCounts, messageRecency, latestMessages: demoMessages.slice(0, 3) } };
+  if (kind === "vote") return { ...base, phaseEndsAt: Date.now() + 21_000, round: { players: demoPlayers, tallies: demoPlayers.map((player, index) => ({ player, votes: voteCounts[index] })) } };
   const evidence = { ...demoMessages[3], index: 34, length: 6 };
   return {
     ...base,
@@ -502,7 +600,7 @@ function mockState(kind) {
       reveal: {
         impostor: demoPlayers[0], word: "candle", evidence, smuggled: true, caption: "1:12 into the round. 2 people read this. Nobody noticed.", messages: demoMessages,
         accidentalDecoys: [{ ...demoMessages[1], caption: "@quietfox said it too, by accident." }], verdict: "GOT AWAY", outcome: "got_away", sneakiness: "Hid ‘candle’ inside a complaint about the power bill. Cold.",
-        scoreChanges: demoPlayers.map((player, index) => ({ player, delta: index ? 0 : 3, score: player.score })), leaderboard: demoPlayers.map((player) => ({ player, score: player.score })),
+        scoreChanges: demoPlayers.map((player, index) => ({ player, delta: index ? 0 : 3, score: player.score })), leaderboard: demoPlayers.slice(0, 5).map((player) => ({ player, score: player.score })),
       },
     },
   };
@@ -531,6 +629,6 @@ addEventListener("pointerdown", () => audio()?.resume(), { once: true });
 fitStage();
 setInterval(updateClocks, 250);
 
-const mock = new URLSearchParams(location.search).get("mock");
+const mock = previewParams.get("mock");
 if (["lobby", "round", "vote", "reveal"].includes(mock)) render(mockState(mock));
 else connect();
