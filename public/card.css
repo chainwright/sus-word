@@ -388,3 +388,7 @@ button { min-height: 54px; border: 0; cursor: pointer; }
   .table-mate-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .table-chat-form { grid-template-columns: minmax(0, 1fr) 68px; }
 }
+/* Side tables: the chat is the main surface. Less empty desk above the folder, taller log. */
+.case-paper.table-case, .case-paper.table-case:has(.role-stamp) { padding-top: 175px; }
+.table-chat-log { min-height: 220px; max-height: 340px; }
+.table-chat-log p { font-size: 14px; }

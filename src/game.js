@@ -984,7 +984,9 @@ export class Game extends EventEmitter {
     const caption = assignment.smuggle
       ? assignment.smuggle.source === "voice"
         ? `${elapsed} into the round. Said out loud on stream. ${noticed ? "Someone noticed." : "Nobody noticed."}`
-        : `${elapsed} into the round. ${readers.length} ${readers.length === 1 ? "person" : "people"} read this. ${noticed ? "Someone noticed." : "Nobody noticed."}`
+        : readers.length === 0
+          ? `${elapsed} into the round. Nobody spoke after it. ${noticed ? "Someone noticed anyway." : "It slipped by quietly."}`
+          : `${elapsed} into the round. ${readers.length} ${readers.length === 1 ? "person" : "people"} read this. ${noticed ? "Someone noticed." : "Nobody noticed."}`
       : "The word never made it out.";
     const sneakiness = !assignment.smuggle ? `Never found a clean opening for '${assignment.word}'.`
       : noticed ? `Slipped '${assignment.word}' in, but chat smelled it.`

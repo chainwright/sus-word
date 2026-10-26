@@ -570,8 +570,11 @@ function showLeaderboard(reveal, speed) {
     const strip = node("aside", "other-table-results reveal-paper");
     strip.append(node("strong", "", "OTHER TABLES"));
     for (const table of reveal.otherTables) {
-      const summary = table.results.map(({ verdict }) => verdict).join(" · ");
-      strip.append(node("span", "", `T${table.id}  ${summary}`));
+      // "T2: @mara got away · @ben busted" reads at a glance; bare verdicts didn't.
+      const summary = table.results
+        .map(({ impostor, verdict }) => `${impostor?.login ? `@${impostor.login} ` : ""}${String(verdict || "").toLowerCase()}`)
+        .join(" · ");
+      strip.append(node("span", "", `T${table.id}: ${summary}`));
     }
     revealView.append(strip);
     strip.animate([{ transform: "translateY(100%)", opacity: 0 }, { transform: "translateY(0)", opacity: 1 }], { duration: 520 * speed, fill: "both" });

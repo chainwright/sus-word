@@ -72,6 +72,10 @@ function playerSelect(className = "") {
   return select;
 }
 
+// The card re-renders on every state push; keep the chat draft and focus so typing is never wiped.
+let chatDraft = "";
+let chatFocused = false;
+
 function appendTableTools(section) {
   section.classList.add("table-case");
   const status = node("section", `table-status ${state.onStream ? "featured" : "side"}`);
@@ -109,6 +113,7 @@ function appendTableTools(section) {
     log.append(line);
   }
   chat.append(log);
+  requestAnimationFrame(() => { log.scrollTop = log.scrollHeight; });
   if (state.onStream) {
     chat.append(node("p", "chat-locked", "🔒 This table is on stream. Talk in Twitch chat."));
   } else if (state.state === "ROUND") {
@@ -117,6 +122,11 @@ function appendTableTools(section) {
     input.maxLength = 200;
     input.placeholder = "Message your table…";
     input.autocomplete = "off";
+    input.value = chatDraft;
+    input.addEventListener("input", () => { chatDraft = input.value; });
+    input.addEventListener("focus", () => { chatFocused = true; });
+    input.addEventListener("blur", () => { chatFocused = false; });
+    if (chatFocused) requestAnimationFrame(() => { input.focus(); input.setSelectionRange(input.value.length, input.value.length); });
     const send = node("button", "small-action", "SEND");
     send.type = "submit";
     form.append(input, send);
@@ -125,10 +135,13 @@ function appendTableTools(section) {
       const text = input.value.trim();
       if (!text || !sendCardAction({ type: "tableChat", text })) return;
       input.value = "";
+      chatDraft = "";
     });
     chat.append(form);
   }
-  section.append(chat);
+  // On a side table the chat is the game: right after your role and word, above hints and table-mates.
+  if (state.onStream) section.append(chat);
+  else hints.before(chat);
 
   if (state.state === "ROUND") {
     const accuse = node("form", "case-action-panel accuse-panel");
