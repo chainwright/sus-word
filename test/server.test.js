@@ -49,7 +49,10 @@ test("the claim route binds a code and private card state to its session cookie"
   assert.match(cookie, new RegExp(`^${SESSION_COOKIE}=`));
 
   const before = await fetch(`${origin}/api/card`, { headers: { Cookie: cookie } });
-  assert.deepEqual(await before.json(), { linked: false, role: null });
+  const pending = await before.json();
+  assert.equal(pending.linked, false);
+  assert.equal(pending.pendingClaim.code, claim.code);
+  assert.equal(pending.pendingClaim.login, "alice");
 
   assert.equal(game.claim(claim.code, "alice", "user-1").ok, true);
   const after = await fetch(`${origin}/api/card`, { headers: { Cookie: cookie } });
@@ -69,6 +72,7 @@ test("the claim route binds a code and private card state to its session cookie"
   const publicView = await firstSocketMessage(`${webSocketOrigin}/ws?view=overlay`);
   assert.equal(publicView.payload.type, "state");
   assert.equal(publicView.payload.data.state, "IDLE");
+  assert.equal(publicView.payload.data.cardUrl, "http://localhost:3000/card");
   assert.equal("role" in publicView.payload.data, false);
   privateView.socket.close();
   publicView.socket.close();

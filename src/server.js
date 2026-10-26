@@ -79,7 +79,7 @@ export function createSusWordServer(options = {}) {
 
   app.get("/api/card", (request, response) => {
     const sid = sessionId(request, response);
-    response.json(game.getCard(sid));
+    response.json(cardState(sid));
   });
 
   app.post("/api/card/start", (request, response) => {
@@ -154,14 +154,24 @@ export function createSusWordServer(options = {}) {
 
   function sendClientState(client) {
     if (client.view === "card") {
-      sendJson(client.socket, { type: "card", data: game.getCard(client.sessionId) });
+      sendJson(client.socket, { type: "card", data: cardState(client.sessionId) });
     } else {
-      sendJson(client.socket, { type: "state", data: game.getPublicState() });
+      sendJson(client.socket, { type: "state", data: publicState() });
     }
   }
 
+  function publicState() {
+    return { ...game.getPublicState(), cardUrl: `${publicUrl}/card` };
+  }
+
+  function cardState(sid) {
+    const card = game.getCard(sid);
+    const pendingClaim = card.linked ? null : game.getPendingClaim(sid);
+    return pendingClaim ? { ...card, pendingClaim } : card;
+  }
+
   function broadcastPublicState() {
-    const payload = { type: "state", data: game.getPublicState() };
+    const payload = { type: "state", data: publicState() };
     for (const client of clients) {
       if (client.view !== "card") sendJson(client.socket, payload);
     }
@@ -175,7 +185,7 @@ export function createSusWordServer(options = {}) {
       ) {
         sendJson(client.socket, {
           type: "card",
-          data: game.getCard(client.sessionId),
+          data: cardState(client.sessionId),
         });
       }
     }

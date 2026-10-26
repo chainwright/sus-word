@@ -299,6 +299,8 @@ export class Game extends EventEmitter {
       startedAt: now,
       endsAt: now + this.durations.round,
       endedAt: null,
+      voteEndsAt: null,
+      revealEndsAt: null,
       impostorId: impostor.id,
       word: pickedWord.word,
       category: pickedWord.category,
@@ -386,6 +388,7 @@ export class Game extends EventEmitter {
       return { ok: false, reason: "invalid_state" };
     }
     this.currentRound.endedAt = this.#now();
+    this.currentRound.voteEndsAt = this.currentRound.endedAt + this.durations.vote;
     this.votes.clear();
     this.#transition(PHASES.VOTE);
     this.#setTimer("vote", this.durations.vote, () => this.finishVote());
@@ -430,6 +433,7 @@ export class Game extends EventEmitter {
     }
 
     const reveal = this.#buildReveal();
+    this.currentRound.revealEndsAt = this.#now() + this.durations.reveal;
     this.currentRound.reveal = reveal;
     this.lastReveal = reveal;
     this.#transition(PHASES.REVEAL);
@@ -472,6 +476,8 @@ export class Game extends EventEmitter {
       player: this.#publicPlayer(player),
       state: this.state,
       roundNumber: this.roundNumber,
+      phaseEndsAt: this.#phaseEndsAt(),
+      remainingMs: Math.max(0, (this.#phaseEndsAt() ?? this.#now()) - this.#now()),
     };
     if (
       !this.currentRound
@@ -506,6 +512,8 @@ export class Game extends EventEmitter {
       players: [...this.players.values()].map((player) => this.#publicPlayer(player)),
       claimedCount: [...this.players.values()].filter((player) => player.claimed).length,
       scores: this.#leaderboard(),
+      phaseEndsAt: this.#phaseEndsAt(),
+      remainingMs: Math.max(0, (this.#phaseEndsAt() ?? now) - now),
     };
     if (!this.currentRound) return state;
 
@@ -523,10 +531,28 @@ export class Game extends EventEmitter {
         ? Boolean(this.currentRound.smuggle)
         : undefined,
       messageCounts: Object.fromEntries(this.currentRound.messageCounts),
+      latestMessages: this.currentRound.messages.slice(-3).map((message) => (
+        this.#publicMessage(message)
+      )),
       tallies: this.state === PHASES.VOTE ? this.getTallies() : undefined,
     };
     if (this.state === PHASES.REVEAL) round.reveal = this.currentRound.reveal;
     return { ...state, round };
+  }
+
+  getPendingClaim(sessionId) {
+    const sid = String(sessionId ?? "");
+    const now = this.#now();
+    this.#pruneClaims(now);
+    const claim = [...this.claims.values()].find((candidate) => (
+      candidate.sessionId === sid && candidate.usedAt === null
+    ));
+    if (!claim) return null;
+    return {
+      code: claim.code,
+      login: claim.login,
+      expiresAt: claim.expiresAt,
+    };
   }
 
   #enterLobby() {
@@ -779,6 +805,14 @@ export class Game extends EventEmitter {
 
   #now() {
     return this.clock.now();
+  }
+
+  #phaseEndsAt() {
+    if (!this.currentRound) return null;
+    if (this.state === PHASES.ROUND) return this.currentRound.endsAt;
+    if (this.state === PHASES.VOTE) return this.currentRound.voteEndsAt;
+    if (this.state === PHASES.REVEAL) return this.currentRound.revealEndsAt;
+    return null;
   }
 
   #setTimer(name, delay, callback) {

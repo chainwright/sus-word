@@ -1,0 +1,157 @@
+@font-face { font-family: "Courier Prime"; src: url("/fonts/CourierPrime-Regular.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Courier Prime"; src: url("/fonts/CourierPrime-Bold.ttf") format("truetype"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Oswald"; src: url("/fonts/Oswald-Variable.ttf") format("truetype-variations"); font-weight: 200 700; font-style: normal; font-display: swap; }
+
+:root {
+  --ink: #21182d;
+  --red: #a42d35;
+  --paper: #ead4ad;
+  --paper-light: #f6ead1;
+  --yellow: #ffe45b;
+  --shadow: 0 9px 18px #2c172b4c, 0 2px 4px #2c172b61;
+}
+
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
+body { color: var(--ink); font-family: "Courier Prime", monospace; }
+[hidden] { display: none !important; }
+#stage { position: absolute; width: 1920px; height: 1080px; overflow: hidden; transform-origin: 0 0; }
+
+.paper-label, .paper-slip, .polaroid, .message-slip, .reveal-paper {
+  position: relative;
+  background:
+    radial-gradient(circle at 24% 18%, #8e6c4630 0 1px, transparent 1.5px),
+    radial-gradient(circle at 76% 68%, #8e6c4620 0 1px, transparent 1.4px),
+    linear-gradient(103deg, #f8ebd3, #ead2aa);
+  background-size: 21px 19px, 29px 27px, auto;
+  box-shadow: var(--shadow);
+}
+
+.paper-label::before, .paper-slip::before, .polaroid::before, .message-slip::before {
+  content: "";
+  position: absolute;
+  z-index: 4;
+  width: 24px;
+  height: 24px;
+  top: -12px;
+  left: calc(50% - 12px);
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 28%, #c06065 0 20%, #9b3a43 45%, #67242b 78%);
+  box-shadow: 0 5px 5px #2c172b5c;
+}
+
+#idle-tag { position: absolute; right: 28px; bottom: 24px; padding: 8px 17px 10px; font: 700 27px/1 "Oswald", sans-serif; letter-spacing: .06em; transform: rotate(-1deg); }
+#idle-tag::before { width: 14px; height: 14px; top: -7px; left: calc(50% - 7px); }
+
+.case-board {
+  position: absolute;
+  left: 1340px;
+  top: 18px;
+  width: 560px;
+  height: 1042px;
+  padding: 22px 28px 28px;
+  border: 2px solid #95683b75;
+  border-radius: 18px 18px 6px 20px;
+  background:
+    radial-gradient(circle at 20% 30%, #8052292b 0 2px, transparent 2.5px),
+    radial-gradient(circle at 72% 75%, #79491e25 0 1.4px, transparent 2px),
+    linear-gradient(95deg, #ddb27d, #c68d57 52%, #d4a06b);
+  background-size: 29px 31px, 23px 25px, auto;
+  box-shadow: inset 0 0 40px #70401935, 0 8px 18px #17101d66;
+}
+
+.case-board::after { content: ""; position: absolute; inset: 8px; border: 1px solid #f1d1a04a; pointer-events: none; }
+.board-header { z-index: 2; height: 82px; display: flex; align-items: baseline; justify-content: space-between; padding: 11px 20px 13px; font: 700 47px/1 "Oswald", sans-serif; letter-spacing: .035em; }
+.board-header small { font-size: 25px; letter-spacing: .02em; }
+.phase-view { position: relative; z-index: 1; height: calc(100% - 94px); }
+
+.lobby-view { padding-top: 34px; }
+.lobby-roster { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px 17px; align-content: start; min-height: 600px; }
+.polaroid { padding: 9px 9px 12px; background-color: #f2e8d4; transform: rotate(var(--tilt, -1deg)); }
+.polaroid-photo { width: 100%; aspect-ratio: 1; overflow: hidden; display: grid; place-items: center; background: linear-gradient(135deg, #6b5b85, #c5897e); border: 2px solid #d5c7b0; color: #fff; font: 700 50px/1 "Oswald", sans-serif; }
+.polaroid-photo img { width: 100%; height: 100%; object-fit: cover; }
+.polaroid-name { overflow: hidden; margin-top: 7px; font-size: 28px; line-height: 1.02; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.polaroid-lock { position: absolute; z-index: 3; right: 4px; bottom: 32px; font-size: 25px; filter: drop-shadow(0 2px 1px #fff); }
+.join-slip { padding: 18px 20px 15px; font-size: 23px; line-height: 1.25; transform: rotate(-.7deg); }
+.join-slip strong { display: block; margin-bottom: 5px; font: 700 29px/1 "Oswald", sans-serif; }
+.join-slip span { overflow-wrap: anywhere; }
+.claim-count { margin: 24px 0 0; text-align: center; font: 600 30px/1.1 "Oswald", sans-serif; }
+
+.round-view { padding-top: 20px; }
+.timer-wrap { position: relative; width: 254px; height: 254px; margin: 0 auto 23px; border-radius: 50%; background: #f3e6cb; box-shadow: var(--shadow); }
+.timer-ring { width: 100%; height: 100%; transform: rotate(-90deg); }
+.timer-ring circle { fill: none; stroke-width: 16; }
+.timer-track { stroke: #d2b995; }
+.timer-arc { stroke: var(--red); stroke-linecap: butt; stroke-dasharray: 634.6; stroke-dashoffset: 0; transition: stroke-dashoffset .4s linear; }
+.timer-wrap time { position: absolute; inset: 0; display: grid; place-items: center; font: 600 100px/1 "Oswald", sans-serif; letter-spacing: -.05em; }
+.hint-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; perspective: 900px; }
+.hint-card { position: relative; height: 158px; transform-style: preserve-3d; }
+.hint-card::before { content: ""; position: absolute; z-index: 3; width: 22px; height: 22px; left: calc(50% - 11px); top: -10px; border-radius: 50%; background: var(--red); box-shadow: 0 4px 4px #34202c66; }
+.hint-inner { height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background: linear-gradient(#f2e4c8 49.2%, #b6a58c 49.4%, #b6a58c 50.6%, #f8edd6 50.8%); box-shadow: var(--shadow); transform-style: preserve-3d; }
+.hint-inner span { font: 600 27px/1 "Oswald", sans-serif; }
+.hint-inner strong { max-width: 94%; font: 700 50px/1.15 "Oswald", sans-serif; text-align: center; text-transform: uppercase; }
+.hint-inner strong.long { font-size: 34px; }
+.round-players { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 38px; }
+.round-player .polaroid-name { font-size: 28px; }
+.round-player-count { display: block; margin-top: 6px; text-align: center; font: 700 38px/1 "Oswald", sans-serif; }
+
+.evidence-tray { position: absolute; left: 0; top: 860px; width: 1320px; height: 200px; padding: 35px 40px 20px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; background: radial-gradient(circle at 20% 30%, #81502c2b 0 1px, transparent 2px), linear-gradient(98deg, #dfb783e8, #ca9660e8); box-shadow: inset 0 8px 20px #6f3f2038; }
+.message-slip { min-width: 0; height: 130px; padding: 24px 22px 15px; overflow: hidden; font-size: 28px; line-height: 1.18; transform: rotate(var(--tilt, 0deg)); }
+.message-slip strong { font-weight: 700; }
+.message-slip span { overflow-wrap: anywhere; }
+
+.vote-view { padding-top: 26px; }
+.vote-heading { display: flex; gap: 15px; align-items: stretch; }
+.vote-heading .paper-label { flex: 1; padding: 12px 18px; font: 700 57px/1 "Oswald", sans-serif; }
+.vote-heading time { flex: 0 0 128px; display: grid; place-items: center; font: 700 56px/1 "Oswald", sans-serif; }
+.vote-rows { display: grid; gap: 12px; margin: 24px 0 20px; }
+.vote-row { display: grid; grid-template-columns: 124px 1fr; align-items: center; gap: 16px; }
+.vote-row .polaroid { padding: 6px 6px 9px; }
+.vote-row .polaroid-name { font-size: 28px; }
+.tally-slip { height: 105px; padding: 16px 18px; display: flex; gap: 9px; align-items: center; }
+.tally-group { position: relative; display: flex; gap: 6px; height: 70px; width: 92px; }
+.tally-stroke { display: block; width: 8px; height: 66px; border-radius: 5px; background: var(--red); transform: rotate(5deg); transform-origin: center; }
+.tally-stroke:nth-child(even) { transform: rotate(-4deg); }
+.tally-stroke.fifth { position: absolute; width: 9px; height: 86px; left: 40px; top: -9px; transform: rotate(77deg); }
+.vote-command { margin-top: auto; padding: 20px 25px; font-size: 30px; transform: rotate(-.4deg); }
+
+.reveal-view { position: absolute; inset: 0; z-index: 20; overflow: hidden; background: linear-gradient(90deg, #16101bbb 0 31%, transparent 31%), radial-gradient(circle at 79% 40%, #8c55283a 0 2px, transparent 2.5px), linear-gradient(90deg, #d7b17f 0 70%, #c8925d 70% 100%); background-size: auto, 29px 31px, auto; }
+.reveal-view::before { content: ""; position: absolute; left: 69%; top: 0; bottom: 0; width: 7px; background: #80522f59; box-shadow: -12px 0 24px #311d1833; }
+.reveal-title { position: absolute; left: 630px; top: 60px; width: 680px; padding: 12px 25px 20px; text-align: center; font: 700 82px/1 "Oswald", sans-serif; letter-spacing: .025em; }
+.shuffle-deck { position: absolute; left: 820px; top: 245px; width: 275px; height: 340px; perspective: 1000px; }
+.shuffle-card { position: absolute; inset: 0; padding: 15px; transform-origin: 50% 15%; }
+.shuffle-card .polaroid-name { font-size: 34px; }
+.shuffle-card.final { transform-style: preserve-3d; }
+.imposter-stamp, .verdict-stamp, .secret-stamp { border: 10px solid var(--red); color: var(--red); font: 700 67px/.95 "Oswald", sans-serif; letter-spacing: .035em; text-transform: uppercase; transform: rotate(-10deg); opacity: .97; }
+.imposter-stamp { position: absolute; z-index: 8; left: 705px; top: 355px; padding: 8px 25px 13px; }
+
+.rewind-area { position: absolute; left: 570px; top: 620px; width: 730px; height: 355px; overflow: hidden; }
+.rewind-counter { position: absolute; right: 18px; top: 8px; z-index: 5; padding: 7px 14px; color: #f4e7cb; background: #221929d9; font-size: 29px; }
+.rewind-tape { position: absolute; inset: 45px 15px 0; display: flex; flex-direction: column; gap: 14px; }
+.rewind-message { flex: 0 0 auto; padding: 18px 23px; font-size: 27px; line-height: 1.15; }
+.rewind-message mark, .evidence-message mark { position: relative; z-index: 0; background: transparent; }
+.rewind-message mark::before, .evidence-message mark::before { content: ""; position: absolute; z-index: -1; inset: 45% -3px 2%; background: var(--yellow); transform: scaleX(var(--highlight, 0)); transform-origin: left center; }
+.evidence-card { position: absolute; left: 705px; top: 625px; width: 605px; padding: 24px 28px; }
+.evidence-message { font-size: 34px; line-height: 1.22; }
+.reveal-caption { margin: 18px 0 0; padding-top: 15px; border-top: 2px solid #79614a70; font-size: 26px; line-height: 1.2; }
+.crossed-word { display: inline-block; position: relative; padding: 5px 15px; font: 700 58px/1 "Oswald", sans-serif; text-transform: uppercase; }
+.crossed-word::after { content: ""; position: absolute; left: 0; right: 0; top: 49%; height: 7px; background: var(--red); transform: rotate(-7deg); }
+
+.verdict-panel { position: absolute; left: 1430px; top: 90px; width: 390px; }
+.verdict-title { padding: 10px 20px 15px; text-align: center; font: 700 65px/1 "Oswald", sans-serif; }
+.verdict-slip { margin-top: 30px; min-height: 250px; padding: 60px 18px 25px; text-align: center; }
+.verdict-stamp { display: inline-block; max-width: 100%; padding: 7px 15px 12px; font-size: 57px; }
+.verdict-stamp.long { font-size: 38px; }
+.verdict-points { display: block; margin-top: 14px; font: 700 67px/1 "Oswald", sans-serif; }
+.sneakiness-slip { position: absolute; left: 1405px; top: 410px; width: 440px; padding: 22px 25px; font-size: 25px; line-height: 1.25; transform: rotate(-1deg); }
+.leaderboard { position: absolute; left: 1410px; top: 585px; width: 425px; padding: 22px 28px 26px; }
+.leaderboard h2 { margin: 0 0 12px; padding-bottom: 8px; border-bottom: 4px solid var(--ink); font: 700 50px/1 "Oswald", sans-serif; }
+.leader-row { display: grid; grid-template-columns: 52px 1fr auto; align-items: center; gap: 12px; margin: 13px 0; font-size: 28px; }
+.leader-row .mini-avatar { width: 46px; height: 46px; border-radius: 9px; object-fit: cover; background: #6b5b85; }
+.leader-row strong { font: 600 31px/1 "Oswald", sans-serif; }
+.decoy-stack { position: absolute; left: 80px; top: 590px; width: 440px; }
+.decoy-stack h3 { margin: 0 0 16px; color: #f6ead1; font: 600 30px/1 "Oswald", sans-serif; }
+.decoy-slip { margin: 13px 0; padding: 15px 18px; font-size: 22px; transform: rotate(var(--tilt, 0deg)); }
+.connection-badge { position: absolute; z-index: 50; left: 20px; bottom: 20px; padding: 8px 13px; border: 2px solid var(--red); color: var(--red); background: #f4e7cc; font: 700 19px/1 "Oswald", sans-serif; }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }

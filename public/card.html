@@ -4,14 +4,17 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Sus Word Card</title>
+    <link rel="stylesheet" href="/card.css">
   </head>
-  <body data-view="card">
-    <h1>Sus Word — Secret card placeholder</h1>
-    <form id="claim">
-      <label>Twitch name <input name="login" autocomplete="username" required></label>
-      <button type="submit">Get claim code</button>
-    </form>
-    <pre id="state">Connecting…</pre>
-    <script type="module" src="/live.js"></script>
+  <body>
+    <main class="phone-file">
+      <header class="site-header">
+        <span>SUS WORD</span>
+        <span id="connection">CONNECTING</span>
+      </header>
+      <section id="card-root" aria-live="polite"></section>
+      <footer id="card-footer">YOUR PRIVATE CASE FILE</footer>
+    </main>
+    <script type="module" src="/card.js"></script>
   </body>
 </html>

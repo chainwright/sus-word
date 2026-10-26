@@ -4,10 +4,60 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Sus Word Overlay</title>
+    <link rel="stylesheet" href="/overlay.css">
   </head>
-  <body data-view="overlay">
-    <h1>Sus Word — Overlay placeholder</h1>
-    <pre id="state">Connecting…</pre>
-    <script type="module" src="/live.js"></script>
+  <body>
+    <main id="stage" aria-live="polite">
+      <div id="idle-tag" class="paper-label">SUS WORD</div>
+
+      <aside id="case-board" class="case-board" hidden>
+        <header class="board-header paper-label">
+          <span id="phase-title">SUS WORD</span>
+          <small id="round-label"></small>
+        </header>
+
+        <section id="lobby-view" class="phase-view lobby-view" hidden>
+          <div id="lobby-roster" class="lobby-roster"></div>
+          <div class="join-slip paper-slip">
+            <strong>JOIN THE CASE</strong>
+            <span id="join-line"></span>
+          </div>
+          <p id="claim-count" class="claim-count"></p>
+        </section>
+
+        <section id="round-view" class="phase-view round-view" hidden>
+          <div class="timer-wrap">
+            <svg class="timer-ring" viewBox="0 0 240 240" aria-hidden="true">
+              <circle class="timer-track" cx="120" cy="120" r="101"></circle>
+              <circle id="timer-arc" class="timer-arc" cx="120" cy="120" r="101"></circle>
+            </svg>
+            <time id="round-timer">3:00</time>
+          </div>
+          <div class="hint-row">
+            <div id="category-hint" class="hint-card">
+              <div class="hint-inner"><span>CATEGORY</span><strong>?</strong></div>
+            </div>
+            <div id="letter-hint" class="hint-card">
+              <div class="hint-inner"><span>STARTS WITH</span><strong>?</strong></div>
+            </div>
+          </div>
+          <div id="round-players" class="round-players"></div>
+        </section>
+
+        <section id="vote-view" class="phase-view vote-view" hidden>
+          <div class="vote-heading">
+            <div class="paper-label">WHO IS SUS?</div>
+            <time id="vote-timer" class="paper-label">0:30</time>
+          </div>
+          <div id="vote-rows" class="vote-rows"></div>
+          <div class="vote-command paper-slip">Vote in chat: <strong>!vote name</strong></div>
+        </section>
+      </aside>
+
+      <section id="evidence-tray" class="evidence-tray" hidden aria-label="Latest chat messages"></section>
+      <section id="reveal-view" class="reveal-view" hidden></section>
+      <div id="connection-badge" class="connection-badge" hidden>RECONNECTING</div>
+    </main>
+    <script type="module" src="/overlay.js"></script>
   </body>
 </html>

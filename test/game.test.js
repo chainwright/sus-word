@@ -155,6 +155,8 @@ describe("state machine and role selection", () => {
     claimPlayers(game);
     game.start();
     game.go({ word: "candle", category: "home" });
+    assert.equal(game.getPublicState().phaseEndsAt, DEFAULT_DURATIONS.round);
+    assert.equal(game.getPublicState().remainingMs, DEFAULT_DURATIONS.round);
     const first = game.currentRound.impostorId;
     assert.notEqual(first, "guest");
 
@@ -188,6 +190,7 @@ describe("state machine and role selection", () => {
     assert.equal(game.getPublicState().round.hints.letter, "c");
     clock.tick(DEFAULT_DURATIONS.round - DEFAULT_DURATIONS.letterHint);
     assert.equal(game.state, PHASES.VOTE);
+    assert.equal(game.getPublicState().remainingMs, DEFAULT_DURATIONS.vote);
     clock.tick(DEFAULT_DURATIONS.vote);
     assert.equal(game.state, PHASES.REVEAL);
     clock.tick(DEFAULT_DURATIONS.reveal);
@@ -255,6 +258,10 @@ describe("round messages and reveal payload", () => {
     game.recordMessage({ userId: bruno.id, text: "Very cozy indeed" });
     game.recordMessage({ userId: alice.id, text: "It really was nice" });
     game.recordMessage({ userId: chloe.id, text: "I missed that message" });
+    assert.deepEqual(
+      game.getPublicState().round.latestMessages.map(({ text }) => text),
+      ["Very cozy indeed", "It really was nice", "I missed that message"],
+    );
     game.beginVote();
     const { reveal } = game.finishVote();
 
