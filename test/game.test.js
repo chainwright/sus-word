@@ -211,6 +211,55 @@ describe("state machine and role selection", () => {
 });
 
 describe("round messages and reveal payload", () => {
+  test("a broadcaster voice chunk can smuggle the word and gets a voice reveal", () => {
+    const { game } = createGame();
+    const [alice, bruno] = startRound(game);
+
+    assert.deepEqual(
+      game.recordMessage({
+        userId: "not-in-the-roster",
+        text: "I lit a candle beside the monitor",
+        source: "voice",
+      }),
+      { ok: false, reason: "invalid_message" },
+    );
+
+    const spoken = game.recordMessage({
+      userId: alice.login,
+      text: "I lit a candle beside the monitor",
+      source: "voice",
+    });
+    assert.equal(spoken.delivered, true);
+    assert.equal(spoken.message.source, "voice");
+
+    game.beginVote();
+    game.vote(bruno.id, alice.id);
+    const { reveal } = game.finishVote();
+    assert.equal(reveal.evidence.source, "voice");
+    assert.equal(
+      reveal.caption,
+      "0:00 into the round. Said out loud on stream. Someone noticed.",
+    );
+    assert.match(reveal.botMessage, /said out loud at 0:00/);
+    assert.doesNotMatch(reveal.botMessage, /I lit a candle/);
+  });
+
+  test("an unnoticed voice smuggle says it was spoken aloud", () => {
+    const { game } = createGame();
+    const [alice] = startRound(game);
+    game.recordMessage({
+      userId: alice.id,
+      text: "I lit a candle beside the monitor",
+      source: "voice",
+    });
+    game.beginVote();
+    const { reveal } = game.finishVote();
+    assert.equal(
+      reveal.caption,
+      "0:00 into the round. Said out loud on stream. Nobody noticed.",
+    );
+  });
+
   test("tracks the first smuggle, accidental decoys, private delivery, and readers", () => {
     const { clock, game } = createGame();
     const [alice, bruno, chloe] = startRound(game);

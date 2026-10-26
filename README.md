@@ -22,6 +22,10 @@ Sus Word is a live Twitch chat game about hiding one ordinary word in plain sigh
 
 Open `http://localhost:3000/host` for controls. For an offline rehearsal, run `npm run demo -- --fast` and open the overlay; omit `--fast` for full three-minute timing.
 
+## Streamer voice
+
+Open the host page in Google Chrome and turn on **🎙 Mic**. Allow microphone access when Chrome asks. Final speech chunks count as the broadcaster's game messages, so the streamer can be suspected or can hide the word out loud as the Imposter. The broadcaster still needs to join and claim a card first.
+
 ## Chat commands
 
 | Command | Who | What it does |

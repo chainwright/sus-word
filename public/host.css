@@ -22,6 +22,19 @@ button:hover { filter: brightness(1.18); }
 button:disabled { cursor: wait; opacity: .5; }
 button.secondary { background: #65566e; }
 button.danger { background: var(--red); }
+.voice-panel { margin-top: 16px; padding: 16px 20px; background: var(--paper); box-shadow: 0 8px 20px #321f2940; }
+.voice-control { display: flex; align-items: center; gap: 12px; }
+.voice-control strong { font: 600 18px/1 "Oswald", sans-serif; letter-spacing: .08em; }
+#mic-toggle { min-width: 116px; min-height: 48px; }
+#mic-toggle.active { background: var(--red); }
+.mic-dot { width: 13px; height: 13px; flex: 0 0 auto; border-radius: 50%; background: #8b8175; box-shadow: 0 0 0 4px #8b817529; }
+.mic-dot.listening { background: #35834e; box-shadow: 0 0 0 4px #35834e29; }
+.mic-dot.speaking { background: var(--red); box-shadow: 0 0 0 7px #9f2f3630; animation: mic-pulse .7s infinite alternate; }
+.mic-dot.error { background: #c33a30; box-shadow: 0 0 0 4px #c33a3030; }
+.voice-interim { min-height: 27px; margin: 13px 0 5px 25px; font-size: 18px; font-style: italic; }
+.voice-help, .voice-warning { margin: 6px 0 0 25px; font-size: 15px; }
+.voice-warning { color: #75141d; font-weight: 700; }
+@keyframes mic-pulse { to { transform: scale(1.25); } }
 #action-result { min-height: 24px; margin: 11px 0 15px; font-weight: 700; }
 #action-result.error { color: #75141d; }
 .grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 18px; }

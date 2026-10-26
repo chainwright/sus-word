@@ -68,7 +68,10 @@ function polaroid(player, options = {}) {
 
 function paperMessage(message, className = "message-slip") {
   const slip = node("article", className);
-  const author = node("strong", "", `${message.player?.displayName || message.player?.login || "unknown"}: `);
+  const voice = message.source === "voice";
+  if (voice) slip.classList.add("voice-message");
+  const name = message.player?.displayName || message.player?.login || "unknown";
+  const author = node("strong", "", `${voice ? "🎙 " : ""}${name}${voice ? " (said out loud)" : ""}: `);
   const text = node("span", "", message.text || "");
   slip.append(author, text);
   return slip;
@@ -268,7 +271,9 @@ function playWhirr() {
 
 function highlightedMessage(evidence, className = "evidence-message") {
   const line = node("div", className);
-  line.append(document.createTextNode(`@${evidence.player.login}: `));
+  const voice = evidence.source === "voice";
+  if (voice) line.classList.add("voice-message");
+  line.append(document.createTextNode(`${voice ? "🎙 " : ""}@${evidence.player.login}${voice ? " (said out loud)" : ""}: `));
   const before = evidence.text.slice(0, evidence.index);
   const match = evidence.text.slice(evidence.index, evidence.index + evidence.length);
   const after = evidence.text.slice(evidence.index + evidence.length);

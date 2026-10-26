@@ -351,6 +351,7 @@ export class Game extends EventEmitter {
       displayName: player.displayName,
       avatar: player.avatar,
       text: messageText,
+      source: options.source === "voice" ? "voice" : "chat",
       at: now,
       elapsedMs: Math.max(0, now - this.currentRound.startedAt),
       sequence: this.currentRound.messages.length,
@@ -671,7 +672,9 @@ export class Game extends EventEmitter {
       ? "WORD NEVER LANDED"
       : caught ? "CAUGHT" : "GOT AWAY";
     const caption = round.smuggle
-      ? `${elapsed} into the round. ${readers.length} ${readers.length === 1 ? "person" : "people"} read this. ${caught ? "Someone noticed." : "Nobody noticed."}`
+      ? round.smuggle.source === "voice"
+        ? `${elapsed} into the round. Said out loud on stream. ${caught ? "Someone noticed." : "Nobody noticed."}`
+        : `${elapsed} into the round. ${readers.length} ${readers.length === 1 ? "person" : "people"} read this. ${caught ? "Someone noticed." : "Nobody noticed."}`
       : "The word never made it out.";
     const sneakiness = !round.smuggle
       ? `Never found a clean opening for '${round.word}'.`
@@ -680,7 +683,9 @@ export class Game extends EventEmitter {
         : `Hid '${round.word}' in plain sight. Cold.`;
     const impostorDelta = scoreChanges.find(({ player }) => player.id === round.impostorId)?.delta ?? 0;
     const botMessage = round.smuggle
-      ? `🕵️ It was @${impostor.login}! Word: ${round.word.toUpperCase()}, smuggled at ${elapsed} ('${round.smuggle.text}'). ${verdict}. +${impostorDelta}`
+      ? round.smuggle.source === "voice"
+        ? `🕵️ It was @${impostor.login}! Word: ${round.word.toUpperCase()}, said out loud at ${elapsed}. ${verdict}. +${impostorDelta}`
+        : `🕵️ It was @${impostor.login}! Word: ${round.word.toUpperCase()}, smuggled at ${elapsed} ('${round.smuggle.text}'). ${verdict}. +${impostorDelta}`
       : `🕵️ It was @${impostor.login}! Word: ${round.word.toUpperCase()}. The word never made it out. ${verdict}. +0`;
 
     const accidentalDecoys = round.decoys.map((message) => {
@@ -728,6 +733,7 @@ export class Game extends EventEmitter {
       id: message.id,
       player: this.#publicPlayer(this.currentRound.roster.get(message.userId)),
       text: message.text,
+      source: message.source,
       at: message.at,
       elapsedMs: message.elapsedMs,
       elapsed: formatElapsed(message.elapsedMs),

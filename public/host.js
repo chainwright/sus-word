@@ -7,8 +7,18 @@ const cardUrl = document.querySelector("#card-url");
 const stateJson = document.querySelector("#state-json");
 const actionResult = document.querySelector("#action-result");
 const connection = document.querySelector("#connection");
+const micToggle = document.querySelector("#mic-toggle");
+const micDot = document.querySelector("#mic-dot");
+const voiceInterim = document.querySelector("#voice-interim");
+const voiceHelp = document.querySelector("#voice-help");
+const voiceRosterWarning = document.querySelector("#voice-roster-warning");
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let state = null;
 let reconnectDelay = 1_000;
+let hostSocket = null;
+let recognition = null;
+let micEnabled = false;
+let restartTimer = null;
 
 function node(tag, className, text) {
   const element = document.createElement(tag);
@@ -49,6 +59,10 @@ function render(nextState) {
   cardUrl.textContent = state.cardUrl;
   cardUrl.href = state.cardUrl;
   stateJson.textContent = JSON.stringify(state, null, 2);
+  const broadcaster = state.players.find((player) => (
+    player.login === state.channelLogin && player.claimed
+  ));
+  voiceRosterWarning.hidden = Boolean(broadcaster);
   updateTimer();
 }
 
@@ -77,6 +91,7 @@ async function runAction(button) {
 function connect() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   const socket = new WebSocket(`${protocol}//${location.host}/ws?view=host`);
+  hostSocket = socket;
   socket.addEventListener("open", () => {
     connection.textContent = "LIVE";
     connection.classList.add("online");
@@ -85,13 +100,105 @@ function connect() {
   socket.addEventListener("message", (event) => {
     const payload = JSON.parse(event.data);
     if (payload.type === "state") render(payload.data);
+    if (payload.type === "voiceResult" && !payload.data.ok) {
+      voiceHelp.textContent = payload.data.reason === "invalid_message"
+        ? "Voice ignored: join the game before speaking."
+        : "Voice chunk was not accepted.";
+    }
   });
   socket.addEventListener("close", () => {
+    if (hostSocket === socket) hostSocket = null;
     connection.textContent = "RECONNECTING";
     connection.classList.remove("online");
     setTimeout(connect, reconnectDelay);
     reconnectDelay = Math.min(15_000, reconnectDelay * 1.7);
   });
+}
+
+function setMicState(label, className = "") {
+  voiceInterim.textContent = label;
+  micDot.className = `mic-dot ${className}`.trim();
+}
+
+function sendVoice(text) {
+  if (hostSocket?.readyState !== WebSocket.OPEN) {
+    voiceHelp.textContent = "Voice not sent: the host connection is offline.";
+    return;
+  }
+  hostSocket.send(JSON.stringify({ type: "voice", text }));
+  voiceInterim.textContent = `Sent: “${text}”`;
+  voiceHelp.textContent = "";
+}
+
+function scheduleRecognitionRestart() {
+  if (!micEnabled || restartTimer) return;
+  restartTimer = setTimeout(() => {
+    restartTimer = null;
+    startRecognition();
+  }, 500);
+}
+
+function startRecognition() {
+  if (!micEnabled || !recognition) return;
+  try {
+    recognition.start();
+  } catch {
+    scheduleRecognitionRestart();
+  }
+}
+
+function disableMic(message = "Mic is off.") {
+  micEnabled = false;
+  clearTimeout(restartTimer);
+  restartTimer = null;
+  micToggle.classList.remove("active");
+  micToggle.setAttribute("aria-pressed", "false");
+  micToggle.textContent = "🎙 Mic";
+  recognition?.stop();
+  setMicState(message);
+}
+
+function setupVoice() {
+  if (!SpeechRecognition) {
+    micToggle.disabled = true;
+    voiceHelp.textContent = "Voice needs Google Chrome";
+    return;
+  }
+
+  recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = "en-US";
+  recognition.onstart = () => setMicState("Listening…", "listening");
+  recognition.onspeechstart = () => micDot.className = "mic-dot speaking";
+  recognition.onspeechend = () => micDot.className = "mic-dot listening";
+  recognition.onresult = (event) => {
+    const interim = [];
+    for (let index = event.resultIndex; index < event.results.length; index += 1) {
+      const text = event.results[index][0].transcript.trim();
+      if (!text) continue;
+      if (event.results[index].isFinal) sendVoice(text);
+      else interim.push(text);
+    }
+    if (interim.length) voiceInterim.textContent = interim.join(" ");
+  };
+  recognition.onerror = (event) => {
+    if (event.error === "network" && micEnabled) {
+      setMicState("Network interrupted. Retrying…", "error");
+      recognition.abort();
+      scheduleRecognitionRestart();
+      return;
+    }
+    if (["not-allowed", "service-not-allowed"].includes(event.error)) {
+      voiceHelp.textContent = "Microphone permission is required.";
+      disableMic("Mic permission blocked.");
+      return;
+    }
+    setMicState(`Mic error: ${event.error}`, "error");
+  };
+  recognition.onend = () => {
+    if (micEnabled) scheduleRecognitionRestart();
+  };
 }
 
 for (const button of document.querySelectorAll("[data-action]")) {
@@ -105,5 +212,19 @@ document.querySelector("#copy-card").addEventListener("click", async (event) => 
   setTimeout(() => { event.currentTarget.textContent = "Copy card URL"; }, 1_400);
 });
 
+micToggle.addEventListener("click", () => {
+  if (micEnabled) {
+    disableMic();
+    return;
+  }
+  micEnabled = true;
+  micToggle.classList.add("active");
+  micToggle.setAttribute("aria-pressed", "true");
+  micToggle.textContent = "■ Mic on";
+  voiceHelp.textContent = "";
+  startRecognition();
+});
+
 setInterval(updateTimer, 500);
+setupVoice();
 connect();

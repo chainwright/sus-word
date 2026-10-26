@@ -30,6 +30,16 @@
         <button data-action="end" class="secondary">End</button>
         <button data-action="reset" class="danger">Reset</button>
       </nav>
+      <section class="voice-panel" aria-labelledby="voice-title">
+        <div class="voice-control">
+          <span id="mic-dot" class="mic-dot" aria-hidden="true"></span>
+          <button id="mic-toggle" type="button" aria-pressed="false">🎙 Mic</button>
+          <strong id="voice-title">STREAMER VOICE</strong>
+        </div>
+        <p id="voice-interim" class="voice-interim" aria-live="polite">Mic is off.</p>
+        <p id="voice-help" class="voice-help"></p>
+        <p id="voice-roster-warning" class="voice-warning" hidden>You are not in the game yet: type !join and claim your card</p>
+      </section>
       <p id="action-result" role="status"></p>
 
       <div class="grid">

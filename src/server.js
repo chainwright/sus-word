@@ -49,6 +49,23 @@ function cleanPublicUrl(value) {
   return String(value || "http://localhost:3000").replace(/\/+$/, "");
 }
 
+export function isLoopbackAddress(value) {
+  const address = String(value ?? "").toLowerCase().replace(/^\[|\]$/g, "");
+  return address === "::1"
+    || address === "localhost"
+    || address.startsWith("::ffff:127.")
+    || /^127(?:\.\d{1,3}){3}$/.test(address);
+}
+
+export function isLocalHostOrigin(value) {
+  try {
+    const { hostname } = new URL(String(value));
+    return hostname === "localhost" || isLoopbackAddress(hostname);
+  } catch {
+    return false;
+  }
+}
+
 function formatRoundLength(duration) {
   const seconds = Math.round(duration / 1_000);
   if (seconds % 60) return `${seconds} seconds`;
@@ -68,6 +85,7 @@ export function createSusWordServer(options = {}) {
   const configuredPort = Number(options.port ?? env.PORT ?? 3000);
   let twitch = options.twitch ?? null;
   let started = false;
+  let voiceSequence = 0;
 
   app.use(express.json({ limit: "16kb" }));
 
@@ -130,10 +148,17 @@ export function createSusWordServer(options = {}) {
     }
 
     browserSockets.handleUpgrade(request, socket, head, (webSocket) => {
-      const client = { socket: webSocket, view, sessionId: sid };
+      const client = {
+        socket: webSocket,
+        view,
+        sessionId: sid,
+        isLocal: isLoopbackAddress(request.socket.remoteAddress)
+          && isLocalHostOrigin(request.headers.origin),
+      };
       clients.add(client);
       webSocket.on("close", () => clients.delete(client));
       webSocket.on("error", (error) => logger.error?.(`[browser-ws] ${error.message}`));
+      webSocket.on("message", (data) => receiveBrowserMessage(client, data));
       sendClientState(client);
     });
   });
@@ -168,7 +193,43 @@ export function createSusWordServer(options = {}) {
   }
 
   function publicState() {
-    return { ...game.getPublicState(), cardUrl: `${publicUrl}/card` };
+    return {
+      ...game.getPublicState(),
+      cardUrl: `${publicUrl}/card`,
+      channelLogin: String(env.CHANNEL_LOGIN ?? "").trim().replace(/^@/, "").toLowerCase(),
+    };
+  }
+
+  function handleVoiceChunk(text, isLocal = false) {
+    if (!isLocal) return { ok: false, reason: "voice_not_local" };
+    const channelLogin = String(env.CHANNEL_LOGIN ?? "").trim().replace(/^@/, "").toLowerCase();
+    if (!channelLogin) return { ok: false, reason: "channel_login_missing" };
+    const transcript = String(text ?? "").trim();
+    if (!transcript || transcript.length > 1_000) {
+      return { ok: false, reason: "invalid_voice" };
+    }
+    voiceSequence += 1;
+    return game.recordMessage({
+      userId: channelLogin,
+      messageId: `voice:${Date.now()}:${voiceSequence}`,
+      text: transcript,
+      source: "voice",
+    });
+  }
+
+  function receiveBrowserMessage(client, data) {
+    if (client.view !== "host") return;
+    let payload;
+    try {
+      payload = JSON.parse(data.toString());
+    } catch {
+      return;
+    }
+    if (payload?.type !== "voice") return;
+    sendJson(client.socket, {
+      type: "voiceResult",
+      data: handleVoiceChunk(payload.text, client.isLocal),
+    });
   }
 
   function cardState(sid) {
@@ -360,6 +421,7 @@ export function createSusWordServer(options = {}) {
     game,
     get twitch() { return twitch; },
     handleChatMessage,
+    handleVoiceChunk,
     runHostAction,
     start,
     stop,

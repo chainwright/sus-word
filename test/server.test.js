@@ -4,7 +4,12 @@ import { test } from "node:test";
 import WebSocket from "ws";
 
 import Game from "../src/game.js";
-import { SESSION_COOKIE, createSusWordServer } from "../src/server.js";
+import {
+  SESSION_COOKIE,
+  createSusWordServer,
+  isLocalHostOrigin,
+  isLoopbackAddress,
+} from "../src/server.js";
 
 function firstSocketMessage(url, options) {
   const socket = new WebSocket(url, options);
@@ -16,6 +21,81 @@ function firstSocketMessage(url, options) {
     socket.once("error", reject);
   });
 }
+
+function socketMessageOfType(socket, type) {
+  return new Promise((resolve, reject) => {
+    function onMessage(data) {
+      const payload = JSON.parse(data.toString());
+      if (payload.type !== type) return;
+      socket.off("message", onMessage);
+      socket.off("error", onError);
+      resolve(payload);
+    }
+    function onError(error) {
+      socket.off("message", onMessage);
+      reject(error);
+    }
+    socket.on("message", onMessage);
+    socket.on("error", onError);
+  });
+}
+
+test("voice input trusts loopback addresses only", () => {
+  assert.equal(isLoopbackAddress("127.0.0.1"), true);
+  assert.equal(isLoopbackAddress("::1"), true);
+  assert.equal(isLoopbackAddress("::ffff:127.0.0.1"), true);
+  assert.equal(isLoopbackAddress("192.168.1.12"), false);
+  assert.equal(isLoopbackAddress("203.0.113.8"), false);
+  assert.equal(isLocalHostOrigin("http://localhost:3000"), true);
+  assert.equal(isLocalHostOrigin("http://127.0.0.1:3000"), true);
+  assert.equal(isLocalHostOrigin("https://sus-word.example"), false);
+});
+
+test("a local host WebSocket records voice as the configured broadcaster", async (context) => {
+  const codes = ["A2B3", "C4D5", "E6F7"];
+  const game = new Game({
+    random: () => 0,
+    codeGenerator: () => codes.shift(),
+    words: [{ word: "candle", category: "home" }],
+  });
+  const service = createSusWordServer({
+    game,
+    port: 0,
+    env: { CHANNEL_LOGIN: "streamer" },
+    logger: { log() {}, error() {} },
+  });
+  context.after(async () => {
+    game.reset();
+    await service.stop();
+  });
+
+  for (const [index, login] of ["streamer", "alice", "bruno"].entries()) {
+    const claim = game.createClaim({ sessionId: `voice-${login}`, login });
+    game.claim(claim.code, login, `voice-user-${index}`);
+  }
+  game.start();
+  assert.equal(game.go({ word: "candle", category: "home" }).ok, true);
+  assert.equal(game.phase, "ROUND");
+
+  const address = await service.start();
+  const host = await firstSocketMessage(
+    `ws://127.0.0.1:${address.port}/ws?view=host`,
+    { origin: `http://localhost:${address.port}` },
+  );
+  assert.equal(host.payload.data.state, "ROUND");
+  const resultMessage = socketMessageOfType(host.socket, "voiceResult");
+  host.socket.send(JSON.stringify({
+    type: "voice",
+    text: "I lit a candle beside the monitor",
+  }));
+  const result = await resultMessage;
+
+  assert.equal(result.data.ok, true, result.data.reason);
+  assert.equal(result.data.delivered, true);
+  assert.equal(game.currentRound.smuggle.source, "voice");
+  assert.equal(game.currentRound.smuggle.login, "streamer");
+  host.socket.close();
+});
 
 test("the claim route binds a code and private card state to its session cookie", async (context) => {
   const game = new Game();

@@ -153,6 +153,7 @@ body { color: var(--ink); font-family: "Courier Prime", monospace; }
 .decoy-stack h3 { margin: 0 0 16px; color: #f6ead1; font: 600 30px/1 "Oswald", sans-serif; }
 .decoy-slip { margin: 13px 0; padding: 15px 18px; font-size: 22px; transform: rotate(var(--tilt, 0deg)); }
 .connection-badge { position: absolute; z-index: 50; left: 20px; bottom: 20px; padding: 8px 13px; border: 2px solid var(--red); color: var(--red); background: #f4e7cc; font: 700 19px/1 "Oswald", sans-serif; }
+.voice-message strong, .voice-message::first-letter { color: var(--red); }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 

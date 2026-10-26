@@ -1,6 +1,8 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import WebSocket from "ws";
+
 import Game, { PHASES } from "./game.js";
 import { createSusWordServer } from "./server.js";
 
@@ -69,6 +71,17 @@ function waitForPhase(game, phase) {
   });
 }
 
+function connectVoiceSocket(port) {
+  return new Promise((resolveSocket, rejectSocket) => {
+    const socket = new WebSocket(
+      `ws://127.0.0.1:${port}/ws?view=host`,
+      { origin: `http://localhost:${port}` },
+    );
+    socket.once("open", () => resolveSocket(socket));
+    socket.once("error", rejectSocket);
+  });
+}
+
 async function populateLobby(game, fast) {
   const pause = fast ? 350 : 700;
   for (const profile of PROFILES) {
@@ -80,7 +93,12 @@ async function populateLobby(game, fast) {
   }
 }
 
-function postMessage(game, player, text, sequence) {
+function postMessage(game, player, text, sequence, voiceSocket, fast) {
+  if (fast && player.login === "streamer") {
+    voiceSocket.send(JSON.stringify({ type: "voice", text }));
+    console.log(`[voice] ${player.login}: ${text}`);
+    return null;
+  }
   const result = game.recordMessage({
     userId: player.id,
     messageId: `demo-${game.roundNumber}-${sequence}`,
@@ -90,7 +108,7 @@ function postMessage(game, player, text, sequence) {
   return result;
 }
 
-async function playRoundChat(game, fast) {
+async function playRoundChat(game, fast, voiceSocket) {
   const interval = fast ? 3_500 : 6_000;
   const decoyAt = game.durations.round * .3;
   const smuggleAt = game.durations.round * .55;
@@ -114,6 +132,8 @@ async function playRoundChat(game, fast) {
         decoyPlayer,
         `I keep a ${word} near my desk for stormy nights`,
         sequence,
+        voiceSocket,
+        fast,
       );
       decoySent = true;
       continue;
@@ -124,6 +144,8 @@ async function playRoundChat(game, fast) {
         impostor,
         `the power blinked again so I lit a ${word} beside my monitor`,
         sequence,
+        voiceSocket,
+        fast,
       );
       smuggleSent = true;
       continue;
@@ -131,7 +153,7 @@ async function playRoundChat(game, fast) {
 
     const player = PROFILES[(sequence - 1) % PROFILES.length];
     const text = CHAT_LINES[(sequence - 1) % CHAT_LINES.length];
-    postMessage(game, player, text, sequence);
+    postMessage(game, player, text, sequence, voiceSocket, fast);
   }
 }
 
@@ -154,26 +176,36 @@ export async function runDemo(options = {}) {
   const fast = options.fast ?? process.argv.includes("--fast");
   const port = Number(options.port ?? process.env.PORT ?? 3000);
   const publicUrl = process.env.PUBLIC_URL || `http://localhost:${port}`;
-  const game = new Game({ durations: fast ? FAST_DURATIONS : undefined });
+  const roleRolls = [0, .999, .35, .999];
+  let roleRoll = 0;
+  const claimCodes = ["A2B3", "C4D5", "E6F7", "G8H9"];
+  const game = new Game({
+    durations: fast ? FAST_DURATIONS : undefined,
+    codeGenerator: () => claimCodes.shift(),
+    random: fast ? () => roleRolls[roleRoll++ % roleRolls.length] : Math.random,
+  });
   const service = createSusWordServer({
     game,
     port,
-    env: { PORT: String(port), PUBLIC_URL: publicUrl },
+    env: { PORT: String(port), PUBLIC_URL: publicUrl, CHANNEL_LOGIN: "streamer" },
   });
   let running = true;
+  let voiceSocket = null;
 
   async function stop() {
     if (!running) return;
     running = false;
     game.reset();
+    voiceSocket?.close();
     await service.stop();
   }
 
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
 
-  await service.start();
-  console.log(`[demo] Open http://localhost:${port}/overlay in a 1920×1080 browser source.`);
+  const address = await service.start();
+  voiceSocket = await connectVoiceSocket(address.port);
+  console.log(`[demo] Open http://localhost:${address.port}/overlay in a 1920×1080 browser source.`);
   console.log(`[demo] ${fast ? "Fast rehearsal" : "Full timing"} mode. Press Ctrl+C to stop.`);
 
   game.start();
@@ -186,7 +218,7 @@ export async function runDemo(options = {}) {
     round += 1;
     console.log(`[demo] Starting round ${round}`);
     game.go({ word: "candle", category: "home" });
-    await playRoundChat(game, fast);
+    await playRoundChat(game, fast, voiceSocket);
     await waitForPhase(game, PHASES.VOTE);
     await castVotes(game, fast);
     await waitForPhase(game, PHASES.REVEAL);
