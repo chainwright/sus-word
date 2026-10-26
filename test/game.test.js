@@ -140,6 +140,8 @@ describe("state machine and role selection", () => {
     game.start();
     clock.tick(DEFAULT_DURATIONS.lobby);
     assert.equal(game.state, PHASES.LOBBY);
+    assert.equal(clock.timers.size, 1);
+    assert.equal([...clock.timers.values()][0].due, 2 * DEFAULT_DURATIONS.lobby);
 
     const created = game.createClaim("session-chloe", "chloe");
     game.claim(created.code, "chloe", "user-3");
@@ -285,7 +287,7 @@ describe("round messages and reveal payload", () => {
     assert.equal(result.state, PHASES.REVEAL);
     assert.equal(game.lastReveal.smuggled, false);
     assert.equal(game.lastReveal.caption, "The word never made it out.");
-    assert.equal(game.lastReveal.verdict, "GOT AWAY");
+    assert.equal(game.lastReveal.verdict, "WORD NEVER LANDED");
     assert.equal(game.scores.get(alice.id), 0);
   });
 });
@@ -317,6 +319,37 @@ describe("voting and scoring", () => {
     assert.equal(game.scores.get(alice.id), 0);
     assert.equal(game.scores.get(bruno.id), 1);
     assert.equal(game.scores.get(chloe.id), 1);
+  });
+
+  test("uses a caught caption only when someone noticed the landed word", () => {
+    const { game } = createGame();
+    const [alice, bruno, chloe] = startRound(game);
+    game.recordMessage({ userId: alice.id, text: "I lit a candle last night" });
+    game.recordMessage({ userId: bruno.id, text: "That sounds pretty cozy" });
+    game.beginVote();
+    game.vote(alice.id, bruno.id);
+    game.vote(bruno.id, alice.id);
+    game.vote(chloe.id, alice.id);
+
+    assert.equal(game.lastReveal.verdict, "CAUGHT");
+    assert.match(game.lastReveal.caption, /1 person read this\. Someone noticed\.$/);
+  });
+
+  test("uses WORD NEVER LANDED while rewarding detectives who voted right", () => {
+    const { game } = createGame();
+    const [alice, bruno, chloe] = startRound(game);
+    game.beginVote();
+    game.vote(alice.id, bruno.id);
+    game.vote(bruno.id, alice.id);
+    game.vote(chloe.id, alice.id);
+
+    assert.equal(game.lastReveal.smuggled, false);
+    assert.equal(game.lastReveal.verdict, "WORD NEVER LANDED");
+    assert.equal(game.lastReveal.outcome, "word_never_landed");
+    assert.equal(game.scores.get(alice.id), 0);
+    assert.equal(game.scores.get(bruno.id), 1);
+    assert.equal(game.scores.get(chloe.id), 1);
+    assert.match(game.lastReveal.botMessage, /WORD NEVER LANDED\. \+0$/);
   });
 
   test("a tied highest tally still catches the Imposter", () => {

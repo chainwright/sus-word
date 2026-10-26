@@ -534,8 +534,14 @@ export class Game extends EventEmitter {
     this.votes.clear();
     this.lobbyOpenedAt = this.#now();
     this.#transition(PHASES.LOBBY);
+    this.#armLobbyTimer();
+  }
+
+  #armLobbyTimer() {
     this.#setTimer("lobby", this.durations.lobby, () => {
-      if (this.state === PHASES.LOBBY) this.go();
+      if (this.state !== PHASES.LOBBY) return;
+      const result = this.go();
+      if (!result.ok && this.state === PHASES.LOBBY) this.#armLobbyTimer();
     });
   }
 
@@ -635,9 +641,11 @@ export class Game extends EventEmitter {
         )].map((id) => this.#publicPlayer(round.roster.get(id)))
       : [];
     const elapsed = round.smuggle ? formatElapsed(round.smuggle.elapsedMs) : null;
-    const verdict = caught ? "CAUGHT" : "GOT AWAY";
+    const verdict = !round.smuggle
+      ? "WORD NEVER LANDED"
+      : caught ? "CAUGHT" : "GOT AWAY";
     const caption = round.smuggle
-      ? `${elapsed} into the round. ${readers.length} ${readers.length === 1 ? "person" : "people"} read this. Nobody noticed.`
+      ? `${elapsed} into the round. ${readers.length} ${readers.length === 1 ? "person" : "people"} read this. ${caught ? "Someone noticed." : "Nobody noticed."}`
       : "The word never made it out.";
     const sneakiness = round.smuggle
       ? `Hid '${round.word}' in plain sight. Cold.`
@@ -669,7 +677,9 @@ export class Game extends EventEmitter {
       tallies,
       caught,
       verdict,
-      outcome: caught ? "caught" : "got_away",
+      outcome: !round.smuggle
+        ? "word_never_landed"
+        : caught ? "caught" : "got_away",
       scoreChanges,
       leaderboard: this.#leaderboard(5),
       sneakiness,
