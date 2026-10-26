@@ -12,6 +12,11 @@ describe("parseCommand", () => {
       type: "vote",
       target: "some_name",
     });
+    assert.deepEqual(parseCommand("!accuse @Some_Name Candles"), {
+      type: "accuse",
+      target: "some_name",
+      word: "candles",
+    });
   });
 
   test("parses host controls and leaves help open to everyone", () => {
@@ -32,7 +37,8 @@ describe("parseCommand", () => {
   test("rejects malformed and unrelated chat", () => {
     for (const text of [
       "hello", "!join now", "!claim O123", "!claim ABC", "!vote",
-      "!vote bad-name", "!sus reset", "!sus start now", "",
+      "!vote bad-name", "!accuse name", "!accuse bad-name candle",
+      "!sus reset", "!sus start now", "",
     ]) {
       assert.equal(parseCommand(text), null);
     }

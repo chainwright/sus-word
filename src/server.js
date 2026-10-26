@@ -15,7 +15,7 @@ import TwitchClient from "./twitch.js";
 export const SESSION_COOKIE = "sus_sid";
 
 const PUBLIC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../public");
-const HELP_MESSAGE = "🕵️ Join with !join, watch chat for a hidden word, then vote with !vote name.";
+const HELP_MESSAGE = "🕵️ Join with !join, accuse with !accuse name word, then vote with !vote name.";
 
 function parseCookies(header = "") {
   return Object.fromEntries(header.split(";").flatMap((part) => {
@@ -86,6 +86,9 @@ export function createSusWordServer(options = {}) {
   let twitch = options.twitch ?? null;
   let started = false;
   let voiceSequence = 0;
+  let bustedTimer = null;
+  let bustedBatch = [];
+  let waitlistAnnouncementRound = null;
 
   app.use(express.json({ limit: "16kb" }));
 
@@ -116,6 +119,11 @@ export function createSusWordServer(options = {}) {
     }
     const result = game.createClaim({ sessionId: sid, login });
     response.status(result.ok ? 200 : 400).json(result);
+  });
+
+  app.post("/api/host/feature/:tableId", (request, response) => {
+    const result = game.featureTable(request.params.tableId);
+    response.status(result.ok ? 200 : 409).json(result);
   });
 
   app.post("/api/host/:action", async (request, response, next) => {
@@ -173,12 +181,24 @@ export function createSusWordServer(options = {}) {
       announce(`🕵️ Sus Word! Type !join to play. Get your secret card: ${publicUrl}/card`);
     }
   });
-  game.on("round", ({ roundNumber, duration }) => {
-    announce(`🕵️ Round ${roundNumber} has begun. Someone here has a secret word… ${formatRoundLength(duration)}.`);
+  game.on("round", ({ roundNumber, duration, tableCount, final }) => {
+    waitlistAnnouncementRound = null;
+    const label = final ? "Final round" : `Round ${roundNumber}`;
+    announce(`🕵️ ${label} has begun. ${tableCount} ${tableCount === 1 ? "table" : "tables"} · check your card for your table. ${formatRoundLength(duration)}.`);
   });
   game.on("hint", ({ message }) => announce(`🕵️ ${message}`));
   game.on("voteStart", () => announce("🕵️ Vote! !vote name"));
-  game.on("reveal", ({ botMessage }) => announce(botMessage));
+  game.on("busted", (event) => queueBusted(event));
+  game.on("player", ({ waitingForNextRound }) => {
+    if (!waitingForNextRound || waitlistAnnouncementRound === game.roundNumber) return;
+    waitlistAnnouncementRound = game.roundNumber;
+    announce("🕵️ New players are waiting for the next round.");
+  });
+  game.on("reveal", ({ botMessage, otherTablesMessage }) => {
+    flushBusted();
+    announce(botMessage);
+    announce(otherTablesMessage);
+  });
 
   function sendJson(socket, payload) {
     if (socket.readyState === 1) socket.send(JSON.stringify(payload));
@@ -269,6 +289,31 @@ export function createSusWordServer(options = {}) {
     twitch.sendChat(message).catch((error) => logger.error?.(`[chat] ${error.message}`));
   }
 
+  function queueBusted({ accuser, impostor, word }) {
+    bustedBatch.push(`@${accuser.login} caught @${impostor.login} (${word.toUpperCase()})`);
+    if (bustedTimer) return;
+    bustedTimer = setTimeout(flushBusted, 10_000);
+    bustedTimer.unref?.();
+  }
+
+  function flushBusted() {
+    if (bustedTimer) clearTimeout(bustedTimer);
+    bustedTimer = null;
+    if (!bustedBatch.length) return;
+    const entries = bustedBatch;
+    bustedBatch = [];
+    let body = "";
+    let included = 0;
+    for (const entry of entries) {
+      const next = body ? `${body}, ${entry}` : entry;
+      if (next.length > 420) break;
+      body = next;
+      included += 1;
+    }
+    const remainder = entries.length - included;
+    announce(`🚨 Busted: ${body}${remainder ? `, +${remainder} more` : ""}`);
+  }
+
   async function roundCategory() {
     if (!twitch) return null;
     try {
@@ -281,11 +326,19 @@ export function createSusWordServer(options = {}) {
   }
 
   async function runHostAction(action) {
-    switch (String(action).toLowerCase()) {
+    const normalized = String(action).toLowerCase();
+    if (normalized.startsWith("feature/")) {
+      return game.featureTable(normalized.slice("feature/".length));
+    }
+    switch (normalized) {
       case "start": return game.start();
       case "go": {
         const category = await roundCategory();
         return game.go(category ? { category } : undefined);
+      }
+      case "final": {
+        const category = await roundCategory();
+        return game.final(category ? { category } : undefined);
       }
       case "vote": return game.beginVote();
       case "next": return game.nextRound();
@@ -311,6 +364,8 @@ export function createSusWordServer(options = {}) {
     if (!command) {
       return game.recordMessage({
         userId: message.userId,
+        login: message.login,
+        displayName: message.displayName,
         messageId: message.id,
         text: message.text,
       });
@@ -336,7 +391,16 @@ export function createSusWordServer(options = {}) {
       });
     }
     if (command.type === "leave") return game.leave(message.userId);
-    if (command.type === "vote") return game.vote(message.userId, command.target);
+    if (command.type === "vote") return game.vote({
+      userId: message.userId,
+      login: message.login,
+      displayName: message.displayName,
+    }, command.target);
+    if (command.type === "accuse") return game.accuse({
+      userId: message.userId,
+      login: message.login,
+      displayName: message.displayName,
+    }, command.target, command.word);
     if (command.type === "sus") {
       if (command.action === "help") {
         announce(HELP_MESSAGE);
@@ -409,6 +473,9 @@ export function createSusWordServer(options = {}) {
 
   async function stop() {
     twitch?.stop?.();
+    if (bustedTimer) clearTimeout(bustedTimer);
+    bustedTimer = null;
+    bustedBatch = [];
     for (const client of clients) client.socket.close();
     await new Promise((resolveClose) => {
       if (!started) return resolveClose();

@@ -325,6 +325,7 @@ describe("round messages and reveal payload", () => {
     assert.match(reveal.caption, /^0:12 into the round\. 2 people read this\./);
     assert.equal(reveal.messages.length, 9);
     assert.equal(reveal.accidentalDecoys.length, 1);
+    assert.equal(reveal.accidentalDecoys[0].ribbon, "Most suspicious civilian");
     assert.match(reveal.accidentalDecoys[0].caption, /said it too, by accident/);
     assert.equal(reveal.verdict, "GOT AWAY");
     assert.equal(reveal.scoreChanges.find(({ player }) => player.id === alice.id).delta, 3);
@@ -362,17 +363,14 @@ describe("voting and scoring", () => {
       reason: "self_vote",
     });
     assert.equal(game.votes.get(bruno.id), alice.id);
-    assert.deepEqual(game.vote("not-playing", alice.id), {
-      ok: false,
-      reason: "not_a_player",
-    });
+    assert.equal(game.vote("not-playing", alice.id).ok, true);
 
     game.vote(chloe.id, alice.id);
     const lastVote = game.vote(alice.id, bruno.id);
     assert.equal(lastVote.state, PHASES.REVEAL);
     assert.equal(game.lastReveal.caught, true);
     assert.equal(game.lastReveal.verdict, "CAUGHT");
-    assert.equal(game.scores.get(alice.id), 0);
+    assert.equal(game.scores.get(alice.id), 1);
     assert.equal(game.scores.get(bruno.id), 1);
     assert.equal(game.scores.get(chloe.id), 1);
   });

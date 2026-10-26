@@ -21,7 +21,7 @@ export const DEFAULT_DURATIONS = Object.freeze({
 });
 
 const CLAIM_CHARACTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
+const ACTIVE_PHASES = new Set([PHASES.ROUND, PHASES.VOTE, PHASES.REVEAL]);
 const SYSTEM_CLOCK = {
   now: () => Date.now(),
   setTimeout: (callback, delay) => setTimeout(callback, delay),
@@ -60,8 +60,45 @@ function userDetails(input, login, details = {}) {
       avatar: input.avatar ?? input.profileImageUrl,
     };
   }
-
   return { id: input, login, ...details };
+}
+
+function stableShuffle(items, random) {
+  return items
+    .map((item, index) => ({ item, index, roll: random() }))
+    .sort((left, right) => left.roll - right.roll || left.index - right.index)
+    .map(({ item }) => item);
+}
+
+export function seatPlayers(players, random = Math.random) {
+  const shuffled = stableShuffle([...players], random);
+  if (shuffled.length < 3) return [];
+  const tableCount = Math.ceil(shuffled.length / 12);
+  const baseSize = Math.floor(shuffled.length / tableCount);
+  const largerTables = shuffled.length % tableCount;
+  const tables = [];
+  let cursor = 0;
+  for (let index = 0; index < tableCount; index += 1) {
+    const size = baseSize + (index < largerTables ? 1 : 0);
+    tables.push(shuffled.slice(cursor, cursor + size));
+    cursor += size;
+  }
+  return tables;
+}
+
+export function selectVoteAccused(tallies, count) {
+  if (count <= 0) return [];
+  const sorted = [...tallies]
+    .filter(({ votes }) => votes > 0)
+    .sort((left, right) => (
+      right.votes - left.votes || left.player.login.localeCompare(right.player.login)
+    ));
+  if (sorted.length <= count) return sorted.map(({ player }) => player.id);
+  const boundary = sorted[count - 1].votes;
+  const above = sorted.filter(({ votes }) => votes > boundary);
+  const atBoundary = sorted.filter(({ votes }) => votes === boundary);
+  return (above.length + atBoundary.length <= count ? [...above, ...atBoundary] : above)
+    .map(({ player }) => player.id);
 }
 
 export class Game extends EventEmitter {
@@ -69,9 +106,7 @@ export class Game extends EventEmitter {
     super();
     const sourceClock = options.clock ?? SYSTEM_CLOCK;
     this.clock = {
-      now: () => Number(
-        typeof sourceClock.now === "function" ? sourceClock.now() : sourceClock.now,
-      ),
+      now: () => Number(typeof sourceClock.now === "function" ? sourceClock.now() : sourceClock.now),
       setTimeout: (callback, delay) => sourceClock.setTimeout(callback, delay),
       clearTimeout: (timer) => sourceClock.clearTimeout(timer),
     };
@@ -80,7 +115,6 @@ export class Game extends EventEmitter {
     this.codeGenerator = options.codeGenerator ?? null;
     this.words = options.words ?? WORDS;
     this.durations = { ...DEFAULT_DURATIONS, ...options.durations };
-
     this.state = PHASES.IDLE;
     this.roundNumber = 0;
     this.players = new Map();
@@ -88,32 +122,38 @@ export class Game extends EventEmitter {
     this.scores = new Map();
     this.claims = new Map();
     this.sessions = new Map();
+    this.tables = new Map();
+    this.playerTables = new Map();
     this.votes = new Map();
     this.currentRound = null;
-    this.lastReveal = null;
+    this.featuredTableId = null;
+    this.lastFeaturedTableId = 0;
+    this.lastFeaturedPlayerIds = new Set();
+    this.lastRoundSeating = [];
+    this.lastImpostorIds = new Set();
     this.lastImpostorId = null;
+    this.lastReveal = null;
+    this.lastChampion = null;
+    this.crowdParticipants = new Set();
+    this.crowdAccusations = new Set();
+    this.crowdVoteTables = new Map();
+    this.crowdMessageCount = 0;
+    this.isFinalRound = false;
     this.lobbyOpenedAt = null;
     this.timers = new Map();
   }
 
-  get phase() {
-    return this.state;
-  }
+  get phase() { return this.state; }
 
   start() {
-    if (this.state !== PHASES.IDLE) {
-      return { ok: false, reason: "invalid_state" };
-    }
+    if (this.state !== PHASES.IDLE) return { ok: false, reason: "invalid_state" };
     this.#enterLobby();
     return { ok: true, state: this.state };
   }
 
   end() {
-    if (this.state === PHASES.IDLE) {
-      return { ok: false, reason: "invalid_state" };
-    }
-    this.currentRound = null;
-    this.votes.clear();
+    if (this.state === PHASES.IDLE) return { ok: false, reason: "invalid_state" };
+    this.#clearActiveRound();
     this.#transition(PHASES.IDLE);
     return { ok: true, state: this.state };
   }
@@ -125,10 +165,14 @@ export class Game extends EventEmitter {
     this.scores.clear();
     this.claims.clear();
     this.sessions.clear();
-    this.votes.clear();
-    this.currentRound = null;
-    this.lastReveal = null;
+    this.lastRoundSeating = [];
+    this.lastImpostorIds.clear();
     this.lastImpostorId = null;
+    this.lastReveal = null;
+    this.lastChampion = null;
+    this.lastFeaturedTableId = 0;
+    this.lastFeaturedPlayerIds.clear();
+    this.#clearActiveRound();
     this.lobbyOpenedAt = null;
     this.roundNumber = 0;
     const previous = this.state;
@@ -142,7 +186,6 @@ export class Game extends EventEmitter {
     const id = String(user.id ?? "").trim();
     const normalized = normalizeLogin(user.login);
     if (!id || !normalized) return { ok: false, reason: "invalid_player" };
-
     const existing = this.players.get(id);
     const profile = {
       id,
@@ -150,22 +193,20 @@ export class Game extends EventEmitter {
       displayName: String(user.displayName ?? existing?.displayName ?? user.login ?? normalized),
       avatar: String(user.avatar ?? existing?.avatar ?? ""),
     };
-    const claimed = Boolean(
-      existing?.claimed
-      || [...this.sessions.values()].some((session) => session.userId === id),
-    );
+    const claimed = Boolean(existing?.claimed
+      || [...this.sessions.values()].some((session) => session.userId === id));
     const player = {
       ...profile,
       claimed,
       joinedAt: existing?.joinedAt ?? this.#now(),
       messageCount: existing?.messageCount ?? 0,
     };
-
     this.players.set(id, player);
     this.profiles.set(id, { ...player });
     if (!this.scores.has(id)) this.scores.set(id, 0);
     this.#publish("player", {
       action: existing ? "update" : "join",
+      waitingForNextRound: ACTIVE_PHASES.has(this.state) && !this.playerTables.has(id),
       player: this.#publicPlayer(player),
     });
     this.#maybeAutoStartLobby();
@@ -184,37 +225,25 @@ export class Game extends EventEmitter {
 
   createClaim(sessionOrOptions, requestedLogin) {
     const options = sessionOrOptions && typeof sessionOrOptions === "object"
-      ? sessionOrOptions
-      : { sessionId: sessionOrOptions, login: requestedLogin };
+      ? sessionOrOptions : { sessionId: sessionOrOptions, login: requestedLogin };
     const sessionId = String(options.sessionId ?? options.sid ?? "").trim();
     const login = normalizeLogin(options.login ?? options.requestedLogin);
     if (!sessionId || !login) return { ok: false, reason: "invalid_claim" };
-
     const now = this.#now();
     this.#pruneClaims(now);
     for (const [code, claim] of this.claims) {
       if (claim.sessionId === sessionId && !claim.usedAt) this.claims.delete(code);
     }
-
     let code;
     for (let attempt = 0; attempt < 100; attempt += 1) {
       code = this.codeGenerator
-        ? String(this.codeGenerator()).trim().toUpperCase()
+        ? String(this.codeGenerator() ?? "").trim().toUpperCase()
         : this.#randomCode();
       if (/^[A-HJ-NP-Z2-9]{4}$/.test(code) && !this.claims.has(code)) break;
       code = null;
     }
     if (!code) return { ok: false, reason: "code_unavailable" };
-
-    const claim = {
-      code,
-      sessionId,
-      login,
-      createdAt: now,
-      expiresAt: now + this.durations.claim,
-      usedAt: null,
-      userId: null,
-    };
+    const claim = { code, sessionId, login, createdAt: now, expiresAt: now + this.durations.claim, usedAt: null, userId: null };
     this.claims.set(code, claim);
     return { ok: true, code, login, expiresAt: claim.expiresAt };
   }
@@ -222,8 +251,7 @@ export class Game extends EventEmitter {
   claim(codeOrOptions, chatter, userId) {
     const options = codeOrOptions && typeof codeOrOptions === "object"
       ? codeOrOptions
-      : typeof chatter === "object"
-        ? { code: codeOrOptions, ...chatter }
+      : typeof chatter === "object" ? { code: codeOrOptions, ...chatter }
         : { code: codeOrOptions, login: chatter, userId };
     const code = String(options.code ?? "").trim().toUpperCase();
     const claim = this.claims.get(code);
@@ -233,19 +261,12 @@ export class Game extends EventEmitter {
       this.claims.delete(code);
       return { ok: false, reason: "code_expired" };
     }
-
-    const login = normalizeLogin(
-      options.login ?? options.chatterLogin ?? options.userLogin,
-    );
+    const login = normalizeLogin(options.login ?? options.chatterLogin ?? options.userLogin);
     if (login !== claim.login) return { ok: false, reason: "name_mismatch" };
-
     const id = String(options.userId ?? options.id ?? "").trim();
     if (!id) return { ok: false, reason: "invalid_player" };
     const linkedSession = this.sessions.get(claim.sessionId);
-    if (linkedSession && linkedSession.userId !== id) {
-      return { ok: false, reason: "session_linked" };
-    }
-
+    if (linkedSession && linkedSession.userId !== id) return { ok: false, reason: "session_linked" };
     const now = this.#now();
     claim.usedAt = now;
     claim.userId = id;
@@ -260,93 +281,70 @@ export class Game extends EventEmitter {
     player.claimed = true;
     this.profiles.set(id, { ...player });
     this.#publish("claim", {
+      waitingForNextRound: ACTIVE_PHASES.has(this.state) && !this.playerTables.has(id),
       player: this.#publicPlayer(player),
     });
     this.#maybeAutoStartLobby();
-    return {
-      ok: true,
-      sessionId: claim.sessionId,
-      joined: joined.joined,
-      player: this.#publicPlayer(player),
-    };
+    return { ok: true, sessionId: claim.sessionId, joined: joined.joined, player: this.#publicPlayer(player) };
   }
 
   go(options = {}) {
-    if (this.state !== PHASES.LOBBY) {
-      return { ok: false, reason: "invalid_state" };
-    }
+    if (this.state !== PHASES.LOBBY) return { ok: false, reason: "invalid_state" };
     const claimed = [...this.players.values()].filter((player) => player.claimed);
-    if (claimed.length < 3) return { ok: false, reason: "not_enough_claimed" };
+    return this.#startRound(claimed, options, false);
+  }
 
-    let candidates = claimed;
-    if (claimed.length > 1 && this.lastImpostorId) {
-      candidates = claimed.filter((player) => player.id !== this.lastImpostorId);
+  final(options = {}) {
+    if (this.state !== PHASES.LOBBY) return { ok: false, reason: "invalid_state" };
+    if (!this.lastRoundSeating.length) return { ok: false, reason: "no_previous_tables" };
+    let finalists;
+    if (this.lastRoundSeating.length > 12) {
+      const eligible = new Set(this.lastRoundSeating.flatMap(({ playerIds }) => playerIds));
+      finalists = this.#leaderboard(Infinity)
+        .filter(({ player }) => eligible.has(player.id)).slice(0, 12)
+        .map(({ player }) => this.players.get(player.id)).filter(Boolean);
+    } else {
+      finalists = this.lastRoundSeating.map(({ playerIds }) => playerIds
+        .map((id) => this.players.get(id)).filter(Boolean)
+        .sort((left, right) => (this.scores.get(right.id) ?? 0) - (this.scores.get(left.id) ?? 0)
+          || left.login.localeCompare(right.login))[0]).filter(Boolean);
     }
-    const impostor = this.#randomItem(candidates);
-    const pickedWord = this.#pickWord(options);
-    if (!pickedWord) return { ok: false, reason: "word_unavailable" };
+    if (finalists.length < 3) return { ok: false, reason: "not_enough_finalists" };
+    return this.#startRound(finalists.slice(0, 12), options, true);
+  }
 
-    const now = this.#now();
-    this.roundNumber += 1;
-    this.lastImpostorId = impostor.id;
-    this.votes.clear();
-    const roster = new Map();
-    for (const player of this.players.values()) {
-      player.messageCount = 0;
-      roster.set(player.id, { ...player, messageCount: 0 });
-    }
-    this.currentRound = {
-      number: this.roundNumber,
-      startedAt: now,
-      endsAt: now + this.durations.round,
-      endedAt: null,
-      voteEndsAt: null,
-      revealEndsAt: null,
-      impostorId: impostor.id,
-      word: pickedWord.word,
-      category: pickedWord.category,
-      roster,
-      messages: [],
-      messageCounts: new Map([...roster.keys()].map((id) => [id, 0])),
-      hints: { category: false, letter: false },
-      smuggle: null,
-      decoys: [],
-      reveal: null,
-    };
-    this.#transition(PHASES.ROUND);
-    this.#setTimer("categoryHint", this.durations.categoryHint, () => {
-      this.#showHint("category");
-    });
-    this.#setTimer("letterHint", this.durations.letterHint, () => {
-      this.#showHint("letter");
-    });
-    this.#setTimer("round", this.durations.round, () => this.beginVote());
-    this.#publish("round", {
-      action: "start",
-      roundNumber: this.roundNumber,
-      duration: this.durations.round,
-    });
-    return { ok: true, roundNumber: this.roundNumber, state: this.state };
+  featureTable(tableId) {
+    const id = Number(tableId);
+    const table = this.tables.get(id);
+    if (!table || !ACTIVE_PHASES.has(this.state)) return { ok: false, reason: "unknown_table" };
+    this.featuredTableId = id;
+    this.currentRound = table;
+    this.lastFeaturedTableId = id;
+    this.#publish("feature", { tableId: id });
+    return { ok: true, tableId: id };
   }
 
   recordMessage(input, text) {
-    if (this.state !== PHASES.ROUND || !this.currentRound) {
-      return { ok: false, reason: "invalid_state" };
-    }
-    const options = input && typeof input === "object"
-      ? input
-      : { userId: input, text };
-    const player = this.#resolvePlayer(
-      options.userId ?? options.id ?? options.login,
-      this.currentRound.roster,
-    );
+    if (this.state !== PHASES.ROUND || !this.tables.size) return { ok: false, reason: "invalid_state" };
+    const options = input && typeof input === "object" ? input : { userId: input, text };
+    const reference = options.userId ?? options.id ?? options.login;
     const messageText = String(options.text ?? options.message ?? "");
-    if (!player || !messageText) return { ok: false, reason: "invalid_message" };
-
+    if (!reference || !messageText) return { ok: false, reason: "invalid_message" };
+    const table = this.#tableForPlayer(reference);
+    if (!table) {
+      if (options.source === "voice") return { ok: false, reason: "invalid_message" };
+      const crowd = this.#rememberParticipant(options);
+      if (!crowd) return { ok: false, reason: "invalid_message" };
+      this.crowdParticipants.add(crowd.id);
+      this.crowdMessageCount += 1;
+      this.#publish("crowdMessage", { count: this.crowdMessageCount });
+      return { ok: true, crowd: true, counted: true };
+    }
+    const player = this.#resolvePlayer(reference, table.roster);
+    if (!player) return { ok: false, reason: "invalid_message" };
     const now = this.#now();
     const message = {
-      id: String(options.messageId ?? options.idempotencyKey
-        ?? `${this.roundNumber}:${this.currentRound.messages.length + 1}`),
+      id: String(options.messageId ?? options.idempotencyKey ?? `${this.roundNumber}:${table.id}:${table.messages.length + 1}`),
       userId: player.id,
       login: player.login,
       displayName: player.displayName,
@@ -354,75 +352,130 @@ export class Game extends EventEmitter {
       text: messageText,
       source: options.source === "voice" ? "voice" : "chat",
       at: now,
-      elapsedMs: Math.max(0, now - this.currentRound.startedAt),
-      sequence: this.currentRound.messages.length,
+      elapsedMs: Math.max(0, now - table.startedAt),
+      sequence: table.messages.length,
     };
-    this.currentRound.messages.push(message);
-    const count = (this.currentRound.messageCounts.get(player.id) ?? 0) + 1;
-    this.currentRound.messageCounts.set(player.id, count);
+    table.messages.push(message);
+    const count = (table.messageCounts.get(player.id) ?? 0) + 1;
+    table.messageCounts.set(player.id, count);
     const activePlayer = this.players.get(player.id);
     if (activePlayer) activePlayer.messageCount = count;
-
-    const match = findWord(messageText, this.currentRound.word);
-    let delivered = false;
-    let decoy = false;
-    if (match.hit && player.id === this.currentRound.impostorId) {
-      if (!this.currentRound.smuggle) {
-        this.currentRound.smuggle = { ...message, match };
-        delivered = true;
-        for (const [sessionId, session] of this.sessions) {
-          if (session.userId === player.id) {
-            this.#publishPrivateCard(sessionId);
-          }
+    const smuggled = [];
+    const decoys = [];
+    for (const assignment of table.impostors) {
+      const match = findWord(messageText, assignment.word);
+      if (!match.hit) continue;
+      if (player.id === assignment.playerId) {
+        if (!assignment.smuggle) {
+          assignment.smuggle = { ...message, match };
+          smuggled.push(assignment.playerId);
+          if (assignment === table.impostors[0]) table.smuggle = assignment.smuggle;
+          this.#publishCardsFor(player.id);
         }
+      } else {
+        table.decoys.push({ ...message, match, wordOwnerId: assignment.playerId });
+        decoys.push(assignment.playerId);
       }
-    } else if (match.hit) {
-      this.currentRound.decoys.push({ ...message, match });
-      decoy = true;
     }
+    this.#publish("message", { tableId: table.id, message: { ...message }, messageCount: count });
+    return { ok: true, tableId: table.id, message: { ...message }, delivered: smuggled.length > 0, decoy: decoys.length > 0, smuggled, decoys };
+  }
 
-    this.#publish("message", { message: { ...message }, messageCount: count });
-    return { ok: true, message: { ...message }, delivered, decoy };
+  accuse(accuserReference, targetReference, guessedWord) {
+    if (this.state !== PHASES.ROUND || !this.tables.size) return { ok: false, reason: "invalid_state" };
+    const input = accuserReference && typeof accuserReference === "object"
+      ? accuserReference : { userId: accuserReference };
+    const accuser = this.#rememberParticipant(input);
+    if (!accuser) return { ok: false, reason: "invalid_accuser" };
+    const seatedTable = this.#tableForPlayer(accuser.id);
+    const table = seatedTable ?? this.tables.get(this.featuredTableId);
+    if (!table) return { ok: false, reason: "unknown_table" };
+    if (table.accusations.has(accuser.id)) return { ok: false, reason: "already_accused" };
+    if (!seatedTable && this.crowdAccusations.has(accuser.id)) {
+      return { ok: false, reason: "already_accused" };
+    }
+    if (!seatedTable) {
+      this.crowdParticipants.add(accuser.id);
+      this.crowdAccusations.add(accuser.id);
+    }
+    const target = this.#resolvePlayer(targetReference, table.roster);
+    const assignment = target ? table.impostors.find(({ playerId }) => playerId === target.id) : null;
+    const wordMatch = assignment
+      ? findWord(`guess is ${String(guessedWord ?? "")}`, assignment.word).hit : false;
+    const correct = Boolean(assignment && assignment.smuggle && !assignment.busted && wordMatch);
+    const accusation = {
+      accuserId: accuser.id,
+      targetId: target?.id ?? null,
+      target: normalizeLogin(targetReference),
+      word: String(guessedWord ?? "").trim().toLowerCase(),
+      correct,
+      at: this.#now(),
+    };
+    table.accusations.set(accuser.id, accusation);
+    if (!correct) {
+      this.#publish("accuseMiss", { tableId: table.id, accusation });
+      return { ok: true, correct: false, tableId: table.id };
+    }
+    assignment.busted = true;
+    assignment.bustedAt = accusation.at;
+    assignment.bustedBy = accuser.id;
+    this.#addScore(accuser.id, 2, table);
+    this.#publish("busted", {
+      tableId: table.id,
+      accuser: this.#publicPlayer(accuser),
+      impostor: this.#publicPlayer(target),
+      word: assignment.word,
+      accusation,
+    });
+    return { ok: true, correct: true, busted: true, tableId: table.id };
   }
 
   beginVote() {
-    if (this.state !== PHASES.ROUND || !this.currentRound) {
-      return { ok: false, reason: "invalid_state" };
+    if (this.state !== PHASES.ROUND || !this.tables.size) return { ok: false, reason: "invalid_state" };
+    const now = this.#now();
+    for (const table of this.tables.values()) {
+      table.endedAt = now;
+      table.voteEndsAt = now + this.durations.vote;
+      table.votes.clear();
     }
-    this.currentRound.endedAt = this.#now();
-    this.currentRound.voteEndsAt = this.currentRound.endedAt + this.durations.vote;
     this.votes.clear();
     this.#transition(PHASES.VOTE);
     this.#setTimer("vote", this.durations.vote, () => this.finishVote());
-    this.#publish("voteStart", {
-      roundNumber: this.roundNumber,
-      duration: this.durations.vote,
-      message: "Vote! !vote name",
-    });
+    this.#publish("voteStart", { roundNumber: this.roundNumber, duration: this.durations.vote, message: "Vote! !vote name" });
     return { ok: true, state: this.state };
   }
 
   vote(voterReference, targetReference) {
-    if (this.state !== PHASES.VOTE || !this.currentRound) {
-      return { ok: false, reason: "invalid_state" };
+    if (this.state !== PHASES.VOTE || !this.tables.size) return { ok: false, reason: "invalid_state" };
+    const input = voterReference && typeof voterReference === "object"
+      ? voterReference : { userId: voterReference };
+    const voter = this.#rememberParticipant(input);
+    if (!voter) return { ok: false, reason: "not_a_player" };
+    const seatedTable = this.#tableForPlayer(voter.id);
+    const table = seatedTable ?? this.tables.get(this.featuredTableId);
+    if (!table) return { ok: false, reason: "unknown_table" };
+    if (!seatedTable) {
+      this.crowdParticipants.add(voter.id);
+      const previousTableId = this.crowdVoteTables.get(voter.id);
+      if (previousTableId && previousTableId !== table.id) {
+        this.tables.get(previousTableId)?.votes.delete(voter.id);
+      }
+      this.crowdVoteTables.set(voter.id, table.id);
     }
-    const voter = this.#resolvePlayer(voterReference, this.players);
-    if (!voter || !this.currentRound.roster.has(voter.id)) {
-      return { ok: false, reason: "not_a_player" };
-    }
-    const target = this.#resolvePlayer(targetReference, this.currentRound.roster);
+    const target = this.#resolvePlayer(targetReference, table.roster);
     if (!target) return { ok: false, reason: "unknown_target" };
     if (voter.id === target.id) return { ok: false, reason: "self_vote" };
-
-    const previousTargetId = this.votes.get(voter.id) ?? null;
+    const previousTargetId = table.votes.get(voter.id) ?? null;
+    table.votes.set(voter.id, target.id);
     this.votes.set(voter.id, target.id);
     const result = {
       ok: true,
+      tableId: table.id,
       replaced: previousTargetId !== null,
       previousTargetId,
       voterId: voter.id,
       targetId: target.id,
-      tallies: this.getTallies(),
+      tallies: this.getTallies(table.id),
     };
     this.#publish("vote", result);
     this.#finishIfEveryoneVoted();
@@ -430,40 +483,47 @@ export class Game extends EventEmitter {
   }
 
   finishVote() {
-    if (this.state !== PHASES.VOTE || !this.currentRound) {
-      return { ok: false, reason: "invalid_state" };
+    if (this.state !== PHASES.VOTE || !this.tables.size) return { ok: false, reason: "invalid_state" };
+    const now = this.#now();
+    for (const table of this.tables.values()) {
+      table.revealEndsAt = now + this.durations.reveal;
+      table.reveal = this.#buildTableReveal(table);
+      table.phaseResult = this.#phaseResult(table.reveal.imposters);
     }
-
-    const reveal = this.#buildReveal();
-    this.currentRound.revealEndsAt = this.#now() + this.durations.reveal;
-    this.currentRound.reveal = reveal;
-    this.lastReveal = reveal;
+    const finalLeaderboard = this.#leaderboard(5);
+    for (const table of this.tables.values()) table.reveal.leaderboard = finalLeaderboard;
+    if (this.isFinalRound) {
+      const champion = this.#leaderboard(Infinity)
+        .filter(({ player }) => this.playerTables.has(player.id))[0]?.player ?? null;
+      this.lastChampion = champion;
+      for (const table of this.tables.values()) table.reveal.champion = champion;
+    }
+    this.currentRound = this.tables.get(this.featuredTableId);
+    this.lastReveal = this.currentRound.reveal;
+    const otherResults = [...this.tables.values()]
+      .filter(({ id }) => id !== this.featuredTableId).flatMap(({ reveal }) => reveal.imposters);
+    const caughtCount = otherResults.filter(({ verdict }) => verdict === "CAUGHT" || verdict === "BUSTED").length;
+    const gotAwayCount = otherResults.filter(({ verdict }) => verdict === "GOT AWAY").length;
+    this.lastReveal.otherTablesMessage = this.tables.size > 1
+      ? `Other tables: ${caughtCount} caught, ${gotAwayCount} got away.` : null;
     this.#transition(PHASES.REVEAL);
-    this.#publish("reveal", reveal);
+    this.#publish("reveal", this.lastReveal);
     this.#setTimer("reveal", this.durations.reveal, () => this.nextRound());
-    return { ok: true, state: this.state, reveal };
+    return { ok: true, state: this.state, reveal: this.lastReveal };
   }
 
   nextRound() {
-    if (this.state !== PHASES.REVEAL) {
-      return { ok: false, reason: "invalid_state" };
-    }
+    if (this.state !== PHASES.REVEAL) return { ok: false, reason: "invalid_state" };
     this.#enterLobby();
     return { ok: true, state: this.state };
   }
 
-  getTallies() {
-    if (!this.currentRound) return [];
-    const counts = new Map(
-      [...this.currentRound.roster.keys()].map((playerId) => [playerId, 0]),
-    );
-    for (const targetId of this.votes.values()) {
-      counts.set(targetId, (counts.get(targetId) ?? 0) + 1);
-    }
-    return [...this.currentRound.roster.values()].map((player) => ({
-      player: this.#publicPlayer(player),
-      votes: counts.get(player.id) ?? 0,
-    }));
+  getTallies(tableId = this.featuredTableId) {
+    const table = this.tables.get(Number(tableId));
+    if (!table) return [];
+    const counts = new Map([...table.roster.keys()].map((id) => [id, 0]));
+    for (const targetId of table.votes.values()) counts.set(targetId, (counts.get(targetId) ?? 0) + 1);
+    return [...table.roster.values()].map((player) => ({ player: this.#publicPlayer(player), votes: counts.get(player.id) ?? 0 }));
   }
 
   getCard(sessionId) {
@@ -471,7 +531,7 @@ export class Game extends EventEmitter {
     if (!session) return { linked: false, role: null };
     const player = this.players.get(session.userId) ?? this.profiles.get(session.userId);
     if (!player) return { linked: true, joined: false, role: null };
-
+    const table = this.#tableForPlayer(session.userId);
     const base = {
       linked: true,
       joined: this.players.has(session.userId),
@@ -481,74 +541,81 @@ export class Game extends EventEmitter {
       phaseEndsAt: this.#phaseEndsAt(),
       remainingMs: Math.max(0, (this.#phaseEndsAt() ?? this.#now()) - this.#now()),
     };
-    if (
-      !this.currentRound
-      || ![PHASES.ROUND, PHASES.VOTE, PHASES.REVEAL].includes(this.state)
-      || !this.currentRound.roster.has(session.userId)
-    ) {
-      return { ...base, role: null };
+    if (!table || !ACTIVE_PHASES.has(this.state)) {
+      return { ...base, role: null, crowd: ACTIVE_PHASES.has(this.state) };
     }
-    if (session.userId !== this.currentRound.impostorId) {
-      return {
-        ...base,
-        role: "DETECTIVE",
-        mission: "Someone is hiding a word. Watch the chat.",
-      };
-    }
+    const assignment = table.impostors.find(({ playerId }) => player.id === playerId);
+    const tableView = {
+      tableId: table.id,
+      tableCount: this.tables.size,
+      tableMates: [...table.roster.values()].map((mate) => this.#publicPlayer(mate)),
+      messages: table.messages.slice(-20).map((message) => this.#publicMessage(message, table)),
+      hints: this.#publicHints(table),
+      roundPoints: table.scoreChanges.get(player.id) ?? 0,
+    };
+    if (this.state === PHASES.REVEAL) tableView.result = table.reveal;
+    if (!assignment) return {
+      ...base,
+      ...tableView,
+      role: "DETECTIVE",
+      mission: "Someone is hiding a word. Watch the chat.",
+    };
     return {
       ...base,
+      ...tableView,
       role: "IMPOSTER",
-      word: this.currentRound.word,
-      category: this.currentRound.category,
+      word: assignment.word,
+      category: assignment.category,
       mission: "Get this word into chat naturally in a real sentence before time runs out.",
-      delivered: Boolean(this.currentRound.smuggle),
+      note: "You might not be the only Imposter at your table.",
+      delivered: Boolean(assignment.smuggle),
+      busted: assignment.busted,
     };
   }
 
   getPublicState() {
     const now = this.#now();
+    const table = this.tables.get(this.featuredTableId);
     const state = {
       state: this.state,
       phase: this.state,
       roundNumber: this.roundNumber,
-      players: [...this.players.values()].map((player) => this.#publicPlayer(player)),
+      featuredTableId: this.featuredTableId,
+      players: table ? [...table.roster.values()].map((player) => this.#publicPlayer(player))
+        : [...this.players.values()].map((player) => this.#publicPlayer(player)),
       claimedCount: [...this.players.values()].filter((player) => player.claimed).length,
       scores: this.#leaderboard(),
+      leaderboard: this.#leaderboard(),
+      tables: [...this.tables.values()].map((entry) => ({
+        id: entry.id,
+        playerCount: entry.roster.size,
+        ...(entry.phaseResult ? { phaseResult: entry.phaseResult } : {}),
+      })),
+      crowdCount: this.#crowdCount(),
       phaseEndsAt: this.#phaseEndsAt(),
       phaseDurationMs: this.durations[this.state.toLowerCase()] ?? 0,
       remainingMs: Math.max(0, (this.#phaseEndsAt() ?? now) - now),
+      final: this.isFinalRound,
+      champion: this.state === PHASES.REVEAL ? this.lastChampion : null,
     };
-    if (!this.currentRound) return state;
-
+    if (!table) return state;
     const round = {
-      number: this.currentRound.number,
-      startedAt: this.currentRound.startedAt,
-      remainingMs: this.state === PHASES.ROUND
-        ? Math.max(0, this.currentRound.endsAt - now)
-        : 0,
-      hints: {
-        category: this.currentRound.hints.category ? this.currentRound.category : null,
-        letter: this.currentRound.hints.letter ? this.currentRound.word[0] : null,
-      },
-      delivered: this.state === PHASES.REVEAL
-        ? Boolean(this.currentRound.smuggle)
-        : undefined,
-      players: [...this.currentRound.roster.values()].map((player) => (
-        this.#publicPlayer(player)
-      )),
-      messageCounts: Object.fromEntries(this.currentRound.messageCounts),
-      messageRecency: Object.fromEntries(
-        this.currentRound.messages.map((message, index) => [message.userId, index + 1]),
-      ),
-      latestMessages: this.currentRound.messages.slice(-3).map((message) => (
-        this.#publicMessage(message)
-      )),
-      recentMessages: this.currentRound.messages.slice(-6).map((message) => (
-        this.#publicMessage(message)
-      )),
-      tallies: this.state === PHASES.VOTE ? this.getTallies() : undefined,
+      number: table.number,
+      tableId: table.id,
+      tableCount: this.tables.size,
+      totalPlayers: [...this.tables.values()].reduce((sum, entry) => sum + entry.roster.size, 0),
+      startedAt: table.startedAt,
+      remainingMs: this.state === PHASES.ROUND ? Math.max(0, table.endsAt - now) : 0,
+      hints: this.#publicHints(table),
+      delivered: this.state === PHASES.REVEAL ? table.impostors.some(({ smuggle }) => smuggle) : undefined,
+      players: [...table.roster.values()].map((player) => this.#publicPlayer(player)),
+      messageCounts: Object.fromEntries(table.messageCounts),
+      messageRecency: Object.fromEntries(table.messages.map((message, index) => [message.userId, index + 1])),
+      latestMessages: table.messages.slice(-3).map((message) => this.#publicMessage(message, table)),
+      recentMessages: table.messages.slice(-6).map((message) => this.#publicMessage(message, table)),
+      tallies: this.state === PHASES.VOTE ? this.getTallies(table.id) : undefined,
     };
-    if (this.state === PHASES.REVEAL) round.reveal = this.currentRound.reveal;
+    if (this.state === PHASES.REVEAL) round.reveal = table.reveal;
     return { ...state, round };
   }
 
@@ -556,20 +623,347 @@ export class Game extends EventEmitter {
     const sid = String(sessionId ?? "");
     const now = this.#now();
     this.#pruneClaims(now);
-    const claim = [...this.claims.values()].find((candidate) => (
-      candidate.sessionId === sid && candidate.usedAt === null
-    ));
+    const claim = [...this.claims.values()].find((candidate) => candidate.sessionId === sid && candidate.usedAt === null);
     if (!claim) return null;
+    return { code: claim.code, login: claim.login, expiresAt: claim.expiresAt };
+  }
+
+  #startRound(eligible, options, finalRound) {
+    if (eligible.length < 3) return { ok: false, reason: "not_enough_claimed" };
+    const seatedGroups = finalRound ? [stableShuffle(eligible, this.random)] : seatPlayers(eligible, this.random);
+    const tableCount = seatedGroups.length;
+    const nextFeaturedId = finalRound ? 1 : (this.lastFeaturedTableId % tableCount) + 1;
+    if (!finalRound && tableCount > 1 && this.lastFeaturedPlayerIds.size) {
+      const sizes = seatedGroups.map((group) => group.length);
+      const all = seatedGroups.flat();
+      const spotlight = all.filter((player) => this.lastFeaturedPlayerIds.has(player.id));
+      const others = all.filter((player) => !this.lastFeaturedPlayerIds.has(player.id));
+      const arranged = sizes.map(() => []);
+      const nonFeatured = arranged.map((group, index) => ({ group, index }))
+        .filter(({ index }) => index + 1 !== nextFeaturedId);
+      let destination = 0;
+      while (spotlight.length && nonFeatured.some(({ group, index }) => group.length < sizes[index])) {
+        const entry = nonFeatured[destination % nonFeatured.length];
+        destination += 1;
+        if (entry.group.length < sizes[entry.index]) entry.group.push(spotlight.shift());
+      }
+      const featuredIndex = nextFeaturedId - 1;
+      while (others.length && arranged[featuredIndex].length < sizes[featuredIndex]) {
+        arranged[featuredIndex].push(others.shift());
+      }
+      const remaining = [...others, ...spotlight];
+      for (const [index, group] of arranged.entries()) {
+        while (group.length < sizes[index]) group.push(remaining.shift());
+      }
+      seatedGroups.splice(0, seatedGroups.length, ...arranged);
+    }
+    const now = this.#now();
+    const previousImpostors = new Set(this.lastImpostorIds);
+    const nextImpostors = new Set();
+    const nextTables = new Map();
+    const nextPlayerTables = new Map();
+    for (const [index, group] of seatedGroups.entries()) {
+      const id = index + 1;
+      const impostorCount = group.length >= 10 ? 2 : 1;
+      const fresh = group.filter((player) => !previousImpostors.has(player.id));
+      const repeats = group.filter((player) => previousImpostors.has(player.id));
+      const candidates = [
+        ...stableShuffle(fresh, this.random),
+        ...stableShuffle(repeats, this.random),
+      ];
+      const impostorPlayers = candidates.slice(0, impostorCount);
+      const words = this.#pickWords(impostorCount, options, id);
+      if (!words) return { ok: false, reason: "word_unavailable" };
+      const roster = new Map(group.map((player) => {
+        player.messageCount = 0;
+        return [player.id, { ...player, messageCount: 0 }];
+      }));
+      const impostors = impostorPlayers.map((player, assignmentIndex) => ({
+        playerId: player.id,
+        word: words[assignmentIndex].word,
+        category: words[assignmentIndex].category,
+        smuggle: null,
+        busted: false,
+        bustedAt: null,
+        bustedBy: null,
+        caught: false,
+      }));
+      for (const player of group) nextPlayerTables.set(player.id, id);
+      for (const player of impostorPlayers) nextImpostors.add(player.id);
+      nextTables.set(id, {
+        id,
+        number: this.roundNumber + 1,
+        startedAt: now,
+        endsAt: now + this.durations.round,
+        endedAt: null,
+        voteEndsAt: null,
+        revealEndsAt: null,
+        roster,
+        messages: [],
+        messageCounts: new Map([...roster.keys()].map((playerId) => [playerId, 0])),
+        hints: { category: false, letter: false },
+        impostors,
+        impostorId: impostors[0].playerId,
+        word: impostors[0].word,
+        category: impostors[0].category,
+        smuggle: null,
+        decoys: [],
+        accusations: new Map(),
+        votes: new Map(),
+        scoreChanges: new Map([...roster.keys()].map((playerId) => [playerId, 0])),
+        reveal: null,
+        phaseResult: null,
+      });
+    }
+    this.roundNumber += 1;
+    this.tables = nextTables;
+    this.playerTables = nextPlayerTables;
+    this.featuredTableId = nextFeaturedId;
+    this.lastFeaturedTableId = nextFeaturedId;
+    this.currentRound = this.tables.get(nextFeaturedId);
+    this.lastImpostorIds = nextImpostors;
+    this.lastImpostorId = this.currentRound.impostorId;
+    this.lastReveal = null;
+    this.lastChampion = null;
+    this.crowdParticipants.clear();
+    this.crowdAccusations.clear();
+    this.crowdVoteTables.clear();
+    this.crowdMessageCount = 0;
+    this.votes.clear();
+    this.isFinalRound = finalRound;
+    this.#transition(PHASES.ROUND);
+    this.#setTimer("categoryHint", this.durations.categoryHint, () => this.#showHint("category"));
+    this.#setTimer("letterHint", this.durations.letterHint, () => this.#showHint("letter"));
+    this.#setTimer("round", this.durations.round, () => this.beginVote());
+    this.#publish("round", {
+      action: "start",
+      roundNumber: this.roundNumber,
+      duration: this.durations.round,
+      tableCount: this.tables.size,
+      final: finalRound,
+    });
+    return { ok: true, roundNumber: this.roundNumber, tableCount: this.tables.size, featuredTableId: this.featuredTableId, final: finalRound, state: this.state };
+  }
+
+  #pickWords(count, options, tableId) {
+    const picked = [];
+    for (let index = 0; index < count; index += 1) {
+      const excluded = new Set(picked.map(({ category }) => category.toLowerCase()));
+      const word = this.#pickWord(index === 0 ? options : {}, excluded, tableId, index);
+      if (!word) return null;
+      picked.push(word);
+    }
+    return picked;
+  }
+
+  #pickWord(options = {}, excludedCategories = new Set(), tableId = 1, impostorIndex = 0) {
+    const requested = typeof options === "string" ? { category: options } : options;
+    if (requested.word) {
+      const word = typeof requested.word === "string" ? requested.word.toLowerCase()
+        : String(requested.word.word ?? "").toLowerCase();
+      if (!/^[a-z]{4,9}$/.test(word)) return null;
+      const catalogEntry = this.words.find((entry) => entry.word === word);
+      const category = String(requested.category ?? requested.word.category ?? catalogEntry?.category ?? "general").toLowerCase();
+      if (!excludedCategories.has(category)) return { word, category };
+    }
+    const requestedCategory = requested.category ? String(requested.category).trim().toLowerCase() : null;
+    let pool = this.words.filter(({ category }) => !excludedCategories.has(category.toLowerCase()));
+    if (requestedCategory && !excludedCategories.has(requestedCategory)) {
+      const matching = pool.filter(({ category }) => category.toLowerCase() === requestedCategory);
+      if (matching.length) pool = matching;
+    }
+    if (!pool.length) return null;
+    if (this.wordPicker) {
+      const candidate = this.wordPicker({ words: [...pool], category: requestedCategory, roundNumber: this.roundNumber + 1, tableId, impostorIndex, random: this.random });
+      if (typeof candidate === "string") {
+        return pool.find(({ word }) => word === candidate.toLowerCase())
+          ?? { word: candidate.toLowerCase(), category: requestedCategory ?? "general" };
+      }
+      if (candidate?.word) {
+        const catalogEntry = this.words.find(({ word }) => word === candidate.word.toLowerCase());
+        const category = String(candidate.category ?? catalogEntry?.category ?? requestedCategory ?? "general");
+        if (!excludedCategories.has(category.toLowerCase())) {
+          return { word: candidate.word.toLowerCase(), category };
+        }
+      }
+    }
+    return this.#randomItem(pool);
+  }
+
+  #showHint(kind) {
+    if (this.state !== PHASES.ROUND || !this.tables.size) return;
+    for (const table of this.tables.values()) table.hints[kind] = true;
+    const table = this.tables.get(this.featuredTableId);
+    const value = kind === "category"
+      ? [...new Set(table.impostors.map(({ category }) => category))].join(" · ")
+      : [...new Set(table.impostors.map(({ word }) => word[0]))].join(" · ");
+    this.#publish("hint", {
+      roundNumber: this.roundNumber,
+      tableId: table.id,
+      kind,
+      value,
+      message: `Table ${table.id} hint: ${value}`,
+      at: this.#now(),
+    });
+  }
+
+  #buildTableReveal(table) {
+    const tallies = this.getTallies(table.id);
+    const unbusted = table.impostors.filter(({ busted }) => !busted);
+    const accusedIds = new Set(selectVoteAccused(tallies, unbusted.length));
+    for (const assignment of unbusted) assignment.caught = accusedIds.has(assignment.playerId);
+    for (const assignment of table.impostors) {
+      const delta = assignment.smuggle ? (assignment.busted || assignment.caught ? 1 : 3) : 0;
+      this.#addScore(assignment.playerId, delta, table);
+    }
+    for (const [voterId, targetId] of table.votes) {
+      if (table.impostors.find(({ playerId, caught }) => playerId === targetId && caught)) this.#addScore(voterId, 1, table);
+    }
+    const results = table.impostors.map((assignment) => this.#assignmentReveal(table, assignment));
+    const primary = results[0];
+    const scoreChanges = [...table.scoreChanges].map(([playerId, delta]) => {
+      const player = table.roster.get(playerId) ?? this.profiles.get(playerId);
+      const score = this.scores.get(playerId) ?? 0;
+      return { player: this.#publicPlayer(player, score), delta, score };
+    });
+    const botMessage = results.length === 1 ? primary.botMessage
+      : `🕵️ Table ${table.id}: ${results.map((result) => `@${result.impostor.login} ${result.word.toUpperCase()} — ${result.verdict}`).join(" · ")}`;
     return {
-      code: claim.code,
-      login: claim.login,
-      expiresAt: claim.expiresAt,
+      ...primary,
+      tableId: table.id,
+      imposters: results,
+      accusedIds: [...accusedIds],
+      scoreChanges,
+      leaderboard: this.#leaderboard(5),
+      botMessage,
     };
   }
 
+  #assignmentReveal(table, assignment) {
+    const impostor = this.#publicPlayer(table.roster.get(assignment.playerId), this.scores.get(assignment.playerId) ?? 0);
+    const evidence = assignment.smuggle ? this.#revealMessage(assignment.smuggle, table) : null;
+    const readers = assignment.smuggle ? [...new Set(
+      table.messages.slice(assignment.smuggle.sequence + 1).map(({ userId }) => userId)
+        .filter((id) => id !== assignment.playerId),
+    )].map((id) => this.#publicPlayer(table.roster.get(id))).filter(Boolean) : [];
+    const elapsed = assignment.smuggle ? formatElapsed(assignment.smuggle.elapsedMs) : null;
+    const verdict = !assignment.smuggle ? "WORD NEVER LANDED"
+      : assignment.busted ? "BUSTED" : assignment.caught ? "CAUGHT" : "GOT AWAY";
+    const noticed = assignment.busted || assignment.caught;
+    const caption = assignment.smuggle
+      ? assignment.smuggle.source === "voice"
+        ? `${elapsed} into the round. Said out loud on stream. ${noticed ? "Someone noticed." : "Nobody noticed."}`
+        : `${elapsed} into the round. ${readers.length} ${readers.length === 1 ? "person" : "people"} read this. ${noticed ? "Someone noticed." : "Nobody noticed."}`
+      : "The word never made it out.";
+    const sneakiness = !assignment.smuggle ? `Never found a clean opening for '${assignment.word}'.`
+      : noticed ? `Slipped '${assignment.word}' in, but chat smelled it.`
+        : `Hid '${assignment.word}' in plain sight. Cold.`;
+    const delta = table.scoreChanges.get(assignment.playerId) ?? 0;
+    const botMessage = assignment.smuggle
+      ? assignment.smuggle.source === "voice"
+        ? `🕵️ Table ${table.id}: @${impostor.login} was the Imposter! ${assignment.word.toUpperCase()}, said out loud at ${elapsed}. ${verdict}. +${delta}`
+        : `🕵️ Table ${table.id}: @${impostor.login} was the Imposter! ${assignment.word.toUpperCase()}, smuggled at ${elapsed} ('${assignment.smuggle.text}'). ${verdict}. +${delta}`
+      : `🕵️ Table ${table.id}: @${impostor.login} was the Imposter! ${assignment.word.toUpperCase()}. The word never made it out. ${verdict}. +0`;
+    const accidentalDecoys = table.decoys.filter(({ wordOwnerId }) => wordOwnerId === assignment.playerId)
+      .map((message) => {
+        const decoy = this.#revealMessage(message, table);
+        return {
+          ...decoy,
+          ...(message === table.decoys[0] ? { ribbon: "Most suspicious civilian" } : {}),
+          caption: `@${decoy.player.login} said it too, by accident.`,
+        };
+      });
+    return {
+      roundNumber: table.number,
+      impostor,
+      word: assignment.word,
+      category: assignment.category,
+      smuggled: Boolean(assignment.smuggle),
+      evidence,
+      elapsed,
+      readerCount: readers.length,
+      readers,
+      caption,
+      messages: table.messages.map((message) => this.#publicMessage(message, table)),
+      accidentalDecoys,
+      votes: [...table.votes].map(([voterId, targetId]) => ({ voterId, targetId })),
+      tallies: this.getTallies(table.id),
+      busted: assignment.busted,
+      bustedBy: assignment.bustedBy ? this.#publicPlayer(this.profiles.get(assignment.bustedBy)) : null,
+      caught: assignment.caught,
+      verdict,
+      outcome: !assignment.smuggle ? "word_never_landed"
+        : assignment.busted ? "busted" : assignment.caught ? "caught" : "got_away",
+      sneakiness,
+      botMessage,
+    };
+  }
+
+  #phaseResult(results) {
+    if (results.length === 1) return results[0].verdict;
+    const counts = new Map();
+    for (const { verdict } of results) counts.set(verdict, (counts.get(verdict) ?? 0) + 1);
+    return [...counts].map(([verdict, count]) => `${count} ${verdict}`).join(" · ");
+  }
+
+  #revealMessage(message, table) {
+    return { ...this.#publicMessage(message, table), index: message.match.index, length: message.match.length };
+  }
+
+  #publicMessage(message, table) {
+    return {
+      id: message.id,
+      player: this.#publicPlayer(table.roster.get(message.userId)),
+      text: message.text,
+      source: message.source,
+      at: message.at,
+      elapsedMs: message.elapsedMs,
+      elapsed: formatElapsed(message.elapsedMs),
+    };
+  }
+
+  #publicHints(table) {
+    return {
+      category: table.hints.category ? [...new Set(table.impostors.map(({ category }) => category))].join(" · ") : null,
+      letter: table.hints.letter ? [...new Set(table.impostors.map(({ word }) => word[0]))].join(" · ") : null,
+    };
+  }
+
+  #leaderboard(limit = Infinity) {
+    return [...this.scores.entries()].map(([id, score]) => ({
+      player: this.#publicPlayer(this.players.get(id) ?? this.profiles.get(id), score),
+      score,
+    })).filter(({ player }) => player)
+      .sort((left, right) => right.score - left.score || left.player.login.localeCompare(right.player.login))
+      .slice(0, limit);
+  }
+
+  #addScore(playerId, delta, table) {
+    if (!this.scores.has(playerId)) this.scores.set(playerId, 0);
+    if (delta) this.scores.set(playerId, (this.scores.get(playerId) ?? 0) + delta);
+    table.scoreChanges.set(playerId, (table.scoreChanges.get(playerId) ?? 0) + delta);
+  }
+
+  #finishIfEveryoneVoted() {
+    if (this.state !== PHASES.VOTE || !this.tables.size) return;
+    const eligible = [...this.playerTables.keys()].filter((id) => this.players.has(id));
+    if (eligible.length && eligible.every((id) => this.tables.get(this.playerTables.get(id)).votes.has(id))) this.finishVote();
+  }
+
+  #maybeAutoStartLobby() {
+    if (this.state === PHASES.LOBBY && this.lobbyOpenedAt !== null
+      && this.#now() - this.lobbyOpenedAt >= this.durations.lobby
+      && [...this.players.values()].filter(({ claimed }) => claimed).length >= 3) this.go();
+  }
+
   #enterLobby() {
-    this.currentRound = null;
-    this.votes.clear();
+    if (this.tables.size) {
+      const featured = this.tables.get(this.featuredTableId);
+      this.lastFeaturedPlayerIds = new Set(featured?.roster.keys() ?? []);
+      this.lastFeaturedTableId = this.featuredTableId ?? this.lastFeaturedTableId;
+      this.lastRoundSeating = [...this.tables.values()].map((table) => ({ id: table.id, playerIds: [...table.roster.keys()] }));
+    }
+    this.#clearActiveRound();
     this.lobbyOpenedAt = this.#now();
     this.#transition(PHASES.LOBBY);
     this.#armLobbyTimer();
@@ -583,212 +977,56 @@ export class Game extends EventEmitter {
     });
   }
 
-  #pickWord(options) {
-    const requested = typeof options === "string" ? { category: options } : options;
-    if (requested.word) {
-      const word = typeof requested.word === "string"
-        ? requested.word.toLowerCase()
-        : String(requested.word.word ?? "").toLowerCase();
-      if (!/^[a-z]{4,9}$/.test(word)) return null;
-      const catalogEntry = this.words.find((entry) => entry.word === word);
-      return {
-        word,
-        category: requested.category
-          ?? requested.word.category
-          ?? catalogEntry?.category
-          ?? "general",
-      };
-    }
-
-    const category = requested.category
-      ? String(requested.category).trim().toLowerCase()
-      : null;
-    const choices = category
-      ? this.words.filter((entry) => entry.category.toLowerCase() === category)
-      : this.words;
-    const pool = choices.length ? choices : this.words;
-    if (!pool.length) return null;
-    if (this.wordPicker) {
-      const picked = this.wordPicker({
-        words: [...pool],
-        category,
-        roundNumber: this.roundNumber + 1,
-        random: this.random,
-      });
-      if (typeof picked === "string") {
-        const entry = pool.find(({ word }) => word === picked.toLowerCase());
-        return entry ?? { word: picked.toLowerCase(), category: category ?? "general" };
-      }
-      if (picked?.word) return { word: picked.word.toLowerCase(), category: picked.category };
-    }
-    return this.#randomItem(pool);
+  #clearActiveRound() {
+    this.tables.clear();
+    this.playerTables.clear();
+    this.votes.clear();
+    this.crowdParticipants.clear();
+    this.crowdAccusations.clear();
+    this.crowdVoteTables.clear();
+    this.crowdMessageCount = 0;
+    this.currentRound = null;
+    this.featuredTableId = null;
+    this.isFinalRound = false;
   }
 
-  #showHint(kind) {
-    if (this.state !== PHASES.ROUND || !this.currentRound) return;
-    if (this.currentRound.hints[kind]) return;
-    this.currentRound.hints[kind] = true;
-    const value = kind === "category"
-      ? this.currentRound.category
-      : this.currentRound.word[0];
-    this.#publish("hint", {
-      roundNumber: this.roundNumber,
-      kind,
-      value,
-      message: kind === "category" ? `Category: ${value}` : `Starts with: ${value}`,
-      at: this.#now(),
-    });
+  #tableForPlayer(reference) {
+    let playerId = reference && typeof reference === "object" ? reference.id ?? reference.userId : reference;
+    if (!this.playerTables.has(playerId)) {
+      const login = normalizeLogin(playerId);
+      playerId = [...this.playerTables.keys()].find((id) => this.tables.get(this.playerTables.get(id))?.roster.get(id)?.login === login);
+    }
+    return this.tables.get(this.playerTables.get(playerId));
   }
 
-  #buildReveal() {
-    const round = this.currentRound;
-    const tallies = this.getTallies();
-    const impostorVotes = tallies.find(({ player }) => player.id === round.impostorId)?.votes ?? 0;
-    const highestVotes = Math.max(0, ...tallies.map(({ votes }) => votes));
-    // No runoff: the Imposter is caught only with the single highest tally. A tie means chat never agreed.
-    const leaders = tallies.filter(({ votes }) => votes === highestVotes).length;
-    const caught = impostorVotes > 0 && impostorVotes === highestVotes && leaders === 1;
-    const scoreChanges = [];
-
-    for (const player of round.roster.values()) {
-      let delta = 0;
-      if (
-        caught
-        && player.id !== round.impostorId
-        && this.votes.get(player.id) === round.impostorId
-      ) {
-        delta = 1;
-      } else if (player.id === round.impostorId && round.smuggle && !caught) {
-        delta = 3;
-      }
-      const score = (this.scores.get(player.id) ?? 0) + delta;
-      this.scores.set(player.id, score);
-      scoreChanges.push({ player: this.#publicPlayer(player, score), delta, score });
-    }
-
-    const impostor = this.#publicPlayer(
-      round.roster.get(round.impostorId),
-      this.scores.get(round.impostorId) ?? 0,
-    );
-    const evidence = round.smuggle ? this.#revealMessage(round.smuggle) : null;
-    const readers = round.smuggle
-      ? [...new Set(
-          round.messages
-            .slice(round.smuggle.sequence + 1)
-            .map((message) => message.userId)
-            .filter((id) => id !== round.impostorId),
-        )].map((id) => this.#publicPlayer(round.roster.get(id)))
-      : [];
-    const elapsed = round.smuggle ? formatElapsed(round.smuggle.elapsedMs) : null;
-    const verdict = !round.smuggle
-      ? "WORD NEVER LANDED"
-      : caught ? "CAUGHT" : "GOT AWAY";
-    const caption = round.smuggle
-      ? round.smuggle.source === "voice"
-        ? `${elapsed} into the round. Said out loud on stream. ${caught ? "Someone noticed." : "Nobody noticed."}`
-        : `${elapsed} into the round. ${readers.length} ${readers.length === 1 ? "person" : "people"} read this. ${caught ? "Someone noticed." : "Nobody noticed."}`
-      : "The word never made it out.";
-    const sneakiness = !round.smuggle
-      ? `Never found a clean opening for '${round.word}'.`
-      : caught
-        ? `Slipped '${round.word}' in, but chat smelled it.`
-        : `Hid '${round.word}' in plain sight. Cold.`;
-    const impostorDelta = scoreChanges.find(({ player }) => player.id === round.impostorId)?.delta ?? 0;
-    const botMessage = round.smuggle
-      ? round.smuggle.source === "voice"
-        ? `🕵️ It was @${impostor.login}! Word: ${round.word.toUpperCase()}, said out loud at ${elapsed}. ${verdict}. +${impostorDelta}`
-        : `🕵️ It was @${impostor.login}! Word: ${round.word.toUpperCase()}, smuggled at ${elapsed} ('${round.smuggle.text}'). ${verdict}. +${impostorDelta}`
-      : `🕵️ It was @${impostor.login}! Word: ${round.word.toUpperCase()}. The word never made it out. ${verdict}. +0`;
-
-    const accidentalDecoys = round.decoys.map((message) => {
-      const decoy = this.#revealMessage(message);
-      return { ...decoy, caption: `@${decoy.player.login} said it too, by accident.` };
-    });
-
-    return {
-      roundNumber: round.number,
-      impostor,
-      word: round.word,
-      category: round.category,
-      smuggled: Boolean(round.smuggle),
-      evidence,
-      elapsed,
-      readerCount: readers.length,
-      readers,
-      caption,
-      messages: round.messages.map((message) => this.#publicMessage(message)),
-      accidentalDecoys,
-      votes: [...this.votes].map(([voterId, targetId]) => ({ voterId, targetId })),
-      tallies,
-      caught,
-      verdict,
-      outcome: !round.smuggle
-        ? "word_never_landed"
-        : caught ? "caught" : "got_away",
-      scoreChanges,
-      leaderboard: this.#leaderboard(5),
-      sneakiness,
-      botMessage,
+  #rememberParticipant(input) {
+    const details = userDetails(input);
+    let id = String(details.id ?? "").trim();
+    if (!id && details.login) id = this.#resolvePlayer(details.login, this.players)?.id ?? "";
+    if (!id) return null;
+    const existing = this.players.get(id) ?? this.profiles.get(id);
+    const login = normalizeLogin(details.login ?? existing?.login ?? id);
+    const profile = {
+      id,
+      login,
+      displayName: String(details.displayName ?? existing?.displayName ?? login),
+      avatar: String(details.avatar ?? existing?.avatar ?? ""),
+      claimed: Boolean(existing?.claimed),
+      joinedAt: existing?.joinedAt ?? this.#now(),
+      messageCount: existing?.messageCount ?? 0,
     };
+    this.profiles.set(id, profile);
+    if (!this.scores.has(id)) this.scores.set(id, 0);
+    return profile;
   }
 
-  #revealMessage(message) {
-    return {
-      ...this.#publicMessage(message),
-      index: message.match.index,
-      length: message.match.length,
-    };
-  }
-
-  #publicMessage(message) {
-    return {
-      id: message.id,
-      player: this.#publicPlayer(this.currentRound.roster.get(message.userId)),
-      text: message.text,
-      source: message.source,
-      at: message.at,
-      elapsedMs: message.elapsedMs,
-      elapsed: formatElapsed(message.elapsedMs),
-    };
-  }
-
-  #leaderboard(limit = Infinity) {
-    return [...this.scores.entries()]
-      .map(([id, score]) => ({
-        player: this.#publicPlayer(this.players.get(id) ?? this.profiles.get(id), score),
-        score,
-      }))
-      .filter(({ player }) => player)
-      .sort((left, right) => (
-        right.score - left.score || left.player.login.localeCompare(right.player.login)
-      ))
-      .slice(0, limit);
-  }
-
-  #finishIfEveryoneVoted() {
-    if (this.state !== PHASES.VOTE || !this.currentRound) return;
-    const eligible = [...this.currentRound.roster.keys()]
-      .filter((id) => this.players.has(id));
-    if (eligible.length && eligible.every((id) => this.votes.has(id))) {
-      this.finishVote();
-    }
-  }
-
-  #maybeAutoStartLobby() {
-    if (
-      this.state === PHASES.LOBBY
-      && this.lobbyOpenedAt !== null
-      && this.#now() - this.lobbyOpenedAt >= this.durations.lobby
-      && [...this.players.values()].filter((player) => player.claimed).length >= 3
-    ) {
-      this.go();
-    }
+  #crowdCount() {
+    const waiting = [...this.players.keys()].filter((id) => !this.playerTables.has(id));
+    return new Set([...waiting, ...this.crowdParticipants]).size;
   }
 
   #resolvePlayer(reference, collection) {
-    if (reference && typeof reference === "object") {
-      reference = reference.id ?? reference.userId ?? reference.login;
-    }
+    if (reference && typeof reference === "object") reference = reference.id ?? reference.userId ?? reference.login;
     const value = String(reference ?? "").trim();
     if (!value) return null;
     if (collection.has(value)) return collection.get(value);
@@ -796,18 +1034,13 @@ export class Game extends EventEmitter {
     return [...collection.values()].find((player) => player.login === login) ?? null;
   }
 
-  #publicPlayer(player, score = this.scores.get(player?.id) ?? 0) {
-    return publicPlayer(player, score);
-  }
+  #publicPlayer(player, score = this.scores.get(player?.id) ?? 0) { return publicPlayer(player, score); }
 
   #randomCode() {
-    return Array.from(
-      { length: 4 },
-      () => CLAIM_CHARACTERS[Math.min(
-        CLAIM_CHARACTERS.length - 1,
-        Math.floor(this.random() * CLAIM_CHARACTERS.length),
-      )],
-    ).join("");
+    return Array.from({ length: 4 }, () => CLAIM_CHARACTERS[Math.min(
+      CLAIM_CHARACTERS.length - 1,
+      Math.floor(this.random() * CLAIM_CHARACTERS.length),
+    )]).join("");
   }
 
   #randomItem(items) {
@@ -817,21 +1050,24 @@ export class Game extends EventEmitter {
 
   #pruneClaims(now) {
     for (const [code, claim] of this.claims) {
-      if (!claim.usedAt && now - claim.createdAt >= this.durations.claim) {
-        this.claims.delete(code);
-      }
+      if (!claim.usedAt && now - claim.createdAt >= this.durations.claim) this.claims.delete(code);
     }
   }
 
-  #now() {
-    return this.clock.now();
+  #publishCardsFor(playerId) {
+    for (const [sessionId, session] of this.sessions) {
+      if (session.userId === playerId) this.#publishPrivateCard(sessionId);
+    }
   }
 
+  #now() { return this.clock.now(); }
+
   #phaseEndsAt() {
-    if (!this.currentRound) return null;
-    if (this.state === PHASES.ROUND) return this.currentRound.endsAt;
-    if (this.state === PHASES.VOTE) return this.currentRound.voteEndsAt;
-    if (this.state === PHASES.REVEAL) return this.currentRound.revealEndsAt;
+    const table = this.tables.get(this.featuredTableId);
+    if (!table) return null;
+    if (this.state === PHASES.ROUND) return table.endsAt;
+    if (this.state === PHASES.VOTE) return table.voteEndsAt;
+    if (this.state === PHASES.REVEAL) return table.revealEndsAt;
     return null;
   }
 
@@ -862,12 +1098,7 @@ export class Game extends EventEmitter {
   }
 
   #publishPrivateCard(sessionId) {
-    this.emit("card", {
-      type: "card",
-      at: this.#now(),
-      sessionId,
-      card: this.getCard(sessionId),
-    });
+    this.emit("card", { type: "card", at: this.#now(), sessionId, card: this.getCard(sessionId) });
   }
 }
 

@@ -15,6 +15,15 @@ export function parseCommand(message) {
   match = /^!vote\s+@?([a-z0-9_]{1,25})$/i.exec(text);
   if (match) return { type: "vote", target: match[1].toLowerCase() };
 
+  match = /^!accuse\s+@?([a-z0-9_]{1,25})\s+([a-z][a-z’']{1,19})$/i.exec(text);
+  if (match) {
+    return {
+      type: "accuse",
+      target: match[1].toLowerCase(),
+      word: match[2].toLowerCase(),
+    };
+  }
+
   match = /^!sus\s+(start|go|vote|next|end|help)$/i.exec(text);
   if (!match) return null;
   const action = match[1].toLowerCase();

@@ -157,3 +157,48 @@ test("the claim route binds a code and private card state to its session cookie"
   privateView.socket.close();
   publicView.socket.close();
 });
+
+test("chat routes accusations and the host can feature another table", async (context) => {
+  const game = new Game({
+    random: () => 0,
+    words: [
+      { word: "candle", category: "home" },
+      { word: "rocket", category: "space" },
+    ],
+  });
+  for (let index = 0; index < 13; index += 1) {
+    game.join({ id: `route-${index}`, login: `route_${index}` });
+    game.players.get(`route-${index}`).claimed = true;
+  }
+  game.start();
+  game.go({ word: "candle", category: "home" });
+  const impostor = game.currentRound.roster.get(game.currentRound.impostorId);
+  const detective = [...game.currentRound.roster.values()].find(({ id }) => id !== impostor.id);
+  game.recordMessage({ userId: impostor.id, text: "this candle smells wonderful tonight" });
+  const service = createSusWordServer({
+    game,
+    port: 0,
+    env: {},
+    logger: { log() {}, error() {} },
+  });
+  context.after(async () => {
+    game.reset();
+    await service.stop();
+  });
+  const accusation = await service.handleChatMessage({
+    id: "accuse-1",
+    userId: detective.id,
+    login: detective.login,
+    displayName: detective.displayName,
+    text: `!accuse @${impostor.login} candles`,
+  });
+  assert.equal(accusation.correct, true);
+
+  const address = await service.start();
+  const response = await fetch(`http://127.0.0.1:${address.port}/api/host/feature/2`, {
+    method: "POST",
+  });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).tableId, 2);
+  assert.equal(game.featuredTableId, 2);
+});

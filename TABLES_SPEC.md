@@ -67,3 +67,21 @@ The game must work from 3 players to 200+ in one Twitch chat. Model: **tables**.
 - Accuse: correct, wrong word, wrong person, before smuggle, twice, crowd on featured table only.
 - Vote top-k with ties; scoring table above; the final table selection.
 - A simulated 200-player round finishes in under 1 s of CPU.
+
+## 12. The streamer at the tables (Roma 14134)
+- Everyone hears the streamer's voice, so the streamer always sits at the **featured table** (the one on stream) and moves with it when it changes. Their voice and chat messages are evidence only for that table.
+- At the featured table the streamer is an ordinary player: they can be an Imposter, they can be accused (`!accuse <streamer> word`), and the crowd can vote for them.
+- When the streamer is an Imposter, they smuggle the word out loud on air. That's the main show of a big stream: the whole chat hears every phrase and tries to catch them.
+- A "Host plays" switch on the host page (on by default). Off = the streamer only hosts (big tournaments, or when the streamer just wants to lead the game); then they aren't seated and can't be an Imposter.
+- The streamer's card works as usual (role, word on their phone). The host page still never shows roles.
+- The streamer doesn't count against the limit of 12: the featured table can have 12 players + the streamer.
+
+## 13. Side tables talk on the phone, the main chat stays clean (Roma 14138)
+Problem: 10 tables in one Twitch chat make a mess that's impossible to read.
+Solution:
+- **Main table (featured)** plays in Twitch chat, on stream, as now. The main chat holds only the main table, the crowd (!accuse/!vote on the main table) and the bot's summaries.
+- **Side tables** talk in the **table chat inside the card** (on the phone/browser). The card's identity is already tied to the Twitch name through !claim, so messages are signed with the real nickname and avatar.
+  Messages go to the server over the card's WebSocket (`{type:"tableChat", text}`) and pass through the same recordMessage: smuggle, decoys, accusations (`/accuse name word` or a button in the card), votes (buttons in the card).
+- Messages typed into Twitch chat by side-table players don't count as their table's evidence (they're simply chat, the crowd).
+- When a table becomes the main one next round, its players play in Twitch chat again (the card says "Your table is ON STREAM: talk in Twitch chat").
+- Table chat safeguards: max 200 characters, at most 1 message every 2 s per player, links are cut, length and rate limits are enforced on the server. The streamer can mute a player with `!sus mute name` (they leave the tables until the end of the evening).

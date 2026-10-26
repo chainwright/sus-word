@@ -13,7 +13,7 @@ const FAST_DURATIONS = Object.freeze({
   vote: 15_000,
 });
 
-const PROFILES = [
+const CORE_PROFILES = [
   ["pixel_mara", "Pixel Mara", "#51405f", "PM"],
   ["tomtom_irl", "TomTom", "#7653a5", "TT"],
   ["quietfox", "Quiet Fox", "#d56a3d", "QF"],
@@ -25,6 +25,8 @@ const PROFILES = [
   avatar: avatarDataUri(color, initials),
   sessionId: `demo-session-${index + 1}`,
 }));
+
+const AVATAR_COLORS = ["#51405f", "#7653a5", "#d56a3d", "#477b86", "#81613f", "#3f6881"];
 
 const CHAT_LINES = [
   "did anyone else hear that thunder just now",
@@ -43,6 +45,41 @@ const CHAT_LINES = [
 
 function sleep(milliseconds) {
   return new Promise((resolveSleep) => setTimeout(resolveSleep, milliseconds));
+}
+
+function requestedPlayerCount(argv = process.argv) {
+  const argument = argv.find((value) => value.startsWith("--players="));
+  const separateIndex = argv.indexOf("--players");
+  const value = argument?.split("=", 2)[1]
+    ?? (separateIndex >= 0 ? argv[separateIndex + 1] : null)
+    ?? 4;
+  const count = Number.parseInt(value, 10);
+  return Number.isFinite(count) ? Math.max(3, Math.min(200, count)) : 4;
+}
+
+export function demoProfiles(count = 4) {
+  const profiles = CORE_PROFILES.slice(0, Math.min(count, CORE_PROFILES.length));
+  for (let index = profiles.length; index < count; index += 1) {
+    const number = index + 1;
+    profiles.push({
+      id: `demo-${number}`,
+      login: `viewer_${String(number).padStart(3, "0")}`,
+      displayName: `Viewer ${number}`,
+      avatar: avatarDataUri(AVATAR_COLORS[index % AVATAR_COLORS.length], `V${number}`),
+      sessionId: `demo-session-${number}`,
+    });
+  }
+  return profiles;
+}
+
+function claimCode(index) {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let value = index;
+  return Array.from({ length: 4 }, () => {
+    const character = alphabet[value % alphabet.length];
+    value = Math.floor(value / alphabet.length);
+    return character;
+  }).reverse().join("");
 }
 
 export function avatarDataUri(color, initials) {
@@ -82,9 +119,9 @@ function connectVoiceSocket(port) {
   });
 }
 
-async function populateLobby(game, fast) {
-  const pause = fast ? 350 : 700;
-  for (const profile of PROFILES) {
+async function populateLobby(game, profiles, fast) {
+  const pause = profiles.length > 12 ? (fast ? 10 : 25) : fast ? 350 : 700;
+  for (const profile of profiles) {
     await sleep(pause);
     game.join(profile);
     await sleep(pause);
@@ -108,18 +145,22 @@ function postMessage(game, player, text, sequence, voiceSocket, fast) {
   return result;
 }
 
-async function playRoundChat(game, fast, voiceSocket) {
+async function playRoundChat(game, profiles, fast, voiceSocket) {
   const interval = fast ? 3_500 : 6_000;
   const decoyAt = game.durations.round * .3;
   const smuggleAt = game.durations.round * .55;
-  const impostor = PROFILES.find(({ id }) => id === game.currentRound.impostorId);
-  const decoyPlayer = PROFILES.find(({ id }) => id !== impostor.id);
-  const word = game.currentRound.word;
+  const assignments = [...game.tables.values()].flatMap((table) => (
+    table.impostors.map((assignment) => ({ table, assignment }))
+  ));
   let decoySent = false;
   let smuggleSent = false;
+  let accusationsSent = false;
   let sequence = 0;
 
-  console.log(`[demo] @${impostor.login} has the word ${word.toUpperCase()}`);
+  for (const { table, assignment } of assignments) {
+    const impostor = profiles.find(({ id }) => id === assignment.playerId);
+    console.log(`[demo] T${table.id}: @${impostor.login} has ${assignment.word.toUpperCase()}`);
+  }
   while (game.phase === PHASES.ROUND) {
     await sleep(interval);
     if (game.phase !== PHASES.ROUND) break;
@@ -127,61 +168,79 @@ async function playRoundChat(game, fast, voiceSocket) {
     sequence += 1;
 
     if (!decoySent && elapsed >= decoyAt) {
-      postMessage(
-        game,
-        decoyPlayer,
-        `I keep a ${word} near my desk for stormy nights`,
-        sequence,
-        voiceSocket,
-        fast,
-      );
+      for (const { table, assignment } of assignments) {
+        const decoy = [...table.roster.values()].find(({ id }) => id !== assignment.playerId);
+        sequence += 1;
+        postMessage(game, decoy, `I keep a ${assignment.word} near my desk for stormy nights`, sequence, voiceSocket, fast);
+      }
       decoySent = true;
       continue;
     }
     if (!smuggleSent && elapsed >= smuggleAt) {
-      postMessage(
-        game,
-        impostor,
-        `the power blinked again so I lit a ${word} beside my monitor`,
-        sequence,
-        voiceSocket,
-        fast,
-      );
+      for (const { assignment } of assignments) {
+        const impostor = profiles.find(({ id }) => id === assignment.playerId);
+        sequence += 1;
+        postMessage(game, impostor, `the weather turned so I moved my ${assignment.word} beside the monitor`, sequence, voiceSocket, fast);
+      }
       smuggleSent = true;
       continue;
     }
 
-    const player = PROFILES[(sequence - 1) % PROFILES.length];
+    if (!accusationsSent && elapsed >= game.durations.round * .7) {
+      for (const table of game.tables.values()) {
+        const [assignment] = table.impostors;
+        const impostor = table.roster.get(assignment.playerId);
+        const detectives = [...table.roster.values()].filter(({ id }) => (
+          !table.impostors.some(({ playerId }) => playerId === id)
+        ));
+        if (detectives[0]) {
+          game.accuse(detectives[0].id, impostor.login, assignment.word);
+          console.log(`[accuse] @${detectives[0].login} busted @${impostor.login}`);
+        }
+        if (detectives[1]) {
+          const result = game.accuse(detectives[1].id, impostor.login, "banana");
+          console.log(`[accuse] @${detectives[1].login} missed (${result.correct ? "right" : "wrong"})`);
+        }
+      }
+      accusationsSent = true;
+      continue;
+    }
+
+    const player = profiles[(sequence - 1) % profiles.length];
     const text = CHAT_LINES[(sequence - 1) % CHAT_LINES.length];
     postMessage(game, player, text, sequence, voiceSocket, fast);
   }
 }
 
 async function castVotes(game, fast) {
-  const pause = fast ? 2_500 : 4_000;
-  const impostorId = game.currentRound.impostorId;
-  const fallback = PROFILES.find(({ id }) => id !== impostorId);
-  for (const player of PROFILES) {
-    if (game.phase !== PHASES.VOTE) break;
-    await sleep(pause);
-    if (game.phase !== PHASES.VOTE) break;
-    const targetId = player.id === impostorId ? fallback.id : impostorId;
-    const target = PROFILES.find(({ id }) => id === targetId);
-    game.vote(player.id, targetId);
-    console.log(`[vote] @${player.login} voted for @${target.login}`);
+  const seated = [...game.tables.values()].reduce((sum, table) => sum + table.roster.size, 0);
+  const pause = seated > 12 ? (fast ? 35 : 75) : fast ? 2_500 : 4_000;
+  for (const table of game.tables.values()) {
+    const impostorId = table.impostorId;
+    const fallback = [...table.roster.values()].find(({ id }) => id !== impostorId);
+    for (const player of table.roster.values()) {
+      if (game.phase !== PHASES.VOTE) return;
+      await sleep(pause);
+      if (game.phase !== PHASES.VOTE) return;
+      const target = table.roster.get(player.id === impostorId ? fallback.id : impostorId);
+      game.vote(player.id, target.id);
+      console.log(`[vote] T${table.id}: @${player.login} voted for @${target.login}`);
+    }
   }
 }
 
 export async function runDemo(options = {}) {
   const fast = options.fast ?? process.argv.includes("--fast");
+  const playerCount = Number(options.players ?? requestedPlayerCount());
+  const profiles = demoProfiles(playerCount);
   const port = Number(options.port ?? process.env.PORT ?? 3000);
   const publicUrl = process.env.PUBLIC_URL || `http://localhost:${port}`;
   const roleRolls = [0, .999, .35, .999];
   let roleRoll = 0;
-  const claimCodes = ["A2B3", "C4D5", "E6F7", "G8H9"];
+  let claimIndex = 0;
   const game = new Game({
     durations: fast ? FAST_DURATIONS : undefined,
-    codeGenerator: () => claimCodes.shift(),
+    codeGenerator: () => claimCode(claimIndex++),
     random: fast ? () => roleRolls[roleRoll++ % roleRolls.length] : Math.random,
   });
   const service = createSusWordServer({
@@ -207,9 +266,10 @@ export async function runDemo(options = {}) {
   voiceSocket = await connectVoiceSocket(address.port);
   console.log(`[demo] Open http://localhost:${address.port}/overlay in a 1920×1080 browser source.`);
   console.log(`[demo] ${fast ? "Fast rehearsal" : "Full timing"} mode. Press Ctrl+C to stop.`);
+  console.log(`[demo] Simulating ${profiles.length} players.`);
 
   game.start();
-  await populateLobby(game, fast);
+  await populateLobby(game, profiles, fast);
   let round = 0;
 
   while (running) {
@@ -218,7 +278,7 @@ export async function runDemo(options = {}) {
     round += 1;
     console.log(`[demo] Starting round ${round}`);
     game.go({ word: "candle", category: "home" });
-    await playRoundChat(game, fast, voiceSocket);
+    await playRoundChat(game, profiles, fast, voiceSocket);
     await waitForPhase(game, PHASES.VOTE);
     await castVotes(game, fast);
     await waitForPhase(game, PHASES.REVEAL);
