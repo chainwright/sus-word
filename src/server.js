@@ -49,6 +49,13 @@ function cleanPublicUrl(value) {
   return String(value || "http://localhost:3000").replace(/\/+$/, "");
 }
 
+function formatRoundLength(duration) {
+  const seconds = Math.round(duration / 1_000);
+  if (seconds % 60) return `${seconds} seconds`;
+  const minutes = seconds / 60;
+  return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
+}
+
 export function createSusWordServer(options = {}) {
   const env = options.env ?? process.env;
   const logger = options.logger ?? console;
@@ -141,8 +148,8 @@ export function createSusWordServer(options = {}) {
       announce(`🕵️ Sus Word! Type !join to play. Get your secret card: ${publicUrl}/card`);
     }
   });
-  game.on("round", ({ roundNumber }) => {
-    announce(`🕵️ Round ${roundNumber} has begun. Someone here has a secret word… 3 minutes.`);
+  game.on("round", ({ roundNumber, duration }) => {
+    announce(`🕵️ Round ${roundNumber} has begun. Someone here has a secret word… ${formatRoundLength(duration)}.`);
   });
   game.on("hint", ({ message }) => announce(`🕵️ ${message}`));
   game.on("voteStart", () => announce("🕵️ Vote! !vote name"));
