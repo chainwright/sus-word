@@ -673,9 +673,11 @@ export class Game extends EventEmitter {
     const caption = round.smuggle
       ? `${elapsed} into the round. ${readers.length} ${readers.length === 1 ? "person" : "people"} read this. ${caught ? "Someone noticed." : "Nobody noticed."}`
       : "The word never made it out.";
-    const sneakiness = round.smuggle
-      ? `Hid '${round.word}' in plain sight. Cold.`
-      : `Never found a clean opening for '${round.word}'.`;
+    const sneakiness = !round.smuggle
+      ? `Never found a clean opening for '${round.word}'.`
+      : caught
+        ? `Slipped '${round.word}' in, but chat smelled it.`
+        : `Hid '${round.word}' in plain sight. Cold.`;
     const impostorDelta = scoreChanges.find(({ player }) => player.id === round.impostorId)?.delta ?? 0;
     const botMessage = round.smuggle
       ? `🕵️ It was @${impostor.login}! Word: ${round.word.toUpperCase()}, smuggled at ${elapsed} ('${round.smuggle.text}'). ${verdict}. +${impostorDelta}`
