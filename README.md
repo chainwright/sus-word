@@ -22,6 +22,19 @@ Sus Word is a live Twitch chat game about hiding one ordinary word in plain sigh
 
 Open `http://localhost:3000/host` for controls. For an offline rehearsal, run `npm run demo -- --fast` and open the overlay; omit `--fast` for full three-minute timing. Add `--players 30` (up to 200) to rehearse multiple tables.
 
+## Big chats: tables
+
+One table is the whole game for a small stream. When more people claim cards, Sus Word deals them into tables of up to 12, and every table plays at the same time on one timer.
+
+- A table of 3–9 players has one Imposter. A table of 10–12 has two, each with their own word.
+- The table on stream (the featured table) plays in Twitch chat. Every other table talks in its own chat inside the phone card, so the main chat stays readable.
+- `!accuse name word` is a live accusation: one shot per round, valid only after the word was smuggled. Right answer: that Imposter is busted on the spot.
+- Viewers without a card are the crowd: they can accuse and vote on the featured table.
+- The streamer always sits at the featured table, so their voice only counts where everyone can hear it. Turn off **Host plays** to just host.
+- The featured table rotates every round, and the host can pick any table. **FINAL** seats the top scorer from each table for one last round on stream.
+
+Tested in rehearsal with up to 200 virtual players; a 200-player round resolves in a few milliseconds.
+
 ## Streamer voice
 
 Open the host page in Google Chrome and turn on **🎙 Mic**. Allow microphone access when Chrome asks. Final speech chunks count as the broadcaster's game messages, so the streamer can be suspected or can hide the word out loud as the Imposter. The broadcaster still needs to join and claim a card first.
@@ -33,12 +46,14 @@ Open the host page in Google Chrome and turn on **🎙 Mic**. Allow microphone a
 | `!join` | Anyone | Joins the game. |
 | `!claim CODE` | Anyone | Links a private card to that Twitch name. |
 | `!leave` | Player | Leaves the game. |
-| `!vote name` | Player | Votes during the vote phase. |
+| `!vote name` | Player or crowd | Votes during the vote phase. |
+| `!accuse name word` | Player or crowd | One live accusation per round. |
 | `!sus start` | Broadcaster/mod | Opens the lobby. |
 | `!sus go` | Broadcaster/mod | Starts a round. |
 | `!sus vote` | Broadcaster/mod | Opens voting early. |
 | `!sus next` | Broadcaster/mod | Moves from reveal to the next lobby. |
 | `!sus end` | Broadcaster/mod | Ends the session. |
+| `!sus mute name` | Broadcaster/mod | Removes a player from tables for the session. |
 | `!sus help` | Anyone | Posts the short rules. |
 
 ## Private cards without viewer OAuth
@@ -47,9 +62,17 @@ The card page gives a viewer a short claim code tied to an HTTP-only browser ses
 
 ## Built with Codex
 
-The project was built in four focused steps:
+Everything was built in one Codex thread, step by step, with tests at every step:
 
 1. Pure game logic, word detection, scoring, and tests.
 2. Twitch OAuth, EventSub chat, server routes, and live state.
 3. The Case File overlay, private mobile cards, reveal animation, and host controls.
-4. Offline rehearsal mode, streamer documentation, and final polish.
+4. Offline rehearsal mode and streamer documentation.
+5. Streamer voice through the Web Speech API.
+6. The detective-desk host page from an approved design frame and generated image assets.
+7. The photo-real overlay and phone card.
+8. Screens that hold up with 30+ players.
+9. Tables, live accusations, crowd play, and the final table.
+10. Table screens, phone table chat, and the streamer's seat.
+
+The first live test ran on a real Twitch channel and caught one rule bug (a three-way tie counted as a catch), which is now covered by a test.
