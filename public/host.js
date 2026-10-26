@@ -194,6 +194,11 @@ function setupVoice() {
       disableMic("Mic permission blocked.");
       return;
     }
+    // Silence is normal between sentences; onend restarts recognition.
+    if (event.error === "no-speech") {
+      setMicState("Listening… (no speech heard yet)", "listening");
+      return;
+    }
     setMicState(`Mic error: ${event.error}`, "error");
   };
   recognition.onend = () => {
