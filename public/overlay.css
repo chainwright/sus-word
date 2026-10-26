@@ -480,3 +480,5 @@ body { color: var(--ink); font-family: "Courier Prime", monospace; }
 .sneakiness-slip { top: 540px; }
 .sneakiness-slip { top: 532px; }
 .leaderboard { top: 682px; }
+/* Live test: a 4th line peeked below the slip. Hard cap at 3 lines. */
+.message-slip { max-height: 132px; overflow: hidden; }

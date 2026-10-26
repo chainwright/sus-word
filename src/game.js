@@ -638,8 +638,9 @@ export class Game extends EventEmitter {
     const tallies = this.getTallies();
     const impostorVotes = tallies.find(({ player }) => player.id === round.impostorId)?.votes ?? 0;
     const highestVotes = Math.max(0, ...tallies.map(({ votes }) => votes));
-    // The spec has no runoff, so a joint-high tally counts as caught.
-    const caught = impostorVotes > 0 && impostorVotes === highestVotes;
+    // No runoff: the Imposter is caught only with the single highest tally. A tie means chat never agreed.
+    const leaders = tallies.filter(({ votes }) => votes === highestVotes).length;
+    const caught = impostorVotes > 0 && impostorVotes === highestVotes && leaders === 1;
     const scoreChanges = [];
 
     for (const player of round.roster.values()) {

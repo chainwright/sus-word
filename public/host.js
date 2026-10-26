@@ -183,7 +183,11 @@ function render(nextState) {
   const broadcaster = state.players.find((player) => (
     player.login === state.channelLogin && player.claimed
   ));
+  const joined = state.players.some((player) => player.login === state.channelLogin);
   voiceRosterWarning.hidden = Boolean(broadcaster) || !state.channelLogin;
+  voiceRosterWarning.textContent = joined
+    ? "You joined. Claim your card to be in the round."
+    : "You are not in the game yet: type !join and claim your card";
   updateActions();
   updateTimer();
 }

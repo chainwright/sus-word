@@ -408,7 +408,7 @@ describe("voting and scoring", () => {
     assert.match(game.lastReveal.botMessage, /WORD NEVER LANDED\. \+0$/);
   });
 
-  test("a tied highest tally still catches the Imposter", () => {
+  test("a tied highest tally lets the Imposter get away", () => {
     const { game } = createGame();
     const [alice, bruno, chloe] = startRound(game);
     game.recordMessage({ userId: alice.id, text: "This candle smells lovely" });
@@ -418,7 +418,9 @@ describe("voting and scoring", () => {
     game.vote(chloe.id, alice.id);
 
     assert.equal(game.lastReveal.tallies.find(({ player }) => player.id === alice.id).votes, 1);
-    assert.equal(game.lastReveal.caught, true);
-    assert.equal(game.scores.get(chloe.id), 1);
+    assert.equal(game.lastReveal.caught, false);
+    assert.equal(game.lastReveal.verdict, "GOT AWAY");
+    assert.equal(game.scores.get(chloe.id), 0);
+    assert.equal(game.scores.get(alice.id), 3);
   });
 });

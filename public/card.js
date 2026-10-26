@@ -181,7 +181,7 @@ function updateTimers() {
   const timer = document.querySelector("[data-timer='phase']");
   if (timer) timer.textContent = state.state === "ROUND" ? `◷ ${formatTime(remainingMs())}` : state.state;
   const expiry = document.querySelector("[data-expires-at]");
-  if (expiry) expiry.textContent = `Code expires in ${formatTime(Number(expiry.dataset.expiresAt) - Date.now())}`;
+  if (expiry) expiry.textContent = `Code valid: ${formatTime(Number(expiry.dataset.expiresAt) - Date.now())}`;
 }
 
 async function loadCard() {
