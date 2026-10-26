@@ -186,3 +186,5 @@ body { color: var(--ink); font-family: "Courier Prime", monospace; }
 .tally-slip { overflow: hidden; padding: 14px 12px; gap: 6px; }
 .tally-group { width: 78px; gap: 4px; }
 .tally-stroke.fifth { left: 32px; }
+/* Long chat lines: show up to 3 lines with an ellipsis instead of clipping mid-line. */
+.message-slip { font-size: 24px; line-height: 1.22; padding: 20px 20px 14px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
