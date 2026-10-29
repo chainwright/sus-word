@@ -237,6 +237,24 @@ button, a { font: inherit; }
   box-shadow: 0 1px 2px #210c08;
 }
 
+.bot-preview {
+  position: absolute;
+  z-index: 8;
+  left: 664px;
+  top: 610px;
+  width: 391px;
+  min-height: 45px;
+  padding: 8px 13px;
+  color: #302018;
+  background: linear-gradient(96deg, #e3c38f, #f0d8ad 55%, #c89b65);
+  box-shadow: 0 5px 6px #14080587;
+  transform: rotate(-.6deg);
+  font-size: 13px;
+}
+.bot-preview strong { display: block; color: #922d2d; font: 700 14px/1 "Oswald", sans-serif; }
+.stable-number { position:absolute;z-index:5;left:4px;bottom:20px;width:25px;height:25px;display:grid;place-items:center;border-radius:50%;color:#fff;background:#a63131;font:700 16px/1 "Oswald",sans-serif;box-shadow:0 2px 3px #1c0c08a0 }
+.players.compact .stable-number { bottom:18px;width:21px;height:21px;font-size:13px }
+
 .audio-desk { position: absolute; z-index: 4; left: 112px; top: 456px; width: 510px; height: 237px; }
 .mic-control {
   position: absolute;

@@ -332,6 +332,12 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 4px s
 .result-row strong { overflow-wrap: anywhere; font: 700 19px/1.15 "Oswald", sans-serif; text-align: right; }
 .result-row .score { color: var(--red); font-size: 28px; }
 .next-round-note { margin: 15px 0 0; padding: 10px; border-left: 6px solid var(--red); background: #fff9e8; font-size: 15px; }
+.champion-sheet { margin-top: 82px; padding: 28px 20px 34px; text-align: center; }
+.champion-photo { width: 112px; height: 112px; margin: 8px auto; border: 8px solid #fff; overflow: hidden; box-shadow: var(--shadow); transform: rotate(-2deg); }
+.champion-photo img { width: 100%; height: 100%; object-fit: cover; }
+.champion-name { margin: 10px 0; font: 700 34px/1 "Oswald", sans-serif; }
+.champion-stamp { display: table; margin: 16px auto; padding: 8px 15px; border: 7px solid var(--red); color: var(--red); font: 700 43px/1 "Oswald", sans-serif; transform: rotate(-5deg); }
+.champion-copy { margin: 22px 0 0; font-size: 17px; font-weight: 700; }
 
 .sealed-cover {
   position: fixed;

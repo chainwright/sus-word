@@ -1,16 +1,16 @@
 # Sus Word
 
-Sus Word is a live Twitch chat game about hiding one ordinary word in plain sight. One player is secretly the Imposter, everyone keeps chatting, and the stream ends each round by rewinding the evidence.
+Sus Word is a live Twitch chat game about hiding an ordinary word in plain sight. Players get a private role card, keep chatting, vote by stable player number, and watch the stream rewind the evidence.
 
 ![The Case File reveal](design/A_casefile_reveal.jpg)
 
 ## How a round works
 
-1. Viewers type `!join` and claim a private card.
-2. One claimed player becomes the Imposter and gets a secret word.
+1. Viewers type `!join`, open the private card, enter their exact Twitch name, then send the card's `!join CODE` command.
+2. Each table gets one Imposter, or two at tables with 10–12 players. Every player keeps the same table number for the session.
 3. The Imposter has three minutes to use it naturally in chat. Category and first-letter hints appear as time runs out.
-4. Players vote with `!vote name`.
-5. The overlay rewinds chat, highlights the hidden word, reveals the verdict, and updates the leaderboard.
+4. Players vote with a number such as `2`, `#2`, `!2`, or `!vote 2`. Votes typed early are saved, and the vote has a silent six-second grace period.
+5. The overlay rewinds chat, highlights the exact hidden word, reveals the verdict, shows the round leaders, and then deals new roles.
 
 ## Setup in 5 steps
 
@@ -20,7 +20,9 @@ Sus Word is a live Twitch chat game about hiding one ordinary word in plain sigh
 4. Run `npm run auth` once and authorize the requested chat scopes.
 5. Run `npm start`. In OBS, add `http://localhost:3000/overlay` as a 1920×1080 browser source. For remote player cards, run `cloudflared tunnel --url http://localhost:3000`, put its public base URL in `PUBLIC_URL`, and restart Sus Word.
 
-Open `http://localhost:3000/host` for controls. For an offline rehearsal, run `npm run demo -- --fast` and open the overlay; omit `--fast` for full three-minute timing. Add `--players 30` (up to 200) to rehearse multiple tables.
+Open `http://localhost:3000/host` for the detective-desk controls, player numbers, host-plays switch, streamer mic, and next bot-message preview. For an offline rehearsal, run `npm run demo -- --fast` and open the overlay; omit `--fast` for full three-minute timing. Add `--players 30` (up to 200) to rehearse multiple tables.
+
+The v3 screens are built for a real stream: the first lobby teaches the rules, the round board shows stable numbers and active speakers, voting gets a large countdown, and the reveal stays below the camera before ending on the top three. The phone card handles joining, private roles, tap-to-vote, results, and the final Champion screen.
 
 ## Mixed rehearsal on your real channel
 
@@ -47,10 +49,11 @@ Open the host page in Google Chrome and turn on **🎙 Mic**. Allow microphone a
 
 | Command | Who | What it does |
 | --- | --- | --- |
-| `!join` | Anyone | Joins the game. |
-| `!claim CODE` | Anyone | Links a private card to that Twitch name. |
+| `!join` | Anyone | Gets the card link and joining help. `join` and `ijoin` work too. |
+| `!join CODE` | Anyone | Joins and links the private card in one command. |
+| `!claim CODE` | Anyone | Backward-compatible way to link a card. |
 | `!leave` | Player | Leaves the game. |
-| `!vote name` | Player or crowd | Votes during the vote phase. |
+| `2`, `#2`, `!2`, `!vote 2` | Player or crowd | Votes for that stable player number. An early vote is saved. |
 | `!accuse name word` | Player or crowd | One live accusation per round. |
 | `!sus start` | Broadcaster/mod | Opens the lobby. |
 | `!sus go` | Broadcaster/mod | Starts a round. |
@@ -62,11 +65,11 @@ Open the host page in Google Chrome and turn on **🎙 Mic**. Allow microphone a
 
 ## Private cards without viewer OAuth
 
-The card page gives a viewer a short claim code tied to an HTTP-only browser session. They type that code in Twitch chat, and the server links the card only when the chat name matches the name entered on the page. The secret role is sent only to that browser session; viewers never need to authorize a Twitch account.
+The card page first checks that the Twitch name spoke in chat recently, then gives the viewer a short code tied to an HTTP-only browser session. They send `!join CODE` from that same Twitch account. The secret role goes only to that browser session; viewers never authorize a Twitch account, and a wrong account cannot consume the code.
 
 ## Built with Codex
 
-Everything was built in one Codex thread, step by step, with tests at every step:
+Everything was built in one Codex thread, step by step, with 80 automated tests covering the current game:
 
 1. Pure game logic, word detection, scoring, and tests.
 2. Twitch OAuth, EventSub chat, server routes, and live state.
@@ -78,5 +81,8 @@ Everything was built in one Codex thread, step by step, with tests at every step
 8. Screens that hold up with 30+ players.
 9. Tables, live accusations, crowd play, and the final table.
 10. Table screens, phone table chat, and the streamer's seat.
-
-The first live test ran on a real Twitch channel and caught one rule bug (a three-way tie counted as a catch), which is now covered by a test.
+11. Playtest-driven joining, stable numbers, number voting, and clearer bot messages.
+12. The v3 phone card, motion cues, vote grid, and delayed private results.
+13. The v3 stream overlay, full reveal timeline, and 480p readability.
+14. A deterministic real-channel simulator whose players never post to Twitch.
+15. Dynamic reveal timing, live accusation slams, round MVPs, and Champion screens.

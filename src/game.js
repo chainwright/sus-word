@@ -20,6 +20,8 @@ export const DEFAULT_DURATIONS = Object.freeze({
   vote: 30_000,
   voteGrace: 6_000,
   reveal: 20_000,
+  revealOne: 12_000,
+  revealTwo: 20_000,
   cardResultDelay: 6_000,
 });
 
@@ -127,6 +129,10 @@ export class Game extends EventEmitter {
     this.codeGenerator = options.codeGenerator ?? null;
     this.words = options.words ?? WORDS;
     this.durations = { ...DEFAULT_DURATIONS, ...options.durations };
+    if (Object.hasOwn(options.durations ?? {}, "reveal")) {
+      if (!Object.hasOwn(options.durations, "revealOne")) this.durations.revealOne = options.durations.reveal;
+      if (!Object.hasOwn(options.durations, "revealTwo")) this.durations.revealTwo = options.durations.reveal;
+    }
     this.streamerLogin = normalizeLogin(options.streamerLogin);
     this.hostPlays = options.hostPlays !== false;
     this.state = PHASES.IDLE;
@@ -520,25 +526,33 @@ export class Game extends EventEmitter {
     table.accusations.set(accuser.id, accusation);
     table.accusationLog.push(accusation);
     if (!correct) {
-      this.#publish("accuseMiss", {
+      const toast = `❌ @${accuser.login} guessed wrong`;
+      const payload = {
         tableId: table.id,
         accuser: this.#publicPlayer(accuser),
         accusation,
-      });
-      return { ok: true, correct: false, tableId: table.id };
+        toast,
+        toastKind: "miss",
+      };
+      this.#publish("accuseMiss", payload);
+      return { ok: true, correct: false, tableId: table.id, toast, toastKind: "miss" };
     }
     assignment.busted = true;
     assignment.bustedAt = accusation.at;
     assignment.bustedBy = accuser.id;
     this.#addScore(accuser.id, 2, table);
-    this.#publish("busted", {
+    const toast = `@${accuser.login} BUSTED @${target.login}: ${assignment.word.toUpperCase()}`;
+    const payload = {
       tableId: table.id,
       accuser: this.#publicPlayer(accuser),
       impostor: this.#publicPlayer(target),
       word: assignment.word,
       accusation,
-    });
-    return { ok: true, correct: true, busted: true, tableId: table.id };
+      toast,
+      toastKind: "busted",
+    };
+    this.#publish("busted", payload);
+    return { ok: true, correct: true, busted: true, tableId: table.id, toast, toastKind: "busted" };
   }
 
   beginVote() {
@@ -622,8 +636,9 @@ export class Game extends EventEmitter {
   finishVote() {
     if (this.state !== PHASES.VOTE || !this.tables.size) return { ok: false, reason: "invalid_state" };
     const now = this.#now();
+    const revealDuration = this.#revealDuration();
     for (const table of this.tables.values()) {
-      table.revealEndsAt = now + this.durations.reveal;
+      table.revealEndsAt = now + revealDuration;
       table.reveal = this.#buildTableReveal(table);
       table.phaseResult = this.#phaseResult(table.reveal.imposters);
     }
@@ -679,8 +694,8 @@ export class Game extends EventEmitter {
       ? `Other tables: ${caughtCount} caught, ${gotAwayCount} got away.` : null;
     this.#transition(PHASES.REVEAL);
     this.#publish("reveal", this.lastReveal);
-    this.#setTimer("reveal", this.durations.reveal, () => this.nextRound());
-    return { ok: true, state: this.state, reveal: this.lastReveal };
+    this.#setTimer("reveal", revealDuration, () => this.nextRound());
+    return { ok: true, state: this.state, reveal: this.lastReveal, revealDuration };
   }
 
   nextRound() {
@@ -711,7 +726,8 @@ export class Game extends EventEmitter {
       state: this.state,
       roundNumber: this.roundNumber,
       phaseEndsAt: this.#phaseEndsAt(),
-      phaseDurationMs: this.durations[this.state.toLowerCase()] ?? 0,
+      phaseDurationMs: this.state === PHASES.REVEAL
+        ? this.#revealDuration() : this.durations[this.state.toLowerCase()] ?? 0,
       remainingMs: Math.max(0, (this.#phaseEndsAt() ?? this.#now()) - this.#now()),
     };
     const heldResult = this.cardResults.get(player.id);
@@ -803,7 +819,8 @@ export class Game extends EventEmitter {
       )).sort((left, right) => right.at - left.at).slice(0, 12),
       crowdCount: this.#crowdCount(),
       phaseEndsAt: this.#phaseEndsAt(),
-      phaseDurationMs: this.durations[this.state.toLowerCase()] ?? 0,
+      phaseDurationMs: this.state === PHASES.REVEAL
+        ? this.#revealDuration() : this.durations[this.state.toLowerCase()] ?? 0,
       remainingMs: Math.max(0, (this.#phaseEndsAt() ?? now) - now),
       final: this.isFinalRound,
       canFinal: this.state === PHASES.LOBBY && this.lastRoundSeating.length > 0,
@@ -1180,14 +1197,24 @@ export class Game extends EventEmitter {
   }
 
   #publicAccusation(table, accusation) {
+    const accuser = this.#publicPlayer(this.profiles.get(accusation.accuserId));
+    const target = accusation.correct
+      ? this.#publicPlayer(table.roster.get(accusation.targetId) ?? this.profiles.get(accusation.targetId))
+      : null;
+    const word = accusation.correct
+      ? table.impostors.find(({ playerId }) => playerId === accusation.targetId)?.word ?? accusation.word
+      : null;
     return {
       tableId: table.id,
       correct: accusation.correct,
       at: accusation.at,
-      accuser: this.#publicPlayer(this.profiles.get(accusation.accuserId)),
-      target: accusation.correct
-        ? this.#publicPlayer(table.roster.get(accusation.targetId) ?? this.profiles.get(accusation.targetId))
-        : null,
+      accuser,
+      target,
+      word,
+      toast: accusation.correct
+        ? `@${accuser?.login || "detective"} BUSTED @${target?.login || "imposter"}: ${word.toUpperCase()}`
+        : `❌ @${accuser?.login || "player"} guessed wrong`,
+      toastKind: accusation.correct ? "busted" : "miss",
     };
   }
 
@@ -1398,6 +1425,11 @@ export class Game extends EventEmitter {
     if (this.state === PHASES.VOTE) return table.voteEndsAt;
     if (this.state === PHASES.REVEAL) return table.revealEndsAt;
     return null;
+  }
+
+  #revealDuration() {
+    const impostorCount = Math.max(1, ...[...this.tables.values()].map((table) => table.impostors.length));
+    return impostorCount > 1 ? this.durations.revealTwo : this.durations.revealOne;
   }
 
   #setTimer(name, delay, callback) {

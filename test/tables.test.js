@@ -41,6 +41,18 @@ function tablePlayers(game, tableId = 1) {
 }
 
 describe("table seating and roles", () => {
+  test("uses a shorter reveal for one Imposter and the full reveal for two", () => {
+    const one = startGame(3).game;
+    one.beginVote();
+    assert.equal(one.finishVote().revealDuration, 12_000);
+    assert.equal(one.getPublicState().phaseDurationMs, 12_000);
+
+    const two = startGame(10).game;
+    two.beginVote();
+    assert.equal(two.finishVote().revealDuration, 20_000);
+    assert.equal(two.getPublicState().phaseDurationMs, 20_000);
+  });
+
   test("balances every supported seating size without tiny tables", () => {
     const cases = new Map([
       [3, [3]],
@@ -235,9 +247,15 @@ describe("live accusations", () => {
 
   test("busts only after a matching smuggle and spends the accuser's shot", () => {
     const { game, impostor, detectives } = accusationGame();
+    let eventPayload = null;
+    game.on("busted", (payload) => { eventPayload = payload; });
     game.recordMessage({ userId: impostor.id, text: "this candle smells wonderful tonight" });
     const busted = game.accuse(detectives[0].id, impostor.login, "candles");
     assert.equal(busted.correct, true);
+    assert.equal(busted.toast, `@${detectives[0].login} BUSTED @${impostor.login}: CANDLE`);
+    assert.equal(eventPayload.toast, busted.toast);
+    assert.equal(eventPayload.toastKind, "busted");
+    assert.equal(game.getPublicState().round.accusations[0].toast, busted.toast);
     assert.equal(game.scores.get(detectives[0].id), 2);
     assert.deepEqual(game.accuse(detectives[0].id, impostor.login, "candle"), {
       ok: false,
@@ -257,7 +275,9 @@ describe("live accusations", () => {
       }
       const target = kind === "person" ? detectives[1].login : impostor.login;
       const word = kind === "word" ? "rocket" : "candle";
-      assert.equal(game.accuse(detectives[0].id, target, word).correct, false);
+      const miss = game.accuse(detectives[0].id, target, word);
+      assert.equal(miss.correct, false);
+      assert.equal(miss.toast, `❌ @${detectives[0].login} guessed wrong`);
       assert.equal(game.scores.get(detectives[0].id), 0);
     }
   });

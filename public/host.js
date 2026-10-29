@@ -28,6 +28,7 @@ const voiceRosterWarning = document.querySelector("#voice-roster-warning");
 const tableStrip = document.querySelector("#table-strip");
 const hostPlays = document.querySelector("#host-plays");
 const accuseLog = document.querySelector("#accuse-log");
+const botPreview = document.querySelector("#bot-preview-text");
 const actionButtons = [...document.querySelectorAll(".stamp-button[data-action]")];
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const hostParams = new URLSearchParams(location.search);
@@ -122,6 +123,7 @@ function renderPlayers(nextState) {
     row.append(
       pin,
       avatar(player),
+      node("b", "stable-number", String(player.number || index + 1)),
       node("span", "player-name", player.login),
       node("span", "message-badge", String(count)),
     );
@@ -143,12 +145,24 @@ function renderPlayers(nextState) {
     const row = node("div", "full-player-row");
     const count = nextState.round?.messageCounts?.[player.id] ?? player.messageCount ?? 0;
     row.append(
-      node("span", "", `@${player.login}`),
+      node("span", "", `#${player.number || "?"} @${player.login}`),
       node("span", "full-player-count", String(count)),
       node("span", "", player.claimed ? "🔒" : ""),
     );
     return row;
   }));
+}
+
+function nextBotMessage(nextState) {
+  if (nextState.phase === "IDLE") return "Start opens the lobby and posts the card link.";
+  if (nextState.phase === "LOBBY") return `🔔 ROUND ${(nextState.roundNumber || 0) + 1} · NEW ROLES! Check your card.`;
+  if (nextState.phase === "ROUND") {
+    if (!nextState.round?.hints?.category) return "🕵️ HINT: the word topic is revealed next.";
+    if (!nextState.round?.hints?.letter) return "🕵️ HINT: the first letter is revealed next.";
+    return "🗳️ VOTE NOW! Type a player's number in chat.";
+  }
+  if (nextState.phase === "VOTE") return "⏳ 10 seconds left to vote.";
+  return "🕵️ The round reveal posts next.";
 }
 
 function renderChat(nextState) {
@@ -229,7 +243,9 @@ function updateActions() {
 function render(nextState) {
   state = nextState;
   stateReceivedAt = Date.now();
-  const label = state.phase === "ROUND"
+  const label = state.champion
+    ? `CHAMPION · @${state.champion.login}`
+    : state.phase === "ROUND"
     ? `ROUND ${state.roundNumber || state.round?.number || 1}`
     : state.phase;
   phaseLabel.textContent = label;
@@ -238,6 +254,7 @@ function render(nextState) {
   renderChat(state);
   renderConnection(state);
   renderTables(state);
+  botPreview.textContent = nextBotMessage(state);
   cardUrl.textContent = state.cardUrl || "";
   cardUrl.href = state.cardUrl || "#";
   const broadcaster = state.players.find((player) => (
@@ -506,6 +523,7 @@ function mockState() {
       displayName: login,
       avatar: mockAvatar(featured[index]?.[1] || `D${(index + 1) % 10}`, featured[index]?.[2] || `hsl(${index * 43 % 360} 42% 55%)`),
       claimed: index % 6 !== 5,
+      number: index + 1,
     };
   });
   const messages = [

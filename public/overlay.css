@@ -30,4 +30,46 @@
 .slip-sim-tag{right:7px;bottom:5px;font-size:13px}
 .evidence-sim-tag{position:static;display:inline-block;margin-right:7px;vertical-align:2px}
 
+/* v3 review pass: preserve the camera while the reveal plays below it. */
+.phase-strip>span{font-size:20px;line-height:1.1}
+.hint small{font-size:15px}
+.leader-row,.leader-row b{font-size:18px;line-height:1.35}
+.vote-banner>span{font-size:20px}
+.pro-move{position:absolute;left:40px;bottom:52px;margin:0;color:var(--red);font:700 19px/1 "Oswald"}
+.how-panel footer{position:absolute;left:28px;right:28px;bottom:18px;margin:0}
+#camera-dim{background:radial-gradient(circle at 42% 34%,#0000 0 32%,#0003 68%,#0006 100%)}
+.reveal-title{left:24px;top:400px;width:820px;height:48px;padding:7px 16px;font-size:31px}
+.rewind{left:24px;top:452px;width:820px;height:250px}
+.rewind-counter{top:8px;font-size:27px}
+.rewind-tape{gap:7px;padding:48px 82px 18px}
+.rewind .message-slip{min-height:55px;padding:8px 13px;font-size:16px}
+.rewind.glitch-stop:after{background:repeating-linear-gradient(to bottom,transparent 0 3px,#f7e9c833 4px,#b32f3233 5px,transparent 7px);opacity:1}
+.slip-time{float:right;margin-left:12px;color:#7e6d60;font:700 15px/1 "Oswald"}
+.case-card{left:24px;top:456px;width:820px;height:238px;padding:14px 18px}
+.case-card.lifted{left:134px;top:462px;width:600px;height:190px;transform-origin:center center}
+.case-card.lifted .case-head{font-size:23px}.case-card.lifted .case-head .player-avatar{width:42px;height:42px}
+.case-card.lifted .evidence-line{margin-top:7px;padding:7px 12px;font-size:18px}
+.case-card.lifted .reveal-caption{margin:6px 0;font-size:18px}.case-card.lifted .read-count{font-size:40px}
+.case-card.lifted .verdict{right:18px;bottom:8px;font-size:32px}
+.float-points{left:700px;right:auto;bottom:38px}.red-flash{left:24px;top:400px;width:820px;height:304px}
+.reveal-cases{left:24px;top:456px;width:820px;gap:8px}
+.reveal-cases .case-card{height:238px}
+.reveal-cases.two .case-card{height:116px;padding:8px 13px}
+.reveal-cases.two .case-head{font-size:20px}.reveal-cases.two .case-head .player-avatar{width:34px;height:34px}
+.reveal-cases.two .evidence-line{display:inline-block;margin:5px 0 0;padding:5px 10px;font-size:16px;max-width:570px}
+.reveal-cases.two .reveal-caption{display:none}.reveal-cases.two .verdict{right:13px;bottom:11px;font-size:24px;border-width:4px}
+.reveal-cases.shrunk{top:auto;bottom:8px}.reveal-cases.shrunk .case-card{height:72px}
+.top-three-moment,.champion-moment{position:absolute;left:80px;bottom:16px;width:710px;min-height:250px;padding:17px 28px;box-shadow:var(--shadow)}
+.top-three-moment h2{margin:0 0 8px;color:var(--red);font:700 29px/1 "Oswald"}
+.top-three-row{height:47px;display:grid;grid-template-columns:32px 38px minmax(0,1fr) 76px 46px;gap:8px;align-items:center;border-top:1px solid #8d70554f;font:700 21px/1 "Oswald"}
+.top-three-row .player-avatar{width:34px;height:34px}.top-three-row i{color:var(--green);font-style:normal}.top-three-row>b:last-child{text-align:right}
+.top-three-moment p{margin:7px 0 0;padding-top:7px;border-top:3px solid var(--red);font:700 22px/1 "Oswald"}
+.champion-moment{display:grid;grid-template-columns:90px 1fr 190px;grid-template-rows:32px 1fr;align-items:center;column-gap:18px}
+.champion-moment small{grid-column:1/-1;font:700 24px/1 "Oswald"}.champion-moment .player-avatar{width:82px;height:82px}.champion-moment h1{margin:0;font:700 38px/1 "Oswald"}.champion-moment>b{padding:10px;border:7px solid var(--red);color:var(--red);font:700 34px/1 "Oswald";text-align:center;transform:rotate(-6deg)}
+.accuse-toast{position:absolute;left:424px;top:342px;z-index:45;max-width:760px;padding:14px 24px;background:#f7e9c8;box-shadow:var(--shadow);font:700 28px/1 "Oswald";transform:translate(-50%,-50%)}
+.accuse-toast.busted{border:7px solid var(--red);color:var(--red)}.accuse-toast.miss{border:3px solid #777;color:#666;font-size:22px}
+.busted-mini{inset:50% auto auto 50%;width:max-content;max-width:170px;padding:4px 7px;border-width:4px;font-size:17px;transform:translate(-50%,-50%) rotate(-6deg);z-index:4}
+.live-busted .busted-mini{animation:live-busted-slam .2s ease-out both}
+@keyframes live-busted-slam{from{transform:translate(-50%,-50%) rotate(-13deg) scale(2.4);opacity:0}to{transform:translate(-50%,-50%) rotate(-6deg) scale(1);opacity:1}}
+
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.2s!important;animation-iteration-count:1!important;transition-duration:.2s!important}.rewind:after{display:none}.red-flash{display:none}}

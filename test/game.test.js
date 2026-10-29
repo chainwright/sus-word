@@ -207,7 +207,7 @@ describe("state machine and role selection", () => {
     assert.equal(game.getPublicState().remainingMs, 0);
     clock.tick(DEFAULT_DURATIONS.voteGrace);
     assert.equal(game.state, PHASES.REVEAL);
-    clock.tick(DEFAULT_DURATIONS.reveal);
+    clock.tick(DEFAULT_DURATIONS.revealOne);
     assert.equal(game.state, PHASES.LOBBY);
   });
 
@@ -250,7 +250,7 @@ describe("round messages and reveal payload", () => {
     const duringReveal = game.getCard(bruno.sessionId);
     assert.equal(duringReveal.revealHold, true);
     assert.equal("result" in duringReveal, false);
-    clock.tick(DEFAULT_DURATIONS.reveal);
+    clock.tick(DEFAULT_DURATIONS.revealOne);
     assert.equal(game.state, PHASES.LOBBY);
     assert.equal(game.getCard(bruno.sessionId).revealHold, true);
     clock.tick(DEFAULT_DURATIONS.cardResultDelay - 1);

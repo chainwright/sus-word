@@ -457,6 +457,24 @@ function renderResult() {
   updateTimers();
 }
 
+function renderChampion() {
+  const champion = state.result?.champion || state.champion;
+  const isChampion = champion?.id === state.player?.id;
+  const page = node("div", "champion-page");
+  page.append(topBar("SUS WORD · FINAL TABLE", "lobby"));
+  const sheet = paperSheet("champion-sheet");
+  sheet.setAttribute("aria-live", "polite");
+  sheet.append(node("p", "step-label", "THE CASE IS CLOSED"), playerPhoto(champion, "champion-photo"));
+  sheet.append(node("h1", "champion-name", `@${champion?.login || "champion"}`));
+  sheet.append(node("div", "champion-stamp", "CHAMPION"));
+  sheet.append(node("p", "champion-copy", isChampion
+    ? `You won with ${state.totalScore || champion?.score || 0} points.`
+    : `Final standing: #${state.rank || "–"} of ${state.playerCount || "–"} · ${state.totalScore || 0} points.`));
+  page.append(sheet);
+  root.replaceChildren(page);
+  updateTimers();
+}
+
 function resultRow(container, label, value, valueClass = "") {
   const row = node("div", "result-row");
   row.append(node("span", "", label), node("strong", valueClass, value));
@@ -475,6 +493,7 @@ function render(nextState) {
   else if (screen === "detective") renderRole("DETECTIVE", signal);
   else if (screen === "vote") renderVote();
   else if (screen === "reveal-hold") renderRevealHold();
+  else if (screen === "result" && (state.result?.champion || state.champion)) renderChampion();
   else if (screen === "result") renderResult();
   else renderWaiting();
 }
@@ -637,6 +656,11 @@ function mockCard(kind) {
       { impostor: tableMates[4], word: "blanket", verdict: "GOT AWAY" },
     ] },
   });
+  if (kind === "champion") Object.assign(base, {
+    state: "LOBBY", role: "DETECTIVE", showResult: true, voteTarget: tableMates[1], voteWasRight: true,
+    roundPoints: 3, totalScore: 14, rank: 1, playerCount: 12,
+    result: { champion: player, imposters: [{ impostor: tableMates[1], word: "lemon", verdict: "CAUGHT" }] },
+  });
   return base;
 }
 
@@ -654,7 +678,7 @@ document.addEventListener("visibilitychange", () => {
 
 setInterval(updateTimers, 250);
 const mock = new URLSearchParams(location.search).get("mock");
-const mockKinds = ["join", "join-wrong", "claim", "imposter", "imposter-2", "delivered", "detective", "vote", "reveal-hold", "result", "side", "featured"];
+const mockKinds = ["join", "join-wrong", "claim", "imposter", "imposter-2", "delivered", "detective", "vote", "reveal-hold", "result", "champion", "side", "featured"];
 if (mockKinds.includes(mock)) {
   connection.textContent = "PREVIEW";
   render(mockCard(mock));
