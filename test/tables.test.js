@@ -64,6 +64,9 @@ describe("table seating and roles", () => {
       for (const table of game.tables.values()) {
         assert.equal(table.impostors.length, table.roster.size >= 10 ? 2 : 1);
         assert.equal(new Set(table.impostors.map(({ category }) => category)).size, table.impostors.length);
+        const owner = [...table.roster.values()][0];
+        game.sessions.set(`copy-${count}-${table.id}`, { userId: owner.id, linkedAt: 0 });
+        assert.equal(game.getCard(`copy-${count}-${table.id}`).impostorCount, table.impostors.length);
       }
       game.reset();
     }

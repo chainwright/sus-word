@@ -20,6 +20,7 @@ export const DEFAULT_DURATIONS = Object.freeze({
   vote: 30_000,
   voteGrace: 6_000,
   reveal: 20_000,
+  cardResultDelay: 6_000,
 });
 
 const CLAIM_CHARACTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -153,6 +154,7 @@ export class Game extends EventEmitter {
     this.crowdMessageCount = 0;
     this.mutedPlayerIds = new Set();
     this.isFinalRound = false;
+    this.cardResults = new Map();
     this.nextPlayerNumber = 1;
     this.lobbyOpenedAt = null;
     this.timers = new Map();
@@ -198,6 +200,7 @@ export class Game extends EventEmitter {
 
   end() {
     if (this.state === PHASES.IDLE) return { ok: false, reason: "invalid_state" };
+    this.cardResults.clear();
     this.#clearActiveRound();
     this.#transition(PHASES.IDLE);
     return { ok: true, state: this.state };
@@ -217,6 +220,7 @@ export class Game extends EventEmitter {
     this.lastChampion = null;
     this.lastFeaturedTableId = 0;
     this.lastFeaturedPlayerIds.clear();
+    this.cardResults.clear();
     this.#clearActiveRound();
     this.lobbyOpenedAt = null;
     this.roundNumber = 0;
@@ -627,6 +631,30 @@ export class Game extends EventEmitter {
       this.lastChampion = champion;
       for (const table of this.tables.values()) table.reveal.champion = champion;
     }
+    const fullLeaderboard = this.#leaderboard(Infinity);
+    this.cardResults.clear();
+    for (const table of this.tables.values()) {
+      for (const player of table.roster.values()) {
+        const assignment = table.impostors.find(({ playerId }) => playerId === player.id);
+        const voteTargetId = table.votes.get(player.id) ?? null;
+        const voteTarget = voteTargetId ? table.roster.get(voteTargetId) : null;
+        const voteWasRight = Boolean(table.impostors.some(({ playerId }) => playerId === voteTargetId));
+        const standing = fullLeaderboard.findIndex(({ player: ranked }) => ranked.id === player.id);
+        this.cardResults.set(player.id, {
+          availableAt: table.revealEndsAt + this.durations.cardResultDelay,
+          roundNumber: table.number,
+          role: assignment ? "IMPOSTER" : "DETECTIVE",
+          tableId: table.id,
+          result: table.reveal,
+          voteTarget: voteTarget ? this.#publicPlayer(voteTarget) : null,
+          voteWasRight,
+          roundPoints: table.scoreChanges.get(player.id) ?? 0,
+          totalScore: this.scores.get(player.id) ?? 0,
+          rank: standing >= 0 ? standing + 1 : null,
+          playerCount: fullLeaderboard.length,
+        });
+      }
+    }
     this.currentRound = this.tables.get(this.featuredTableId);
     this.lastReveal = this.currentRound.reveal;
     const otherResults = [...this.tables.values()]
@@ -679,8 +707,26 @@ export class Game extends EventEmitter {
       state: this.state,
       roundNumber: this.roundNumber,
       phaseEndsAt: this.#phaseEndsAt(),
+      phaseDurationMs: this.durations[this.state.toLowerCase()] ?? 0,
       remainingMs: Math.max(0, (this.#phaseEndsAt() ?? this.#now()) - this.#now()),
     };
+    const heldResult = this.cardResults.get(player.id);
+    if (heldResult && [PHASES.REVEAL, PHASES.LOBBY].includes(this.state)) {
+      if (this.#now() < heldResult.availableAt) {
+        return {
+          ...base,
+          role: null,
+          revealHold: true,
+          resultAvailableAt: heldResult.availableAt,
+        };
+      }
+      return {
+        ...base,
+        ...heldResult,
+        showResult: true,
+        revealHold: false,
+      };
+    }
     if (!table || !ACTIVE_PHASES.has(this.state)) {
       return { ...base, role: null, crowd: ACTIVE_PHASES.has(this.state) };
     }
@@ -701,6 +747,7 @@ export class Game extends EventEmitter {
       earlyVoteTargetId: table.earlyVotes.get(player.id) ?? null,
       earlyVoteTargetNumber: table.roster.get(table.earlyVotes.get(player.id))?.number ?? null,
       voteTargetId: table.votes.get(player.id) ?? null,
+      impostorCount: table.impostors.length,
       canAccuse: this.state === PHASES.ROUND && !this.roundAccusations.has(player.id),
       canVote: this.state === PHASES.VOTE,
     };
@@ -720,6 +767,7 @@ export class Game extends EventEmitter {
       mission: "Get this word into chat naturally in a real sentence before time runs out.",
       note: "You might not be the only Imposter at your table.",
       delivered: Boolean(assignment.smuggle),
+      deliveredAt: assignment.smuggle ? formatElapsed(assignment.smuggle.elapsedMs) : null,
       busted: assignment.busted,
     };
   }
@@ -803,6 +851,7 @@ export class Game extends EventEmitter {
 
   #startRound(eligible, options, finalRound) {
     if (eligible.length < 3) return { ok: false, reason: "not_enough_claimed" };
+    this.cardResults.clear();
     const streamer = this.hostPlays
       ? eligible.find(({ login }) => login === this.streamerLogin)
       : null;
@@ -1170,6 +1219,17 @@ export class Game extends EventEmitter {
     this.lobbyOpenedAt = this.#now();
     this.#transition(PHASES.LOBBY);
     this.#armLobbyTimer();
+    this.#armCardResultTimer();
+  }
+
+  #armCardResultTimer() {
+    if (!this.cardResults.size) return;
+    const availableAt = Math.min(...[...this.cardResults.values()].map((result) => result.availableAt));
+    this.#setTimer("cardResults", Math.max(0, availableAt - this.#now()), () => {
+      for (const [sessionId, session] of this.sessions) {
+        if (this.cardResults.has(session.userId)) this.#publishPrivateCard(sessionId);
+      }
+    });
   }
 
   #armLobbyTimer() {

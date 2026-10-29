@@ -10,10 +10,15 @@
     <main class="phone-file">
       <div class="folder-light" aria-hidden="true"></div>
       <header class="site-header">
-        <span>SUS WORD</span>
-        <span id="connection">CONNECTING</span>
+        <span id="card-heading">SUS WORD · PRIVATE CARD</span>
+        <span class="header-tools">
+          <button id="sound-toggle" type="button" aria-label="Mute new-round chime">🔊</button>
+          <span id="connection">CONNECTING</span>
+        </span>
       </header>
       <section id="card-root" aria-live="polite"></section>
+      <div id="signal-border" aria-hidden="true"></div>
+      <div id="toast" role="status" aria-live="polite"></div>
       <footer id="card-footer">YOUR PRIVATE CASE FILE</footer>
     </main>
     <script type="module" src="/card.js"></script>

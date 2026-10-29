@@ -239,6 +239,33 @@ describe("state machine and role selection", () => {
 });
 
 describe("round messages and reveal payload", () => {
+  test("private cards hold the result until the reveal ends plus six seconds", () => {
+    const { clock, game } = createGame();
+    const [alice, bruno] = startRound(game);
+    game.recordMessage({ userId: alice.id, text: "I lit a candle last night" });
+    game.beginVote();
+    game.vote(bruno.id, alice.id);
+    game.finishVote();
+
+    const duringReveal = game.getCard(bruno.sessionId);
+    assert.equal(duringReveal.revealHold, true);
+    assert.equal("result" in duringReveal, false);
+    clock.tick(DEFAULT_DURATIONS.reveal);
+    assert.equal(game.state, PHASES.LOBBY);
+    assert.equal(game.getCard(bruno.sessionId).revealHold, true);
+    clock.tick(DEFAULT_DURATIONS.cardResultDelay - 1);
+    assert.equal(game.getCard(bruno.sessionId).revealHold, true);
+    clock.tick(1);
+    const released = game.getCard(bruno.sessionId);
+    assert.equal(released.showResult, true);
+    assert.equal(released.role, "DETECTIVE");
+    assert.equal(released.voteTarget.id, alice.id);
+    assert.equal(released.voteWasRight, true);
+    assert.equal(released.roundPoints, 1);
+    assert.equal(released.rank, 2);
+    assert.ok(released.result.imposters.length > 0);
+  });
+
   test("a broadcaster voice chunk can smuggle the word and gets a voice reveal", () => {
     const { game } = createGame();
     const [alice, bruno] = startRound(game);
