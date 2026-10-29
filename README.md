@@ -53,7 +53,7 @@ Open the host page in Google Chrome and turn on **🎙 Mic**. Allow microphone a
 | `!join CODE` | Anyone | Joins and links the private card in one command. |
 | `!claim CODE` | Anyone | Backward-compatible way to link a card. |
 | `!leave` | Player | Leaves the game. |
-| `2`, `#2`, `!2`, `!vote 2` | Player or crowd | Votes for that stable player number. A player's early vote is saved; crowd votes only break seated-vote ties. |
+| `2`, `#2`, `!2`, `!vote 2` | Player or crowd | Votes for that stable player number. A player's early vote is saved; crowd votes only resolve ties between seated votes and get no bot reply. |
 | `!accuse name word` | Player or crowd | One live accusation per round. |
 | `!sus start` | Broadcaster/mod | Opens the lobby. |
 | `!sus go` | Broadcaster/mod | Starts a round. |
@@ -69,7 +69,7 @@ The card page first checks that the Twitch name spoke in chat recently, then giv
 
 ## Built with Codex
 
-Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first rehearsal simulator was drafted outside Codex and later rewritten in Codex (step 15). The current game is covered by 90 automated tests:
+Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first rehearsal simulator was drafted outside Codex and later rewritten in Codex (step 15). The current game is covered by 96 automated tests:
 
 1. Pure game logic, word detection, scoring, and tests.
 2. Twitch OAuth, EventSub chat, server routes, and live state.
@@ -89,3 +89,4 @@ Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first reh
 16. Dynamic reveal timing, live accusation slams, round MVPs, host polish, and Champion screens.
 17. Live overlay stability and first-render safety, crowd tie-break voting, legibility, card-state preservation, and case-file chat summaries.
 18. A 480p vote-board pass that keeps full player names beside seated and crowd tallies.
+19. The strict 480p vote-board re-check, reliable join replies, accurate case-file copy, and partial CHAT tie-breaks.

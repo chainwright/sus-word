@@ -1,0 +1,13 @@
+Step 19: a strict re-check after steps 17–18. Read the section "Re-check after steps 17–18" at the end of ../playtest/JUDGE_2026-10-29.md in full; the 480p screenshot is rec/p19_board_480p.jpg. Fix all of these, each with a test where the logic is testable:
+
+1. Names are still cut on the VOTE/REVEAL board: overlay.css:13 adds padding-right:22px to every vote row and css:80 removes it only when seated votes > 0. Remove that padding. Add a jsdom (or pure layout) test that 12 names, including "drovosek7777", "romabuilds" and "tomtom_irl", are not truncated at 854×480 in VOTE.
+2. The vote count is glued to the player number badge (overlay.js:99, css:83): "5" with 1 vote reads as "51". Viewers vote by typing that number, so this must be impossible to misread. Put the vote count at the right end of the row (or on the vote fill), visually separate from the number badge, never adjacent to it.
+3. The overlay vote copy: "top 2 are accused" is shown even at 1-Imposter tables (overlay.html:26, overlay.js:304), next to "TOP VOTE ACCUSED". Make it follow the table's imposter count ("top vote is accused" / "top 2 are accused"), and bring back the how-to line: "Type a player's number in chat, or tap them on your card".
+4. The VOTE banner re-animates on every update (overlay.js:307); with crowd digits publishing events (game.js:666) it jitters. Animate only on entering VOTE.
+5. The "Next round in X" lobby clock is written once (overlay.js:266) and not refreshed by updateClocks (overlay.js:623). Make it tick.
+6. A `!join` reply that gets dropped still marks the user as replied (server.js:567 vs twitch.js:173). Mark only after a successful send. Make "you're in" replies low priority only if the lobby announcement already carries the link; otherwise keep them normal.
+7. The case-file line: "hid in plain sight for 1:48" uses the send time (game.js:1237). Say what it is ("LEMON slipped in at 1:48 · 9 read it · nobody noticed" / "· caught"), and don't repeat the line posted just before it.
+8. The chat tie-break: a 3-way tie for 2 accused slots with chat 5/0/0 accuses nobody (game.js:124–125). Use chat votes to order tied players, and fall back to the current rule only when chat is tied too. Add a test.
+9. Label the CHAT bars once on the board: "CHAT · tie-break only".
+
+Check every overlay and card mock in a browser for console errors. Copy this prompt as codex-log/step-19.txt. Keep npm test green. Do not commit; give me the commit message.

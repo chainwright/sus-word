@@ -25,6 +25,21 @@ export function overlayRenderPlan(previous, next) {
   };
 }
 
+export function shouldAnimateVoteBanner(plan = {}) {
+  return plan.phase === "VOTE" && plan.phaseChanged === true;
+}
+
+export function formatOverlayClock(milliseconds) {
+  const seconds = Math.max(0, Math.ceil((Number(milliseconds) || 0) / 1_000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+export function updateCompactLobbyClock(target, milliseconds) {
+  if (!target) return false;
+  target.textContent = formatOverlayClock(milliseconds);
+  return true;
+}
+
 export function voteRowOptions(tally = {}, leader = 1, chatLeader = 1, showChat = false) {
   const votes = tally.votes || 0;
   const chatVotes = tally.chatVotes || 0;
@@ -35,5 +50,27 @@ export function voteRowOptions(tally = {}, leader = 1, chatLeader = 1, showChat 
     chatVotes,
     chatBar: (chatVotes / chatLeader) * 100,
     showChat: showChat && chatVotes > 0,
+    namePadding: 0,
+    voteCountPlacement: "secondary-line",
+  };
+}
+
+export function votePlayerLayout(player = {}, tally = {}, leader = 1, chatLeader = 1, showChat = false) {
+  return {
+    ...voteRowOptions(tally, leader, chatLeader, showChat),
+    playerName: String(player.login || "player"),
+  };
+}
+
+export function voteInstruction(impostorCount = 1) {
+  const multiple = Number(impostorCount) > 1;
+  return {
+    boardMeta: multiple ? "TOP 2 ACCUSED" : "TOP VOTE ACCUSED",
+    outcome: multiple ? "top 2 are accused" : "top vote is accused",
+    howTo: `Type a player's number in chat, or tap them on your card · ${multiple ? "top 2 are accused" : "top vote is accused"}`,
+    bannerLines: [
+      "Type a player's number in chat",
+      `or tap your card · ${multiple ? "top 2 accused" : "top vote accused"}`,
+    ],
   };
 }

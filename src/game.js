@@ -120,12 +120,19 @@ export function selectVoteAccused(tallies, count) {
     (right.chatVotes ?? 0) - (left.chatVotes ?? 0)
     || left.player.login.localeCompare(right.player.login)
   ));
-  const chatBoundary = byChat[slots - 1]?.chatVotes ?? 0;
-  if (chatBoundary <= 0) return above.map(({ player }) => player.id);
-  const chatAbove = byChat.filter(({ chatVotes = 0 }) => chatVotes > chatBoundary);
-  const chatAtBoundary = byChat.filter(({ chatVotes = 0 }) => chatVotes === chatBoundary);
-  const resolved = chatAbove.length + chatAtBoundary.length <= slots
-    ? [...chatAbove, ...chatAtBoundary] : chatAbove;
+  const resolved = [];
+  let remaining = slots;
+  for (let index = 0; index < byChat.length && remaining > 0;) {
+    const chatVotes = byChat[index].chatVotes ?? 0;
+    const group = [];
+    while (index < byChat.length && (byChat[index].chatVotes ?? 0) === chatVotes) {
+      group.push(byChat[index]);
+      index += 1;
+    }
+    if (group.length > remaining) break;
+    resolved.push(...group);
+    remaining -= group.length;
+  }
   return [...above, ...resolved].map(({ player }) => player.id);
 }
 
@@ -1134,7 +1141,7 @@ export class Game extends EventEmitter {
       : `🕵️ Table ${table.id}: ${results.map((result) => `@${result.impostor.login} ${result.word.toUpperCase()} — ${result.verdict}`).join(" · ")}`;
     const caseFileMessage = `Round ${table.number}: ${results.map((result) => (
       result.evidence
-        ? `${result.word.toUpperCase()} hid in plain sight for ${result.elapsed} · ${result.readerCount} read it`
+        ? `${result.word.toUpperCase()} slipped in at ${result.elapsed} · ${result.readerCount} read it · ${result.verdict === "GOT AWAY" ? "nobody noticed" : "caught"}`
         : `${result.word.toUpperCase()} never landed · 0 read it`
     )).join(" · ")}`;
     return {

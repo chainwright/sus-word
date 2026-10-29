@@ -224,6 +224,60 @@ test("join aliases reply once and !join CODE links the matching account", async 
   assert.match(messages.at(-1), /you're in! Keep your card open/);
 });
 
+test("a dropped join link can be retried and claim replies yield only after the lobby link", async (context) => {
+  const sends = [];
+  let dropNext = true;
+  const codes = ["A2B3", "C4D5"];
+  const twitch = {
+    async getUsersByLogin([login]) {
+      return [{ id: `${login}-id`, login, display_name: login, profile_image_url: "" }];
+    },
+    async sendChat(message, options) {
+      sends.push({ message, options });
+      if (dropNext) {
+        dropNext = false;
+        return { dropped: true, reason: "chat_queue_busy" };
+      }
+      return { data: [{ message_id: `sent-${sends.length}` }] };
+    },
+  };
+  const game = new Game({ codeGenerator: () => codes.shift() });
+  context.after(() => game.reset());
+  const service = createSusWordServer({ game, twitch, env: {}, logger: { log() {}, error() {} } });
+  const chatter = { id: "retry-1", userId: "retry-id", login: "retry", displayName: "Retry" };
+  assert.equal((await service.handleChatMessage({ ...chatter, text: "!join" })).replied, false);
+  assert.equal((await service.handleChatMessage({ ...chatter, text: "!join" })).replied, true);
+  assert.equal(sends.filter(({ message }) => message.includes("get your secret card")).length, 2);
+
+  const beforeLobby = game.createClaim({ sessionId: "before-lobby", login: "early" });
+  await service.handleChatMessage({
+    id: "early-chat",
+    userId: "early-id",
+    login: "early",
+    displayName: "Early",
+    text: `!join ${beforeLobby.code}`,
+  });
+  assert.equal(sends.findLast(({ message }) => message.includes("you're in!")).options.priority, undefined);
+
+  game.players.get("retry-id").claimed = true;
+  game.join({ id: "second-id", login: "second" });
+  game.players.get("second-id").claimed = true;
+  game.join({ id: "third-id", login: "third" });
+  game.players.get("third-id").claimed = true;
+  game.start();
+  await new Promise((resolve) => setImmediate(resolve));
+  const claim = game.createClaim({ sessionId: "fourth-session", login: "fourth" });
+  await service.handleChatMessage({
+    id: "fourth-chat",
+    userId: "fourth-id",
+    login: "fourth",
+    displayName: "Fourth",
+    text: `!join ${claim.code}`,
+  });
+  const accepted = sends.findLast(({ message }) => message.includes("you're in!"));
+  assert.equal(accepted.options.priority, "low");
+});
+
 test("a wrong-account code gets the specified bot and card message", async () => {
   const messages = [];
   const game = new Game({ codeGenerator: () => "A2B3" });
@@ -345,7 +399,9 @@ test("bot announcements use v3 copy and every message stays within 500 character
   assert.ok(messages.every((message) => message.length <= 500));
   assert.ok(splitChatMessage("word ".repeat(200)).every((message) => message.length <= 500));
   game.finishVote();
-  assert.ok(messages.some((message) => /^Round 1: [A-Z]+ (?:hid in plain sight|never landed)/.test(message)));
+  const caseFiles = messages.filter((message) => /^Round 1: [A-Z]+ (?:slipped in at|never landed)/.test(message));
+  assert.equal(caseFiles.length, 1);
+  assert.equal(messages.some((message) => message.includes("was the Imposter!")), false);
   game.reset();
   void service;
 });

@@ -1,5 +1,12 @@
 import { readerCountLabel } from "/display.js";
-import { overlayRenderPlan, voteRowOptions } from "/overlay-state.js";
+import {
+  formatOverlayClock,
+  overlayRenderPlan,
+  shouldAnimateVoteBanner,
+  updateCompactLobbyClock,
+  voteInstruction,
+  votePlayerLayout,
+} from "/overlay-state.js";
 
 const $ = (selector) => document.querySelector(selector);
 const stage = $("#stage");
@@ -62,8 +69,7 @@ function remaining() {
 }
 
 function clock(ms) {
-  const seconds = Math.max(0, Math.ceil(ms / 1_000));
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  return formatOverlayClock(ms);
 }
 
 function avatar(player) {
@@ -90,18 +96,20 @@ function playerRow(player, options = {}) {
   row.dataset.playerId = player.id;
   const number = el("b", "player-number", String(player.number || "?"));
   row.append(number, avatar(player));
-  const name = el("strong", `player-name${String(player.login || "").length > 12 ? " long" : ""}`, player.login || "player");
+  const playerName = options.playerName || player.login || "player";
+  const name = el("strong", `player-name${String(playerName).length > 12 ? " long" : ""}`, playerName);
   row.append(name);
   if (player.simulated) row.append(el("span", "sim-tag", "SIM"));
   if (options.vote) {
     row.style.setProperty("--vote-fill", `${options.bar || 0}%`);
+    row.style.setProperty("--vote-name-padding", `${options.namePadding || 0}px`);
     if (options.votes) row.classList.add("has-votes");
-    if (options.votes) number.append(el("span", "vote-count", String(options.votes)));
+    if (options.votes) row.append(el("span", "vote-count", `VOTE ${options.votes}`));
     if (options.showChat) {
       row.classList.add("has-chat-votes");
       const chatBar = el("i", "chat-vote-bar");
       chatBar.style.width = `${options.chatBar || 0}%`;
-      row.append(chatBar, el("small", "chat-vote-label", `CHAT ${options.chatVotes || 0}`));
+      row.append(chatBar, el("small", "chat-vote-label", String(options.chatVotes || 0)));
     }
   }
   if (options.busted) row.append(el("span", "busted-mini", `BUSTED by @${options.busted.accuser?.login || "detective"}`));
@@ -263,7 +271,9 @@ function renderLobby(next) {
   } else {
     const compact = $("#compact-lobby");
     compact.hidden = false;
-    compact.replaceChildren(document.createTextNode(`Next round in ${clock(remaining())} · `), el("strong", "", `${next.claimedCount || 0} players ready`), document.createTextNode(" · new? type !join"));
+    const compactClock = el("time", "", clock(remaining()));
+    compactClock.id = "compact-lobby-clock";
+    compact.replaceChildren(document.createTextNode("Next round in "), compactClock, document.createTextNode(" · "), el("strong", "", `${next.claimedCount || 0} players ready`), document.createTextNode(" · new? type !join"));
   }
 }
 
@@ -287,24 +297,32 @@ function renderRound(next, newRound = false) {
   if (newRound) animateNewRound();
 }
 
-function renderVote(next) {
+function renderVote(next, entering = false) {
   const round = next.round || {};
   const players = stablePlayers(round.players || next.players || []);
   const tallies = new Map((round.tallies || []).map((entry) => [entry.player?.id || entry.playerId, entry]));
   const max = Math.max(1, ...[...tallies.values()].map(({ votes = 0 }) => votes));
   const chatMax = Math.max(1, ...[...tallies.values()].map(({ chatVotes = 0 }) => chatVotes));
   const showChat = [...tallies.values()].some(({ chatVotes = 0 }) => chatVotes > 0);
+  const instruction = voteInstruction(round.impostorCount || next.impostorCount || 1);
   $("#vote-banner").hidden = false;
+  $("#vote-instruction").replaceChildren(
+    document.createTextNode(instruction.bannerLines[0]),
+    el("br"),
+    document.createTextNode(instruction.bannerLines[1]),
+  );
   $("#board").hidden = false;
   $("#board-title").textContent = "WHO HID A WORD?";
-  $("#board-meta").textContent = (round.impostorCount || next.impostorCount || 1) > 1 ? "TOP 2 ACCUSED" : "TOP VOTE ACCUSED";
+  $("#board-meta").textContent = instruction.boardMeta;
   $("#hints").hidden = false;
   renderHints(round.hints || {});
-  $("#player-grid").replaceChildren(...players.map((player) => playerRow(player, voteRowOptions(tallies.get(player.id), max, chatMax, showChat))));
-  $("#board-note").replaceChildren(el("strong", "", "VOTES ARE LIVE"), document.createTextNode("Vote your top suspect · top 2 are accused"));
+  $("#player-grid").replaceChildren(...players.map((player) => playerRow(player, votePlayerLayout(player, tallies.get(player.id), max, chatMax, showChat))));
+  const note = $("#board-note");
+  note.replaceChildren(el("strong", "", "VOTES ARE LIVE"), document.createTextNode(instruction.howTo));
+  if (showChat) note.append(el("small", "chat-legend", "CHAT · tie-break only"));
   $("#leaderboard").hidden = true;
   renderMessages(round.latestMessages || round.recentMessages || []);
-  if (!reduced.matches) $("#vote-banner").animate([{ transform: "translateY(-100%)" }, { transform: "translateY(7px)" }, { transform: "translateY(0)" }], { duration: 350, easing: "cubic-bezier(.2,.8,.2,1)" });
+  if (entering && !reduced.matches) $("#vote-banner").animate([{ transform: "translateY(-100%)" }, { transform: "translateY(7px)" }, { transform: "translateY(0)" }], { duration: 350, easing: "cubic-bezier(.2,.8,.2,1)" });
 }
 
 function clearReveal() {
@@ -362,8 +380,8 @@ function showRevealEnd(next, results) {
   const max = Math.max(1, ...[...tallies.values()].map(({ votes = 0 }) => votes));
   const chatMax = Math.max(1, ...[...tallies.values()].map(({ chatVotes = 0 }) => chatVotes));
   const showChat = [...tallies.values()].some(({ chatVotes = 0 }) => chatVotes > 0);
-  $("#player-grid").replaceChildren(...stablePlayers(round.players || next.players || []).map((player) => playerRow(player, voteRowOptions(tallies.get(player.id), max, chatMax, showChat))));
-  $("#board-note").replaceChildren();
+  $("#player-grid").replaceChildren(...stablePlayers(round.players || next.players || []).map((player) => playerRow(player, votePlayerLayout(player, tallies.get(player.id), max, chatMax, showChat))));
+  $("#board-note").replaceChildren(...(showChat ? [el("small", "chat-legend", "CHAT · tie-break only")] : []));
   $("#leaderboard").hidden = false;
   renderLeaderboard(next.round?.reveal?.leaderboard || next.leaderboard || next.scores || [], next.scores || []);
   if (!params.has("mock") || params.get("play") === "1") later(() => cases.classList.add("shrunk"), 2_500);
@@ -532,8 +550,8 @@ function renderReveal(next) {
   const leader = Math.max(1, ...[...tallies.values()].map(({ votes = 0 }) => votes));
   const chatLeader = Math.max(1, ...[...tallies.values()].map(({ chatVotes = 0 }) => chatVotes));
   const showChat = [...tallies.values()].some(({ chatVotes = 0 }) => chatVotes > 0);
-  $("#player-grid").replaceChildren(...stablePlayers(next.round?.players || next.players || []).map((player) => playerRow(player, voteRowOptions(tallies.get(player.id), leader, chatLeader, showChat))));
-  $("#board-note").replaceChildren();
+  $("#player-grid").replaceChildren(...stablePlayers(next.round?.players || next.players || []).map((player) => playerRow(player, votePlayerLayout(player, tallies.get(player.id), leader, chatLeader, showChat))));
+  $("#board-note").replaceChildren(...(showChat ? [el("small", "chat-legend", "CHAT · tie-break only")] : []));
   $("#leaderboard").hidden = false;
   renderLeaderboard(next.scores || next.leaderboard || []);
   const play = params.get("play") === "1" || !params.has("mock");
@@ -560,7 +578,8 @@ function updateRevealBoard(next) {
   const chatLeader = Math.max(1, ...[...tallies.values()].map(({ chatVotes = 0 }) => chatVotes));
   $("#player-grid").replaceChildren(...stablePlayers(next.round?.players || next.players || []).map((player) => {
     const tally = tallies.get(player.id) || {};
-    return playerRow(player, voteRowOptions(
+    return playerRow(player, votePlayerLayout(
+      player,
       tally,
       leader,
       chatLeader,
@@ -594,7 +613,7 @@ function render(next) {
     renderRound(next, shouldSignal);
     if (shouldSignal) newRoundShown = next.roundNumber;
   }
-  else if (phase === "VOTE") renderVote(next);
+  else if (phase === "VOTE") renderVote(next, shouldAnimateVoteBanner(plan));
   else if (phase === "REVEAL") {
     if (plan.sameReveal) updateRevealBoard(next);
     else if (plan.revealKey !== revealKey) {
@@ -621,6 +640,7 @@ function updateClocks() {
   }
   $("#votes-locked").classList.toggle("show", ms <= 0);
   if (!$("#how-panel").hidden) $("#how-clock").textContent = `Starting in ${clock(ms)}`;
+  updateCompactLobbyClock($("#compact-lobby-clock"), ms);
 }
 
 function mockAvatar(index) {

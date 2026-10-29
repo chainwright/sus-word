@@ -565,6 +565,7 @@ describe("voting and scoring", () => {
     assert.equal(game.getTallies().find(({ player }) => player.id === alice.id).chatVotes, 1);
     game.finishVote();
     assert.equal(game.lastReveal.verdict, "CAUGHT");
+    assert.match(game.lastReveal.caseFileMessage, / · caught$/);
 
     const second = createGame().game;
     const [nextAlice] = startRound(second);
@@ -583,6 +584,6 @@ describe("voting and scoring", () => {
     game.recordMessage({ userId: bruno.id, text: "That sounds cozy" });
     game.beginVote();
     game.finishVote();
-    assert.equal(game.lastReveal.caseFileMessage, "Round 1: CANDLE hid in plain sight for 1:12 · 1 read it");
+    assert.equal(game.lastReveal.caseFileMessage, "Round 1: CANDLE slipped in at 1:12 · 1 read it · nobody noticed");
   });
 });

@@ -78,7 +78,7 @@ describe("Twitch chat normalization", () => {
     assert.equal(normalizeChatEvent({ ...base, message: { text: "@a @b @c your role is on your card" } }, "42"), null);
     assert.equal(normalizeChatEvent({ ...base, message: { text: "🗳️🗳️ VOTE NOW: 30 SECONDS 🗳️🗳️ Type a number: 1 a" } }, "42"), null);
     assert.equal(normalizeChatEvent({ ...base, message: { text: "⏳ 10 seconds left to vote" } }, "42"), null);
-    assert.equal(normalizeChatEvent({ ...base, message: { text: "Round 3: LEMON hid in plain sight for 1:12 · 9 read it" } }, "42"), null);
+    assert.equal(normalizeChatEvent({ ...base, message: { text: "Round 3: LEMON slipped in at 1:12 · 9 read it · nobody noticed" } }, "42"), null);
     assert.equal(normalizeChatEvent({ ...base, message: { text: "Category: home" } }, "42"), null);
 
     const command = normalizeChatEvent({ ...base, message: { text: "!sus start" } }, "42");

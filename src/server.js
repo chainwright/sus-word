@@ -120,6 +120,9 @@ export function createSusWordServer(options = {}) {
   const chatSeenAt = new Map();
   const aliasReplies = new Set();
   const joinReplies = new Set();
+  const joinReplyPending = new Set();
+  let lobbyAnnouncementHasLink = false;
+  let lobbyAnnouncementSequence = 0;
   const serverNow = options.now ?? (() => Date.now());
 
   if (env.CHANNEL_LOGIN) game.configureStreamer?.(env.CHANNEL_LOGIN);
@@ -229,9 +232,20 @@ export function createSusWordServer(options = {}) {
     if (to === PHASES.IDLE) {
       aliasReplies.clear();
       joinReplies.clear();
+      joinReplyPending.clear();
+      lobbyAnnouncementHasLink = false;
+      lobbyAnnouncementSequence += 1;
     }
     if (to === PHASES.LOBBY) {
-      announce(`🕵️ Sus Word! Type !join to play. Get your secret card: ${publicUrl}/card`);
+      lobbyAnnouncementHasLink = false;
+      lobbyAnnouncementSequence += 1;
+      const sequence = lobbyAnnouncementSequence;
+      announce(`🕵️ Sus Word! Type !join to play. Get your secret card: ${publicUrl}/card`)
+        .then((sent) => {
+          if (sequence === lobbyAnnouncementSequence && game.phase === PHASES.LOBBY) {
+            lobbyAnnouncementHasLink = sent;
+          }
+        });
     }
   });
   game.on("round", ({ roundNumber }) => {
@@ -260,9 +274,8 @@ export function createSusWordServer(options = {}) {
     waitlistAnnouncementRound = game.roundNumber;
     announce("🕵️ New players are waiting for the next round.");
   });
-  game.on("reveal", ({ botMessage, caseFileMessage, otherTablesMessage }) => {
+  game.on("reveal", ({ caseFileMessage, otherTablesMessage }) => {
     flushBusted();
-    announce(botMessage);
     announce(caseFileMessage);
     announce(otherTablesMessage);
   });
@@ -441,15 +454,24 @@ export function createSusWordServer(options = {}) {
     }
   }
 
-  function announce(message, options = {}) {
-    if (!message) return;
+  async function announce(message, options = {}) {
+    if (!message) return false;
+    const sends = [];
     for (const part of splitChatMessage(message)) {
       if (!twitch) {
         logger.log?.(`[offline] ${part}`);
+        sends.push(Promise.resolve(true));
         continue;
       }
-      twitch.sendChat(part, options).catch((error) => logger.error?.(`[chat] ${error.message}`));
+      sends.push(twitch.sendChat(part, options)
+        .then((result) => result?.dropped !== true)
+        .catch((error) => {
+          logger.error?.(`[chat] ${error.message}`);
+          return false;
+        }));
     }
+    const results = await Promise.all(sends);
+    return results.length > 0 && results.every(Boolean);
   }
 
   function queueBusted({ accuser, impostor, word }) {
@@ -562,12 +584,18 @@ export function createSusWordServer(options = {}) {
         avatar: player.avatar,
       });
       const key = String(message.userId ?? login);
-      const shouldReply = !joinReplies.has(key);
+      const shouldReply = !joinReplies.has(key) && !joinReplyPending.has(key);
+      let replied = false;
       if (shouldReply) {
-        joinReplies.add(key);
-        announce(`@${login} get your secret card: ${publicUrl}/card`, { priority: "low" });
+        joinReplyPending.add(key);
+        const sent = await announce(`@${login} get your secret card: ${publicUrl}/card`, { priority: "low" });
+        joinReplyPending.delete(key);
+        if (sent) {
+          joinReplies.add(key);
+          replied = true;
+        }
       }
-      return { ...result, replied: shouldReply };
+      return { ...result, replied };
     }
     if (command.type === "claim") {
       const player = await playerDetails(message);
@@ -579,7 +607,10 @@ export function createSusWordServer(options = {}) {
         avatar: player.avatar,
       });
       if (!result.ok && result.message) announce(result.message);
-      if (result.ok) announce(`@${login} you're in! Keep your card open; your role appears when the round starts.`);
+      if (result.ok) announce(
+        `@${login} you're in! Keep your card open; your role appears when the round starts.`,
+        lobbyAnnouncementHasLink ? { priority: "low" } : {},
+      );
       return result;
     }
     if (command.type === "leave") return game.leave(message.userId);

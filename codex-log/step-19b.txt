@@ -1,0 +1,7 @@
+You hit the usage limit in the middle of Step 19. Continue Step 19 from where you stopped (the uncommitted changes are yours; read `git diff` first and re-read rec/p19.txt).
+
+Already done with tests: items 1, 2, 3, 6, 8 and 9 (names fit at 854×480, the vote count is separate from the number, imposter-aware copy, dropped join replies retry, multi-slot chat tie-break, CHAT label); item 7's wording is in game.js.
+
+Still to verify or finish: item 4 (the VOTE banner animates only on entering VOTE, not on every update) and item 5 (the "Next round in X" lobby clock ticks via updateClocks). Also check that item 7 no longer repeats the line posted just before it. In the VOTE banner at 854×480 the instruction now wraps to four lines; make it two lines at most.
+
+Check every overlay and card mock in a browser for console errors. Copy this prompt as codex-log/step-19b.txt. Keep npm test green. Do not commit; give me one commit message for steps 19 and 19b, and the list of done items.
