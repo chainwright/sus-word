@@ -1,3 +1,5 @@
+import { readerCountLabel } from "/display.js";
+
 const $ = (selector) => document.querySelector(selector);
 const stage = $("#stage");
 const params = new URLSearchParams(location.search);
@@ -85,10 +87,6 @@ function playerRow(player, options = {}) {
   row.append(el("b", "player-number", String(player.number || "?")), avatar(player));
   const name = el("strong", `player-name${String(player.login || "").length > 12 ? " long" : ""}`, player.login || "player");
   row.append(name);
-  if (options.count !== undefined) {
-    const badge = el("span", `message-count${options.bump ? " bump" : ""}`, String(options.count));
-    row.append(badge);
-  }
   if (options.vote) {
     const bar = el("i", "vote-bar");
     bar.style.width = `${options.bar || 0}%`;
@@ -190,7 +188,7 @@ function renderLobby(next) {
   note.replaceChildren(el("strong", "", "JOINING NOW?"), document.createTextNode("Type !join in chat, then open the card link it replies with. Takes 20 seconds."));
   if (full) {
     $("#how-panel").hidden = false;
-    $("#how-ready").textContent = `Players with cards: ${next.claimedCount || 0} / 3 needed`;
+    $("#how-ready").textContent = `${next.claimedCount || 0} players ready · 3 needed to start`;
     $("#how-clock").textContent = `Starting in ${clock(remaining())}`;
   } else {
     const compact = $("#compact-lobby");
@@ -250,10 +248,7 @@ function later(fn, ms) {
 function highlightedEvidence(result) {
   const line = el("div", "evidence-line");
   const evidence = result.evidence;
-  if (!evidence) {
-    line.append(el("strong", "crossed", result.word || "SECRET WORD"), document.createTextNode(" · THE WORD NEVER MADE IT OUT"));
-    return { line, mark: null };
-  }
+  if (!evidence) return { line: null, mark: null };
   const voice = evidence.source === "voice";
   line.append(document.createTextNode(`${voice ? "🎙 " : ""}${evidence.player?.login || result.impostor?.login}: “`));
   line.append(document.createTextNode(evidence.text.slice(0, evidence.index)));
@@ -270,9 +265,11 @@ function finalCase(result) {
   word.append(document.createTextNode("WORD: "), el("mark", "", String(result.word || "unknown").toUpperCase()));
   head.append(word);
   const { line } = highlightedEvidence(result);
-  card.append(head, line, el("p", "reveal-caption", result.caption || (result.evidence ? "Hidden in plain sight." : "THE WORD NEVER MADE IT OUT")));
+  card.append(head);
+  if (result.evidence) card.append(line, el("p", "reveal-caption", result.caption || "Hidden in plain sight."));
+  else card.append(el("div", "never-delivered-line", "THE WORD NEVER MADE IT OUT"));
   const verdict = result.verdict || (result.evidence ? "GOT AWAY" : "WORD NEVER LANDED");
-  const displayVerdict = verdict === "CAUGHT" ? "BUSTED" : verdict;
+  const displayVerdict = !result.evidence ? "NEVER DELIVERED" : verdict === "CAUGHT" ? "BUSTED" : verdict;
   card.append(el("b", `verdict${verdict === "GOT AWAY" ? " away" : verdict.includes("NEVER") ? " miss" : ""}`, `${displayVerdict}${verdict === "GOT AWAY" ? " +3" : ""}`));
   return card;
 }
@@ -336,12 +333,13 @@ function animateOneResult(next, result, index, done) {
       later(() => {
       rewind.remove();
       const card = finalCase(result);
+      card.classList.add("lifted");
       const caption = card.querySelector(".reveal-caption");
       const stamp = card.querySelector(".verdict");
       stamp.style.opacity = "0";
       caption.style.opacity = "0";
       const readerCount = result.readerCount ?? 0;
-      caption.replaceChildren(document.createTextNode(`${result.elapsed || result.evidence.elapsed || "1:12"} into the round · `), el("strong", "read-count", "0 people read it"), document.createTextNode(result.caught ? " · someone noticed" : " · nobody noticed"));
+      caption.replaceChildren(document.createTextNode(`${result.elapsed || result.evidence.elapsed || "1:12"} into the round · `), el("strong", "read-count", readerCountLabel(0)), document.createTextNode(result.caught ? " · someone noticed" : " · nobody noticed"));
       layer.append(card);
       card.animate([{ transform: "scale(1)", boxShadow: "none" }, { transform: "scale(1.35)", boxShadow: "0 24px 38px #000b" }], { duration: 400, fill: "both" });
       later(() => card.querySelector(".evidence-line mark")?.animate([{ backgroundSize: "0 70%" }, { backgroundSize: "100% 70%" }], { duration: 500, fill: "both" }), 500);
@@ -351,7 +349,7 @@ function animateOneResult(next, result, index, done) {
         const started = performance.now();
         const roll = (now) => {
           const progress = Math.min(1, (now - started) / 600);
-          count.textContent = `${Math.round(readerCount * progress)} people read it`;
+          count.textContent = readerCountLabel(Math.round(readerCount * progress));
           if (progress < 1) requestAnimationFrame(roll);
         };
         requestAnimationFrame(roll);

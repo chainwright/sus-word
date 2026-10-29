@@ -2,10 +2,17 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import {
+  readerCountLabel,
   selectLobbyPlayers,
   selectRoundPlayers,
   selectVoteSuspects,
 } from "../public/display.js";
+
+test("reveal reader counts use the singular only for one person", () => {
+  assert.equal(readerCountLabel(0), "0 people read it");
+  assert.equal(readerCountLabel(1), "1 person read it");
+  assert.equal(readerCountLabel(2), "2 people read it");
+});
 
 const players = Array.from({ length: 12 }, (_, index) => ({
   id: `p${index + 1}`,

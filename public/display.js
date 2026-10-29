@@ -41,3 +41,8 @@ export function selectVoteSuspects(tallies, limit = 5) {
     ))
     .slice(0, normalizedLimit(limit, 5));
 }
+
+export function readerCountLabel(count) {
+  const value = Math.max(0, Number(count) || 0);
+  return `${value} ${value === 1 ? "person" : "people"} read it`;
+}
