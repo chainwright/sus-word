@@ -1,0 +1,10 @@
+body{width:390px;height:844px;overflow:hidden;background:#1a0f0b url(/img/desk.jpg) center/cover}
+.top{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;color:#f7e9ca}
+.top b{font-size:15px}.timer{background:#2b201b;border:2px solid #d9b26a;border-radius:20px;padding:6px 12px;font-family:Oswald;font-size:22px;color:#ffe153}
+.sheet{margin:10px 12px;padding:14px 16px 16px;background:var(--paper-light);box-shadow:var(--shadow)}
+.lbl{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6a5444}
+h2{font-family:Oswald;font-size:30px;margin:2px 0 8px}
+input{width:100%;font:700 22px "Courier Prime";padding:10px 12px;border:3px solid #2b201b;background:#fff;margin:6px 0}
+.btn{display:block;text-align:center;background:var(--red);color:#fff;font-family:Oswald;font-size:22px;padding:12px;margin-top:8px;box-shadow:var(--shadow)}
+.ok{color:var(--green);font-weight:700;font-size:15px}.bad{color:var(--red);font-weight:700;font-size:15px}
+.note{font-size:14.5px;line-height:1.35;margin-top:10px;background:#fff8e4;padding:9px 11px;border-left:5px solid var(--red)}

@@ -15,7 +15,34 @@ import TwitchClient from "./twitch.js";
 export const SESSION_COOKIE = "sus_sid";
 
 const PUBLIC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../public");
-const HELP_MESSAGE = "🕵️ Join with !join, accuse with !accuse name word, then vote with !vote name.";
+const HELP_MESSAGE = "🕵️ Type !join to play. When voting opens, vote with a player number: 2, #2, !2, or !vote 2.";
+const CHAT_SEEN_WINDOW = 15 * 60 * 1_000;
+
+export function containsUrl(value) {
+  return /(?:https?:\/\/|www\.)\S+/i.test(String(value ?? ""));
+}
+
+export function splitChatMessage(value, limit = 500) {
+  const words = String(value ?? "").trim().split(/\s+/).filter(Boolean);
+  const messages = [];
+  let current = "";
+  for (const word of words) {
+    if (word.length > limit) {
+      if (current) messages.push(current);
+      for (let index = 0; index < word.length; index += limit) messages.push(word.slice(index, index + limit));
+      current = "";
+      continue;
+    }
+    const next = current ? `${current} ${word}` : word;
+    if (next.length <= limit) current = next;
+    else {
+      if (current) messages.push(current);
+      current = word;
+    }
+  }
+  if (current) messages.push(current);
+  return messages;
+}
 
 export function stripUrls(value) {
   return String(value ?? "")
@@ -73,13 +100,6 @@ export function isLocalHostOrigin(value) {
   }
 }
 
-function formatRoundLength(duration) {
-  const seconds = Math.round(duration / 1_000);
-  if (seconds % 60) return `${seconds} seconds`;
-  const minutes = seconds / 60;
-  return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
-}
-
 export function createSusWordServer(options = {}) {
   const env = options.env ?? process.env;
   const logger = options.logger ?? console;
@@ -97,6 +117,8 @@ export function createSusWordServer(options = {}) {
   let bustedBatch = [];
   let waitlistAnnouncementRound = null;
   const cardMessageTimes = new Map();
+  const chatSeenAt = new Map();
+  const aliasReplies = new Set();
   const serverNow = options.now ?? (() => Date.now());
 
   if (env.CHANNEL_LOGIN) game.configureStreamer?.(env.CHANNEL_LOGIN);
@@ -121,6 +143,15 @@ export function createSusWordServer(options = {}) {
     response.json(cardState(sid));
   });
 
+  app.post("/api/card/check", (request, response) => {
+    const login = String(request.body?.login ?? "").trim().replace(/^@/, "").toLowerCase();
+    if (!/^[a-z0-9_]{1,25}$/.test(login)) {
+      response.status(400).json({ ok: false, reason: "invalid_login" });
+      return;
+    }
+    response.json({ ok: true, ...checkChatName(login) });
+  });
+
   app.post("/api/card/start", (request, response) => {
     const sid = sessionId(request, response);
     const login = String(request.body?.login ?? "").trim().replace(/^@/, "");
@@ -128,8 +159,9 @@ export function createSusWordServer(options = {}) {
       response.status(400).json({ ok: false, reason: "invalid_login" });
       return;
     }
+    const nameCheck = checkChatName(login);
     const result = game.createClaim({ sessionId: sid, login });
-    response.status(result.ok ? 200 : 400).json(result);
+    response.status(result.ok ? 200 : 400).json({ ...result, seenInChat: nameCheck.seen, nameCheck });
   });
 
   app.post("/api/host/feature/:tableId", (request, response) => {
@@ -197,13 +229,26 @@ export function createSusWordServer(options = {}) {
       announce(`🕵️ Sus Word! Type !join to play. Get your secret card: ${publicUrl}/card`);
     }
   });
-  game.on("round", ({ roundNumber, duration, tableCount, final }) => {
+  game.on("round", ({ roundNumber }) => {
     waitlistAnnouncementRound = null;
-    const label = final ? "Final round" : `Round ${roundNumber}`;
-    announce(`🕵️ ${label} has begun. ${tableCount} ${tableCount === 1 ? "table" : "tables"} · check your card for your table. ${formatRoundLength(duration)}.`);
+    announce(`🔔 ROUND ${roundNumber} · NEW ROLES! Check your card 👉 ${publicUrl}/card`);
+    announceRoleMentions();
   });
-  game.on("hint", ({ message }) => announce(`🕵️ ${message}`));
-  game.on("voteStart", () => announce("🕵️ Vote! !vote name"));
+  game.on("hint", ({ kind, value }) => {
+    announce(kind === "category"
+      ? `🕵️ HINT: the word is about ${String(value).toUpperCase()}`
+      : `🕵️ HINT: it starts with ${String(value).toUpperCase()}`);
+  });
+  game.on("voteStart", ({ duration }) => {
+    const table = game.tables.get(game.featuredTableId);
+    const choices = [...(table?.roster.values() ?? [])]
+      .sort((left, right) => left.number - right.number)
+      .map((player) => `${player.number} ${player.login}`)
+      .join(" · ");
+    const seconds = Math.round(duration / 1_000);
+    announce(`🗳️🗳️ VOTE NOW: ${seconds} SECONDS 🗳️🗳️ Type a number: ${choices}`);
+  });
+  game.on("voteWarning", () => announce("⏳ 10 seconds left to vote"));
   game.on("busted", (event) => queueBusted(event));
   game.on("player", ({ waitingForNextRound }) => {
     if (!waitingForNextRound || waitlistAnnouncementRound === game.roundNumber) return;
@@ -235,6 +280,43 @@ export function createSusWordServer(options = {}) {
       channelLogin: String(env.CHANNEL_LOGIN ?? "").trim().replace(/^@/, "").toLowerCase(),
       twitchConnected: Boolean(twitch?.connected),
     };
+  }
+
+  function now() {
+    return Number(typeof serverNow === "function" ? serverNow() : serverNow);
+  }
+
+  function checkChatName(value) {
+    const login = String(value ?? "").trim().replace(/^@/, "").toLowerCase();
+    const seenAt = chatSeenAt.get(login);
+    const seen = Number.isFinite(seenAt) && now() - seenAt <= CHAT_SEEN_WINDOW;
+    return {
+      login,
+      seen,
+      lastSeenAt: seen ? seenAt : null,
+      message: seen
+        ? `✓ @${login} is in chat`
+        : `We haven't seen @${login} in chat yet. Type anything in chat first, or check the spelling`,
+    };
+  }
+
+  function announceRoleMentions() {
+    const players = [...game.tables.values()]
+      .flatMap((table) => [...table.roster.values()])
+      .sort((left, right) => left.number - right.number);
+    const suffix = "your role is on your card";
+    let mentions = "";
+    for (const player of players) {
+      const mention = `@${player.login}`;
+      const next = mentions ? `${mentions} ${mention}` : mention;
+      if (`${next} ${suffix}`.length > 500) {
+        announce(`${mentions} ${suffix}`);
+        mentions = mention;
+      } else {
+        mentions = next;
+      }
+    }
+    if (mentions) announce(`${mentions} ${suffix}`);
   }
 
   function handleVoiceChunk(text, isLocal = false) {
@@ -298,6 +380,13 @@ export function createSusWordServer(options = {}) {
         if (result.ok) cardMessageTimes.set(card.player.id, now);
         return result;
       }
+      const command = parseCommand(raw);
+      if (command?.type === "vote") {
+        const target = command.number ? { number: command.number } : command.target;
+        const result = game.vote(actor, target);
+        if (result.ok) cardMessageTimes.set(card.player.id, now);
+        return { ...result, voteMessage: true, visible: false };
+      }
       const text = stripUrls(raw);
       if (!text) return { ok: false, reason: "invalid_message" };
       const result = game.recordMessage({
@@ -313,7 +402,8 @@ export function createSusWordServer(options = {}) {
       return game.accuse(actor, payload.target, payload.word);
     }
     if (payload?.type === "vote") {
-      return game.vote(actor, payload.target);
+      const target = Number.isInteger(payload.number) ? { number: payload.number } : payload.target;
+      return { ...game.vote(actor, target), voteMessage: true, visible: false };
     }
     return { ok: false, reason: "unknown_action" };
   }
@@ -347,11 +437,13 @@ export function createSusWordServer(options = {}) {
 
   function announce(message) {
     if (!message) return;
-    if (!twitch) {
-      logger.log?.(`[offline] ${message}`);
-      return;
+    for (const part of splitChatMessage(message)) {
+      if (!twitch) {
+        logger.log?.(`[offline] ${part}`);
+        continue;
+      }
+      twitch.sendChat(part).catch((error) => logger.error?.(`[chat] ${error.message}`));
     }
-    twitch.sendChat(message).catch((error) => logger.error?.(`[chat] ${error.message}`));
   }
 
   function queueBusted({ accuser, impostor, word }) {
@@ -425,7 +517,16 @@ export function createSusWordServer(options = {}) {
   }
 
   async function handleChatMessage(message) {
-    const command = parseCommand(message.text);
+    const login = String(message.login ?? "").trim().replace(/^@/, "").toLowerCase();
+    const text = String(message.text ?? "");
+    const joinedPlayer = game.players.get(String(message.userId ?? ""))
+      ?? [...game.players.values()].find((player) => player.login === login);
+    if (!joinedPlayer && containsUrl(text)) {
+      return { ok: true, ignored: true, reason: "link_spam" };
+    }
+    if (login) chatSeenAt.set(login, now());
+
+    const command = parseCommand(text);
     if (!command) {
       return game.recordMessage({
         userId: message.userId,
@@ -437,32 +538,55 @@ export function createSusWordServer(options = {}) {
       });
     }
 
+    if (command.type === "joinAlias") {
+      const key = String(message.userId ?? login);
+      const shouldReply = !aliasReplies.has(key);
+      if (shouldReply) {
+        aliasReplies.add(key);
+        announce(`@${login} almost! Type !join (with the !)`);
+      }
+      return { ok: true, ignored: true, action: "join_alias", replied: shouldReply };
+    }
     if (command.type === "join") {
       const player = await playerDetails(message);
-      return game.join({
+      const result = game.join({
         id: player.userId,
         login: player.login,
         displayName: player.displayName,
         avatar: player.avatar,
       });
+      announce(`@${login} get your secret card: ${publicUrl}/card`);
+      return result;
     }
     if (command.type === "claim") {
       const player = await playerDetails(message);
-      return game.claim({
+      const result = game.claim({
         code: command.code,
         userId: player.userId,
         login: player.login,
         displayName: player.displayName,
         avatar: player.avatar,
       });
+      if (!result.ok && result.message) announce(result.message);
+      if (result.ok) announce(`@${login} you're in! Keep your card open; your role appears when the round starts.`);
+      return result;
     }
     if (command.type === "leave") return game.leave(message.userId);
-    if (command.type === "vote") return game.vote({
-      userId: message.userId,
-      login: message.login,
-      displayName: message.displayName,
-      transport: "twitch",
-    }, command.target);
+    if (command.type === "vote") {
+      const target = command.number ? { number: command.number } : command.target;
+      const result = game.vote({
+        userId: message.userId,
+        login: message.login,
+        displayName: message.displayName,
+        transport: "twitch",
+      }, target);
+      if (result.ok && result.early && result.shouldReply) {
+        announce(`@${login} voting opens when the timer ends. Your number guess is saved: ${result.targetNumber}`);
+      } else if (!result.ok) {
+        announceVoteRejection(login, result, command.number);
+      }
+      return { ...result, voteMessage: true, visible: false };
+    }
     if (command.type === "accuse") return game.accuse({
       userId: message.userId,
       login: message.login,
@@ -481,6 +605,22 @@ export function createSusWordServer(options = {}) {
       return runHostAction(command.action);
     }
     return { ok: false, reason: "unknown_command" };
+  }
+
+  function announceVoteRejection(login, result, number) {
+    switch (result.reason) {
+      case "unknown_target":
+        announce(number
+          ? `@${login} there is no player ${number} at your table.`
+          : `@${login} that player isn't at your table.`);
+        break;
+      case "self_vote": announce(`@${login} you can't vote for yourself.`); break;
+      case "not_seated":
+      case "not_a_player": announce(`@${login} you're not seated this round.`); break;
+      case "invalid_state":
+      case "vote_closed": announce(`@${login} voting is closed.`); break;
+      default: announce(`@${login} that vote couldn't be counted.`);
+    }
   }
 
   function attachTwitch(nextTwitch) {
@@ -562,6 +702,7 @@ export function createSusWordServer(options = {}) {
     handleChatMessage,
     handleCardAction,
     handleVoiceChunk,
+    checkChatName,
     runHostAction,
     start,
     stop,

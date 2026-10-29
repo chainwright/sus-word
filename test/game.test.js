@@ -104,12 +104,23 @@ describe("claims and lobby players", () => {
     const { game } = createGame();
     const { code } = game.createClaim("browser-1", "alice");
 
-    assert.deepEqual(game.claim(code, "mallory", "user-9"), {
-      ok: false,
-      reason: "name_mismatch",
-    });
+    const rejected = game.claim(code, "mallory", "user-9");
+    assert.equal(rejected.ok, false);
+    assert.equal(rejected.reason, "name_mismatch");
+    assert.equal(rejected.message, "@mallory this code was made for @alice. Open the card and type your own Twitch name");
+    assert.equal(game.getPendingClaim("browser-1").error, rejected.message);
     assert.equal(game.players.size, 0);
     assert.equal(game.claim(code, "ALICE", "user-1").ok, true);
+  });
+
+  test("a replacement claim code invalidates the prior pending code", () => {
+    const { game } = createGame();
+    const first = game.createClaim("browser-1", "wrong_name");
+    const second = game.createClaim("browser-1", "alice");
+    assert.notEqual(second.code, first.code);
+    assert.equal(game.claim(first.code, "wrong_name", "user-9").reason, "invalid_code");
+    assert.equal(game.getPendingClaim("browser-1").login, "alice");
+    assert.equal(game.claim(second.code, "alice", "user-1").ok, true);
   });
 
   test("rejects a code once it is ten minutes old", () => {
@@ -192,6 +203,9 @@ describe("state machine and role selection", () => {
     assert.equal(game.state, PHASES.VOTE);
     assert.equal(game.getPublicState().remainingMs, DEFAULT_DURATIONS.vote);
     clock.tick(DEFAULT_DURATIONS.vote);
+    assert.equal(game.state, PHASES.VOTE);
+    assert.equal(game.getPublicState().remainingMs, 0);
+    clock.tick(DEFAULT_DURATIONS.voteGrace);
     assert.equal(game.state, PHASES.REVEAL);
     clock.tick(DEFAULT_DURATIONS.reveal);
     assert.equal(game.state, PHASES.LOBBY);
@@ -207,6 +221,20 @@ describe("state machine and role selection", () => {
     assert.equal(game.players.size, 0);
     assert.equal(game.scores.size, 0);
     assert.equal(game.roundNumber, 0);
+  });
+
+  test("player numbers follow join order and stay stable across rounds", () => {
+    const { game } = createGame();
+    const players = claimPlayers(game, ["alice", "bruno", "chloe", "daria"]);
+    assert.deepEqual(players.map(({ id }) => game.players.get(id).number), [1, 2, 3, 4]);
+    game.start();
+    game.go();
+    const firstRound = new Map(game.getPublicState().players.map((player) => [player.id, player.number]));
+    game.beginVote();
+    game.finishVote();
+    game.nextRound();
+    game.go();
+    for (const player of game.getPublicState().players) assert.equal(player.number, firstRound.get(player.id));
   });
 });
 
@@ -240,7 +268,7 @@ describe("round messages and reveal payload", () => {
       reveal.caption,
       "0:00 into the round. Said out loud on stream. Someone noticed.",
     );
-    assert.match(reveal.botMessage, /said out loud at 0:00/);
+    assert.match(reveal.botMessage, /said out loud 0:00 into the round/);
     assert.doesNotMatch(reveal.botMessage, /I lit a candle/);
   });
 
@@ -330,7 +358,7 @@ describe("round messages and reveal payload", () => {
     assert.equal(reveal.verdict, "GOT AWAY");
     assert.equal(reveal.scoreChanges.find(({ player }) => player.id === alice.id).delta, 3);
     assert.equal(reveal.leaderboard[0].player.id, alice.id);
-    assert.match(reveal.botMessage, /smuggled at 0:12/);
+    assert.match(reveal.botMessage, /hidden 0:12 into the round in their message/);
   });
 
   test("does not award escape points when the word was never smuggled", () => {
@@ -340,8 +368,8 @@ describe("round messages and reveal payload", () => {
     game.vote(alice.id, bruno.id);
     game.vote(bruno.id, chloe.id);
     const result = game.vote(chloe.id, bruno.id);
-
-    assert.equal(result.state, PHASES.REVEAL);
+    assert.equal(result.state, PHASES.VOTE);
+    game.finishVote();
     assert.equal(game.lastReveal.smuggled, false);
     assert.equal(game.lastReveal.caption, "The word never made it out.");
     assert.equal(game.lastReveal.verdict, "WORD NEVER LANDED");
@@ -350,6 +378,51 @@ describe("round messages and reveal payload", () => {
 });
 
 describe("voting and scoring", () => {
+  test("saves a number vote during ROUND, replies once, and carries it into VOTE", () => {
+    const { game } = createGame();
+    const [alice, bruno] = startRound(game);
+    const aliceNumber = game.players.get(alice.id).number;
+
+    const first = game.vote(bruno.id, { number: aliceNumber });
+    assert.equal(first.early, true);
+    assert.equal(first.shouldReply, true);
+    assert.equal(first.targetNumber, aliceNumber);
+    assert.equal(game.vote(bruno.id, { number: aliceNumber }).shouldReply, false);
+    assert.equal(game.getCard(bruno.sessionId).voteSavedEarly, true);
+    assert.equal(game.getCard(bruno.sessionId).earlyVoteTargetNumber, aliceNumber);
+    assert.equal(game.getPublicState().round.voteSavedEarly[bruno.id], true);
+
+    game.beginVote();
+    assert.equal(game.currentRound.votes.get(bruno.id), alice.id);
+  });
+
+  test("accepts a changed vote during the six-second silent grace", () => {
+    const { clock, game } = createGame();
+    const [alice, bruno, chloe] = startRound(game);
+    game.beginVote();
+    clock.tick(DEFAULT_DURATIONS.vote);
+    assert.equal(game.state, PHASES.VOTE);
+    assert.equal(game.getPublicState().remainingMs, 0);
+    assert.equal(game.vote(bruno.id, { number: game.players.get(alice.id).number }).ok, true);
+    clock.tick(5_999);
+    assert.equal(game.vote(bruno.id, { number: game.players.get(chloe.id).number }).replaced, true);
+    clock.tick(1);
+    assert.equal(game.state, PHASES.REVEAL);
+  });
+
+  test("vote messages never become evidence, slips, smuggles, or decoys", () => {
+    const { game } = createGame();
+    const [alice] = startRound(game, { word: "candle", category: "home" });
+    for (const text of ["1", "#1", "!1", "!vote 1", "!vote alice"]) {
+      const result = game.recordMessage({ userId: alice.id, text });
+      assert.equal(result.voteMessage, true);
+      assert.equal(result.visible, false);
+    }
+    assert.equal(game.currentRound.messages.length, 0);
+    assert.equal(game.currentRound.smuggle, null);
+    assert.equal(game.currentRound.decoys.length, 0);
+  });
+
   test("ignores self-votes, replaces prior votes, and scores a caught Imposter", () => {
     const { game } = createGame();
     const [alice, bruno, chloe] = startRound(game);
@@ -363,11 +436,12 @@ describe("voting and scoring", () => {
       reason: "self_vote",
     });
     assert.equal(game.votes.get(bruno.id), alice.id);
-    assert.equal(game.vote("not-playing", alice.id).ok, true);
+    assert.equal(game.vote("not-playing", alice.id).reason, "not_seated");
 
     game.vote(chloe.id, alice.id);
     const lastVote = game.vote(alice.id, bruno.id);
-    assert.equal(lastVote.state, PHASES.REVEAL);
+    assert.equal(lastVote.state, PHASES.VOTE);
+    game.finishVote();
     assert.equal(game.lastReveal.caught, true);
     assert.equal(game.lastReveal.verdict, "CAUGHT");
     assert.equal(game.scores.get(alice.id), 1);
@@ -384,6 +458,7 @@ describe("voting and scoring", () => {
     game.vote(alice.id, bruno.id);
     game.vote(bruno.id, alice.id);
     game.vote(chloe.id, alice.id);
+    game.finishVote();
 
     assert.equal(game.lastReveal.verdict, "CAUGHT");
     assert.match(game.lastReveal.caption, /1 person read this\. Someone noticed\.$/);
@@ -396,6 +471,7 @@ describe("voting and scoring", () => {
     game.vote(alice.id, bruno.id);
     game.vote(bruno.id, alice.id);
     game.vote(chloe.id, alice.id);
+    game.finishVote();
 
     assert.equal(game.lastReveal.smuggled, false);
     assert.equal(game.lastReveal.verdict, "WORD NEVER LANDED");
@@ -414,6 +490,7 @@ describe("voting and scoring", () => {
     game.vote(alice.id, bruno.id);
     game.vote(bruno.id, chloe.id);
     game.vote(chloe.id, alice.id);
+    game.finishVote();
 
     assert.equal(game.lastReveal.tallies.find(({ player }) => player.id === alice.id).votes, 1);
     assert.equal(game.lastReveal.caught, false);

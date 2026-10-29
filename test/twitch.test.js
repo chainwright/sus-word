@@ -74,6 +74,10 @@ describe("Twitch chat normalization", () => {
     };
     assert.equal(isGameAnnouncement("Vote! !vote name"), true);
     assert.equal(normalizeChatEvent({ ...base, message: { text: "🕵️ Vote now" } }, "42"), null);
+    assert.equal(normalizeChatEvent({ ...base, message: { text: "🔔 ROUND 4 · NEW ROLES! Check your card 👉 /card" } }, "42"), null);
+    assert.equal(normalizeChatEvent({ ...base, message: { text: "@a @b @c your role is on your card" } }, "42"), null);
+    assert.equal(normalizeChatEvent({ ...base, message: { text: "🗳️🗳️ VOTE NOW: 30 SECONDS 🗳️🗳️ Type a number: 1 a" } }, "42"), null);
+    assert.equal(normalizeChatEvent({ ...base, message: { text: "⏳ 10 seconds left to vote" } }, "42"), null);
     assert.equal(normalizeChatEvent({ ...base, message: { text: "Category: home" } }, "42"), null);
 
     const command = normalizeChatEvent({ ...base, message: { text: "!sus start" } }, "42");

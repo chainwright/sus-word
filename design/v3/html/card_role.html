@@ -1,0 +1,35 @@
+<!doctype html><meta charset=utf-8><link rel=stylesheet href=base.css>
+<style>
+body{width:390px;height:844px;overflow:hidden;background:#1a0f0b url(/img/desk.jpg) center/cover}
+.top{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;color:#f7e9ca}
+.top b{font-size:15px}.timer{background:#2b201b;border:2px solid #d9b26a;border-radius:20px;padding:6px 12px;font-family:Oswald;font-size:22px;color:#ffe153}
+.newround{margin:0 12px;background:var(--red);color:#fff;padding:8px 12px;font-family:Oswald;font-size:17px;text-align:center;border-radius:3px;box-shadow:var(--shadow)}
+.sheet{margin:10px 12px;padding:14px 16px 16px;background:var(--paper-light);border-top:6px solid var(--red);box-shadow:var(--shadow)}
+.lbl{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6a5444}
+.role{font-family:Oswald;font-size:34px;font-weight:700;color:var(--red);line-height:1;margin:2px 0 8px;border:4px solid var(--red);display:inline-block;padding:2px 12px;transform:rotate(-2deg)}
+.word{font-family:Oswald;font-size:54px;font-weight:700;line-height:1;background:linear-gradient(transparent 55%,var(--yellow) 55%);display:inline-block;padding:0 6px;margin:2px 0 4px}
+.ru{font-size:15px;color:#6a5444;margin-bottom:10px}
+.do{font-size:16px;font-weight:700;margin:6px 0}
+.tips{margin-top:10px;padding:10px 12px;background:#fff8e4;border-left:5px solid var(--red);font-size:14.5px;line-height:1.35}
+.tips ul{padding-left:18px}.tips li{margin:4px 0}
+.ex{margin-top:8px;font-size:14px;background:#f1e2c0;padding:8px 10px;border-radius:3px}
+.ex b{background:var(--yellow)}
+.status{margin:10px 12px 0;display:flex;gap:8px}
+.chip{flex:1;text-align:center;padding:8px;font-family:Oswald;font-size:15px;border-radius:3px;box-shadow:var(--shadow)}
+.c1{background:#f7e9ca}.c2{background:#3b2a22;color:#ffe153}
+.flash{position:absolute;inset:0;border:10px solid var(--red);pointer-events:none}.alert{font-size:12.5px;color:#f7e9ca;text-align:center;margin-top:4px}.two{margin-top:8px;font-weight:700;font-size:14.5px;background:var(--yellow);padding:6px 9px}</style>
+<div class=top><b class=osw>Sus Word · Round 3</b><span class=timer>⏱ 2:13</span></div>
+<div class=flash></div><div class=newround>🔔 NEW ROUND: your role changed</div><div class=alert>🔊 chime + screen flash (vibrates on Android)</div>
+<div class=sheet>
+ <div class=lbl>Your role this round</div>
+ <div class=role>🕵️ IMPOSTER</div>
+ <div class=lbl>Your secret word this round</div>
+ <div class=word>LEMON</div>
+ <div class=do>Your job: slip this word into chat inside a normal sentence before the timer runs out. Don't get caught.</div>
+ <div class=two>2 Imposters this round. The other one has a different word.</div><div class=tips><b>How to win as the Imposter</b><ul>
+  <li>Get chat talking: bring up a topic where your word fits naturally (food, drinks).</li>
+  <li>Put the word in the middle of a sentence, not first or last.</li>
+  <li>Ask others questions. The one asking looks less suspicious.</li></ul>
+  <div class=ex>Example: “I take my tea with <b>lemon</b> and honey, you?”</div></div>
+</div>
+<div class=status><div class="chip c1">Word not sent yet</div><div class="chip c2">Chat sees topic at 1:30</div></div>

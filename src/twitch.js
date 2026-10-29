@@ -17,6 +17,12 @@ const SYSTEM_CLOCK = {
 export function isGameAnnouncement(text) {
   const message = String(text ?? "").trim();
   return message.startsWith("🕵️") || [
+    /^🔔 ROUND \d+ · NEW ROLES!/i,
+    /^🗳️🗳️ VOTE NOW:/i,
+    /^⏳ 10 seconds left to vote/i,
+    /^🚨 Busted:/i,
+    /your role is on your card$/i,
+    /^@\w+ (?:almost! Type !join|get your secret card:|you're in! Keep your card open|voting opens when the timer ends\.|there is no player \d+ at your table\.|that player isn't at your table\.|you can't vote for yourself\.|you're not seated this round\.|voting is closed\.|that vote couldn't be counted\.|this code was made for @)/i,
     /^Sus Word! Type !join/i,
     /^Round \d+ has begun\./i,
     /^Category:/i,

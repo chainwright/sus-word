@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 
+import { parseVoteMessage } from "./commands.js";
 import { WORDS, findWord } from "./words.js";
 
 export const PHASES = Object.freeze({
@@ -17,6 +18,7 @@ export const DEFAULT_DURATIONS = Object.freeze({
   letterHint: 150_000,
   round: 180_000,
   vote: 30_000,
+  voteGrace: 6_000,
   reveal: 20_000,
 });
 
@@ -37,6 +39,11 @@ function formatElapsed(milliseconds) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
+function isVoteText(value) {
+  const text = String(value ?? "").trim();
+  return Boolean(parseVoteMessage(text) || /^!vote\s+@?[a-z0-9_]{1,25}$/i.test(text));
+}
+
 function publicPlayer(player, score = 0) {
   if (!player) return null;
   return {
@@ -44,6 +51,7 @@ function publicPlayer(player, score = 0) {
     login: player.login,
     displayName: player.displayName,
     avatar: player.avatar,
+    number: player.number ?? null,
     claimed: Boolean(player.claimed),
     muted: Boolean(player.muted),
     joinedAt: player.joinedAt ?? null,
@@ -145,6 +153,7 @@ export class Game extends EventEmitter {
     this.crowdMessageCount = 0;
     this.mutedPlayerIds = new Set();
     this.isFinalRound = false;
+    this.nextPlayerNumber = 1;
     this.lobbyOpenedAt = null;
     this.timers = new Map();
   }
@@ -211,6 +220,7 @@ export class Game extends EventEmitter {
     this.#clearActiveRound();
     this.lobbyOpenedAt = null;
     this.roundNumber = 0;
+    this.nextPlayerNumber = 1;
     const previous = this.state;
     this.state = PHASES.IDLE;
     this.#publish("state", { from: previous, to: PHASES.IDLE });
@@ -223,16 +233,18 @@ export class Game extends EventEmitter {
     const normalized = normalizeLogin(user.login);
     if (!id || !normalized) return { ok: false, reason: "invalid_player" };
     const existing = this.players.get(id);
+    const known = existing ?? this.profiles.get(id);
     const profile = {
       id,
       login: normalized,
-      displayName: String(user.displayName ?? existing?.displayName ?? user.login ?? normalized),
-      avatar: String(user.avatar ?? existing?.avatar ?? ""),
+      displayName: String(user.displayName ?? known?.displayName ?? user.login ?? normalized),
+      avatar: String(user.avatar ?? known?.avatar ?? ""),
     };
     const claimed = Boolean(existing?.claimed
       || [...this.sessions.values()].some((session) => session.userId === id));
     const player = {
       ...profile,
+      number: known?.number ?? this.nextPlayerNumber++,
       claimed,
       muted: this.mutedPlayerIds.has(id),
       joinedAt: existing?.joinedAt ?? this.#now(),
@@ -256,7 +268,6 @@ export class Game extends EventEmitter {
     this.profiles.set(player.id, { ...player });
     this.players.delete(player.id);
     this.#publish("player", { action: "leave", player: this.#publicPlayer(player) });
-    if (this.state === PHASES.VOTE) this.#finishIfEveryoneVoted();
     return { ok: true, player: this.#publicPlayer(player) };
   }
 
@@ -299,7 +310,18 @@ export class Game extends EventEmitter {
       return { ok: false, reason: "code_expired" };
     }
     const login = normalizeLogin(options.login ?? options.chatterLogin ?? options.userLogin);
-    if (login !== claim.login) return { ok: false, reason: "name_mismatch" };
+    if (login !== claim.login) {
+      const message = `@${login || "viewer"} this code was made for @${claim.login}. Open the card and type your own Twitch name`;
+      claim.error = message;
+      this.#publishPrivateCard(claim.sessionId);
+      return {
+        ok: false,
+        reason: "name_mismatch",
+        expectedLogin: claim.login,
+        senderLogin: login,
+        message,
+      };
+    }
     const id = String(options.userId ?? options.id ?? "").trim();
     if (!id) return { ok: false, reason: "invalid_player" };
     const linkedSession = this.sessions.get(claim.sessionId);
@@ -378,6 +400,15 @@ export class Game extends EventEmitter {
     const reference = options.userId ?? options.id ?? options.login;
     const messageText = String(options.text ?? options.message ?? "");
     if (!reference || !messageText) return { ok: false, reason: "invalid_message" };
+    if (isVoteText(messageText)) {
+      return {
+        ok: true,
+        ignored: true,
+        voteMessage: true,
+        evidence: false,
+        visible: false,
+      };
+    }
     const knownPlayer = this.#resolvePlayer(reference, this.players)
       ?? this.#resolvePlayer(reference, this.profiles);
     if (knownPlayer && this.mutedPlayerIds.has(knownPlayer.id)) {
@@ -414,6 +445,7 @@ export class Game extends EventEmitter {
       text: messageText,
       source: options.source === "voice" ? "voice" : "chat",
       transport,
+      visible: true,
       at: now,
       elapsedMs: Math.max(0, now - table.startedAt),
       sequence: table.messages.length,
@@ -507,40 +539,61 @@ export class Game extends EventEmitter {
     for (const table of this.tables.values()) {
       table.endedAt = now;
       table.voteEndsAt = now + this.durations.vote;
-      table.votes.clear();
+      table.votes = new Map(table.earlyVotes);
     }
-    this.votes.clear();
+    this.votes = new Map([...this.tables.values()].flatMap((table) => [...table.votes]));
     this.#transition(PHASES.VOTE);
-    this.#setTimer("vote", this.durations.vote, () => this.finishVote());
-    this.#publish("voteStart", { roundNumber: this.roundNumber, duration: this.durations.vote, message: "Vote! !vote name" });
+    this.#setTimer("voteWarning", Math.max(0, this.durations.vote - 10_000), () => {
+      if (this.state === PHASES.VOTE) this.#publish("voteWarning", { seconds: 10 });
+    });
+    this.#setTimer("vote", this.durations.vote + this.durations.voteGrace, () => this.finishVote());
+    this.#publish("voteStart", {
+      roundNumber: this.roundNumber,
+      duration: this.durations.vote,
+      grace: this.durations.voteGrace,
+    });
     return { ok: true, state: this.state };
   }
 
   vote(voterReference, targetReference) {
-    if (this.state !== PHASES.VOTE || !this.tables.size) return { ok: false, reason: "invalid_state" };
+    if (![PHASES.ROUND, PHASES.VOTE].includes(this.state) || !this.tables.size) {
+      return { ok: false, reason: "invalid_state" };
+    }
     const input = voterReference && typeof voterReference === "object"
       ? voterReference : { userId: voterReference };
     const voter = this.#rememberParticipant(input);
     if (!voter) return { ok: false, reason: "not_a_player" };
     if (this.mutedPlayerIds.has(voter.id)) return { ok: false, reason: "muted" };
-    const seatedTable = this.#tableForPlayer(voter.id);
-    const ownTable = seatedTable && input.transport !== "twitch";
-    const table = ownTable ? seatedTable : this.tables.get(this.featuredTableId);
-    if (!table) return { ok: false, reason: "unknown_table" };
-    if (input.transport === "card" && table.id === this.featuredTableId) {
-      return { ok: false, reason: "featured_table_locked" };
+    const table = this.#tableForPlayer(voter.id);
+    if (!table) return { ok: false, reason: "not_seated" };
+    if (this.state === PHASES.VOTE
+      && this.#now() > table.voteEndsAt + this.durations.voteGrace) {
+      return { ok: false, reason: "vote_closed" };
     }
-    const target = this.#resolvePlayer(targetReference, table.roster);
+    const target = this.#resolveVoteTarget(targetReference, table);
     if (!target) return { ok: false, reason: "unknown_target" };
     if (voter.id === target.id) return { ok: false, reason: "self_vote" };
-    const earlierTableId = this.roundVoteTables.get(voter.id);
-    if (earlierTableId && earlierTableId !== table.id) {
-      this.tables.get(earlierTableId)?.votes.delete(voter.id);
-    }
     this.roundVoteTables.set(voter.id, table.id);
-    if (!ownTable) {
-      this.crowdParticipants.add(voter.id);
-      this.crowdVoteTables.set(voter.id, table.id);
+    if (this.state === PHASES.ROUND) {
+      const previousTargetId = table.earlyVotes.get(voter.id) ?? null;
+      const shouldReply = !table.earlyVoteReplies.has(voter.id);
+      table.earlyVotes.set(voter.id, target.id);
+      table.earlyVoteReplies.add(voter.id);
+      this.votes.set(voter.id, target.id);
+      const result = {
+        ok: true,
+        early: true,
+        saved: true,
+        shouldReply,
+        tableId: table.id,
+        voterId: voter.id,
+        targetId: target.id,
+        targetNumber: target.number,
+        replaced: previousTargetId !== null,
+        previousTargetId,
+      };
+      this.#publish("earlyVote", result);
+      return { ...result, state: this.state };
     }
     const previousTargetId = table.votes.get(voter.id) ?? null;
     table.votes.set(voter.id, target.id);
@@ -555,7 +608,6 @@ export class Game extends EventEmitter {
       tallies: this.getTallies(table.id),
     };
     this.#publish("vote", result);
-    this.#finishIfEveryoneVoted();
     return { ...result, state: this.state };
   }
 
@@ -645,6 +697,9 @@ export class Game extends EventEmitter {
       hints: this.#publicHints(table),
       roundPoints: table.scoreChanges.get(player.id) ?? 0,
       accusationUsed: this.roundAccusations.has(player.id),
+      voteSavedEarly: table.earlyVotes.has(player.id),
+      earlyVoteTargetId: table.earlyVotes.get(player.id) ?? null,
+      earlyVoteTargetNumber: table.roster.get(table.earlyVotes.get(player.id))?.number ?? null,
       voteTargetId: table.votes.get(player.id) ?? null,
       canAccuse: this.state === PHASES.ROUND && !this.roundAccusations.has(player.id),
       canVote: this.state === PHASES.VOTE,
@@ -720,6 +775,7 @@ export class Game extends EventEmitter {
       messageRecency: Object.fromEntries(table.messages.map((message, index) => [message.userId, index + 1])),
       latestMessages: table.messages.slice(-3).map((message) => this.#publicMessage(message, table)),
       recentMessages: table.messages.slice(-6).map((message) => this.#publicMessage(message, table)),
+      voteSavedEarly: Object.fromEntries([...table.earlyVotes.keys()].map((playerId) => [playerId, true])),
       tallies: this.state === PHASES.VOTE ? this.getTallies(table.id) : undefined,
       accusations: table.accusationLog.map((accusation) => this.#publicAccusation(table, accusation)),
       busted: table.impostors.filter(({ busted }) => busted).map((assignment) => ({
@@ -737,7 +793,12 @@ export class Game extends EventEmitter {
     this.#pruneClaims(now);
     const claim = [...this.claims.values()].find((candidate) => candidate.sessionId === sid && candidate.usedAt === null);
     if (!claim) return null;
-    return { code: claim.code, login: claim.login, expiresAt: claim.expiresAt };
+    return {
+      code: claim.code,
+      login: claim.login,
+      expiresAt: claim.expiresAt,
+      ...(claim.error ? { error: claim.error } : {}),
+    };
   }
 
   #startRound(eligible, options, finalRound) {
@@ -835,6 +896,8 @@ export class Game extends EventEmitter {
         decoys: [],
         accusations: new Map(),
         accusationLog: [],
+        earlyVotes: new Map(),
+        earlyVoteReplies: new Set(),
         votes: new Map(),
         scoreChanges: new Map([...roster.keys()].map((playerId) => [playerId, 0])),
         reveal: null,
@@ -994,8 +1057,8 @@ export class Game extends EventEmitter {
     const delta = table.scoreChanges.get(assignment.playerId) ?? 0;
     const botMessage = assignment.smuggle
       ? assignment.smuggle.source === "voice"
-        ? `🕵️ Table ${table.id}: @${impostor.login} was the Imposter! ${assignment.word.toUpperCase()}, said out loud at ${elapsed}. ${verdict}. +${delta}`
-        : `🕵️ Table ${table.id}: @${impostor.login} was the Imposter! ${assignment.word.toUpperCase()}, smuggled at ${elapsed} ('${assignment.smuggle.text}'). ${verdict}. +${delta}`
+        ? `🕵️ Table ${table.id}: @${impostor.login} was the Imposter! ${assignment.word.toUpperCase()}, said out loud ${elapsed} into the round. ${verdict}. +${delta}`
+        : `🕵️ Table ${table.id}: @${impostor.login} was the Imposter! ${assignment.word.toUpperCase()}, hidden ${elapsed} into the round in their message ('${assignment.smuggle.text}'). ${verdict}. +${delta}`
       : `🕵️ Table ${table.id}: @${impostor.login} was the Imposter! ${assignment.word.toUpperCase()}. The word never made it out. ${verdict}. +0`;
     const accidentalDecoys = table.decoys.filter(({ wordOwnerId }) => wordOwnerId === assignment.playerId)
       .map((message) => {
@@ -1049,6 +1112,7 @@ export class Game extends EventEmitter {
       player: this.#publicPlayer(table.roster.get(message.userId) ?? this.profiles.get(message.userId)),
       text: message.text,
       source: message.source,
+      visible: message.visible !== false,
       at: message.at,
       elapsedMs: message.elapsedMs,
       elapsed: formatElapsed(message.elapsedMs),
@@ -1087,12 +1151,6 @@ export class Game extends EventEmitter {
     if (!this.scores.has(playerId)) this.scores.set(playerId, 0);
     if (delta) this.scores.set(playerId, (this.scores.get(playerId) ?? 0) + delta);
     table.scoreChanges.set(playerId, (table.scoreChanges.get(playerId) ?? 0) + delta);
-  }
-
-  #finishIfEveryoneVoted() {
-    if (this.state !== PHASES.VOTE || !this.tables.size) return;
-    const eligible = [...this.playerTables.keys()].filter((id) => this.players.has(id));
-    if (eligible.length && eligible.every((id) => this.tables.get(this.playerTables.get(id)).votes.has(id))) this.finishVote();
   }
 
   #maybeAutoStartLobby() {
@@ -1228,6 +1286,17 @@ export class Game extends EventEmitter {
     if (collection.has(value)) return collection.get(value);
     const login = normalizeLogin(value);
     return [...collection.values()].find((player) => player.login === login) ?? null;
+  }
+
+  #resolveVoteTarget(reference, table) {
+    const explicitNumber = reference && typeof reference === "object" ? reference.number : null;
+    if (Number.isInteger(explicitNumber)) {
+      return [...table.roster.values()].find(({ number }) => number === explicitNumber) ?? null;
+    }
+    if (typeof reference === "number" && Number.isInteger(reference)) {
+      return [...table.roster.values()].find(({ number }) => number === reference) ?? null;
+    }
+    return this.#resolvePlayer(reference, table.roster);
   }
 
   #publicPlayer(player, score = this.scores.get(player?.id) ?? 0) { return publicPlayer(player, score); }

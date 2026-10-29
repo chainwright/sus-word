@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { canControl, parseCommand } from "../src/commands.js";
+import { canControl, parseCommand, parseVoteMessage } from "../src/commands.js";
 
 describe("parseCommand", () => {
   test("parses player commands case-insensitively", () => {
     assert.deepEqual(parseCommand(" !JOIN "), { type: "join" });
     assert.deepEqual(parseCommand("!leave"), { type: "leave" });
     assert.deepEqual(parseCommand("!claim k7q2"), { type: "claim", code: "K7Q2" });
+    assert.deepEqual(parseCommand("!join k7q2"), {
+      type: "claim",
+      code: "K7Q2",
+      joinCommand: true,
+    });
     assert.deepEqual(parseCommand("!vote @Some_Name"), {
       type: "vote",
       target: "some_name",
@@ -17,6 +22,15 @@ describe("parseCommand", () => {
       target: "some_name",
       word: "candles",
     });
+  });
+
+  test("recognizes friendly join aliases and all number-vote forms", () => {
+    assert.deepEqual(parseCommand(" join  "), { type: "joinAlias" });
+    assert.deepEqual(parseCommand("IJoin"), { type: "joinAlias" });
+    for (const text of ["2", "#2", "!2", "!vote 2", "!vote #2"]) {
+      assert.deepEqual(parseVoteMessage(text), { type: "vote", number: 2, voteMessage: true });
+      assert.deepEqual(parseCommand(text), { type: "vote", number: 2, voteMessage: true });
+    }
   });
 
   test("parses host controls and leaves help open to everyone", () => {

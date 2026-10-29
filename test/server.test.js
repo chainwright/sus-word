@@ -6,9 +6,11 @@ import WebSocket from "ws";
 import Game from "../src/game.js";
 import {
   SESSION_COOKIE,
+  containsUrl,
   createSusWordServer,
   isLocalHostOrigin,
   isLoopbackAddress,
+  splitChatMessage,
   stripUrls,
 } from "../src/server.js";
 
@@ -125,6 +127,8 @@ test("the claim route binds a code and private card state to its session cookie"
   });
   assert.equal(started.status, 200);
   const claim = await started.json();
+  assert.equal(claim.seenInChat, false);
+  assert.match(claim.nameCheck.message, /haven't seen @alice in chat yet/);
   assert.match(claim.code, /^[A-HJ-NP-Z2-9]{4}$/);
   const cookie = started.headers.get("set-cookie").split(";", 1)[0];
   assert.match(cookie, new RegExp(`^${SESSION_COOKIE}=`));
@@ -157,6 +161,176 @@ test("the claim route binds a code and private card state to its session cookie"
   assert.equal("role" in publicView.payload.data, false);
   privateView.socket.close();
   publicView.socket.close();
+});
+
+test("name checks use chat seen in the last 15 minutes", async (context) => {
+  let now = 1_000_000;
+  const game = new Game();
+  const service = createSusWordServer({
+    game,
+    port: 0,
+    env: {},
+    now: () => now,
+    logger: { log() {}, error() {} },
+  });
+  context.after(() => service.stop());
+  const address = await service.start();
+  const origin = `http://127.0.0.1:${address.port}`;
+
+  const unseen = await fetch(`${origin}/api/card/check`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ login: "Alice" }),
+  }).then((response) => response.json());
+  assert.equal(unseen.seen, false);
+
+  await service.handleChatMessage({ id: "seen-1", userId: "alice-id", login: "Alice", text: "hello chat" });
+  const seen = await fetch(`${origin}/api/card/check`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ login: "alice" }),
+  }).then((response) => response.json());
+  assert.equal(seen.seen, true);
+  assert.equal(seen.message, "✓ @alice is in chat");
+
+  now += 15 * 60 * 1_000 + 1;
+  assert.equal(service.checkChatName("alice").seen, false);
+});
+
+test("join aliases reply once and !join CODE links the matching account", async () => {
+  const messages = [];
+  const game = new Game({ codeGenerator: () => "A2B3" });
+  const service = createSusWordServer({
+    game,
+    env: {},
+    logger: {
+      log(message) { messages.push(message.replace(/^\[offline\] /, "")); },
+      error() {},
+    },
+  });
+  const chatter = { id: "chat-1", userId: "alice-id", login: "alice", displayName: "Alice" };
+  assert.equal((await service.handleChatMessage({ ...chatter, text: "ijoin" })).replied, true);
+  assert.equal((await service.handleChatMessage({ ...chatter, text: "join " })).replied, false);
+  assert.equal(messages.filter((message) => message.includes("almost!")).length, 1);
+
+  const claim = game.createClaim({ sessionId: "alice-session", login: "alice" });
+  const linked = await service.handleChatMessage({ ...chatter, text: `!join ${claim.code}` });
+  assert.equal(linked.ok, true);
+  assert.equal(game.getCard("alice-session").player.id, "alice-id");
+  assert.match(messages.at(-1), /you're in! Keep your card open/);
+});
+
+test("a wrong-account code gets the specified bot and card message", async () => {
+  const messages = [];
+  const game = new Game({ codeGenerator: () => "A2B3" });
+  const service = createSusWordServer({
+    game,
+    env: {},
+    logger: { log(message) { messages.push(message.replace(/^\[offline\] /, "")); }, error() {} },
+  });
+  const claim = game.createClaim({ sessionId: "alice-session", login: "alice" });
+  const result = await service.handleChatMessage({
+    id: "wrong-1",
+    userId: "mallory-id",
+    login: "mallory",
+    displayName: "Mallory",
+    text: `!claim ${claim.code}`,
+  });
+  const expected = "@mallory this code was made for @alice. Open the card and type your own Twitch name";
+  assert.equal(result.message, expected);
+  assert.equal(messages.at(-1), expected);
+  assert.equal(game.getPendingClaim("alice-session").error, expected);
+});
+
+test("non-player link spam is ignored and never echoed", async () => {
+  const messages = [];
+  const game = new Game();
+  const service = createSusWordServer({
+    game,
+    env: {},
+    logger: { log(message) { messages.push(message); }, error() {} },
+  });
+  assert.equal(containsUrl("cheap viewers https://spam.invalid now"), true);
+  const result = await service.handleChatMessage({
+    id: "spam-1",
+    userId: "spam-id",
+    login: "spam_bot",
+    text: "cheap viewers https://spam.invalid now",
+  });
+  assert.deepEqual(result, { ok: true, ignored: true, reason: "link_spam" });
+  assert.equal(messages.length, 0);
+  assert.equal(game.players.has("spam-id"), false);
+});
+
+test("early number votes are saved with one reply and rejected votes get feedback", async () => {
+  const messages = [];
+  const game = new Game({ random: () => 0, words: [{ word: "candle", category: "home" }] });
+  for (const [id, login] of [["vote-a", "alice"], ["vote-b", "bruno"], ["vote-c", "chloe"]]) {
+    game.join({ id, login });
+    game.players.get(id).claimed = true;
+  }
+  const service = createSusWordServer({
+    game,
+    env: {},
+    logger: { log(message) { messages.push(message.replace(/^\[offline\] /, "")); }, error() {} },
+  });
+  game.start();
+  game.go();
+  const base = { id: "vote-msg", userId: "vote-b", login: "bruno", displayName: "Bruno" };
+  const first = await service.handleChatMessage({ ...base, text: "1" });
+  assert.equal(first.early, true);
+  assert.equal(first.voteMessage, true);
+  assert.equal(first.visible, false);
+  assert.ok(messages.includes("@bruno voting opens when the timer ends. Your number guess is saved: 1"));
+  await service.handleChatMessage({ ...base, text: "#3" });
+  assert.equal(messages.filter((message) => message.startsWith("@bruno voting opens")).length, 1);
+
+  await service.handleChatMessage({ ...base, text: "99" });
+  assert.equal(messages.at(-1), "@bruno there is no player 99 at your table.");
+  await service.handleChatMessage({ ...base, text: "2" });
+  assert.equal(messages.at(-1), "@bruno you can't vote for yourself.");
+  await service.handleChatMessage({
+    id: "outsider-vote",
+    userId: "outsider",
+    login: "outsider",
+    displayName: "Outsider",
+    text: "1",
+  });
+  assert.equal(messages.at(-1), "@outsider you're not seated this round.");
+  assert.equal(game.currentRound.messages.length, 0);
+  game.reset();
+});
+
+test("bot announcements use v3 copy and every message stays within 500 characters", () => {
+  const messages = [];
+  const game = new Game({ random: () => 0 });
+  const service = createSusWordServer({
+    game,
+    env: { PUBLIC_URL: "https://sus.example" },
+    logger: { log(message) { messages.push(message.replace(/^\[offline\] /, "")); }, error() {} },
+  });
+  for (let index = 0; index < 30; index += 1) {
+    const id = `bot-copy-${index}`;
+    game.join({ id, login: `viewer_${String(index).padStart(2, "0")}` });
+    game.players.get(id).claimed = true;
+  }
+  game.start();
+  game.go();
+  assert.ok(messages.includes("🔔 ROUND 1 · NEW ROLES! Check your card 👉 https://sus.example/card"));
+  const roleLines = messages.filter((message) => message.endsWith("your role is on your card"));
+  assert.equal((roleLines.join(" ").match(/@viewer_/g) ?? []).length, 30);
+  game.emit("hint", { kind: "category", value: "food" });
+  game.emit("hint", { kind: "letter", value: "l" });
+  game.beginVote();
+  game.emit("voteWarning", { seconds: 10 });
+  assert.ok(messages.includes("🕵️ HINT: the word is about FOOD"));
+  assert.ok(messages.includes("🕵️ HINT: it starts with L"));
+  assert.ok(messages.some((message) => message.startsWith("🗳️🗳️ VOTE NOW: 30 SECONDS 🗳️🗳️ Type a number:")));
+  assert.ok(messages.includes("⏳ 10 seconds left to vote"));
+  assert.ok(messages.every((message) => message.length <= 500));
+  assert.ok(splitChatMessage("word ".repeat(200)).every((message) => message.length <= 500));
+  game.reset();
+  void service;
 });
 
 test("chat routes accusations and the host can feature another table", async (context) => {
