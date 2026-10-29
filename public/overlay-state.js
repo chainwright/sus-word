@@ -24,3 +24,16 @@ export function overlayRenderPlan(previous, next) {
     sameReveal: previousPhase === "REVEAL" && nextPhase === "REVEAL" && !revealChanged,
   };
 }
+
+export function voteRowOptions(tally = {}, leader = 1, chatLeader = 1, showChat = false) {
+  const votes = tally.votes || 0;
+  const chatVotes = tally.chatVotes || 0;
+  return {
+    vote: true,
+    votes,
+    bar: (votes / leader) * 100,
+    chatVotes,
+    chatBar: (chatVotes / chatLeader) * 100,
+    showChat: showChat && chatVotes > 0,
+  };
+}

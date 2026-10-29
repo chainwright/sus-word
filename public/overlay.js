@@ -1,5 +1,5 @@
 import { readerCountLabel } from "/display.js";
-import { overlayRenderPlan } from "/overlay-state.js";
+import { overlayRenderPlan, voteRowOptions } from "/overlay-state.js";
 
 const $ = (selector) => document.querySelector(selector);
 const stage = $("#stage");
@@ -88,14 +88,15 @@ function voteLike(message) {
 function playerRow(player, options = {}) {
   const row = el("article", `player-row${options.vote ? " vote-row" : ""}${options.talking ? " talking" : ""}`);
   row.dataset.playerId = player.id;
-  row.append(el("b", "player-number", String(player.number || "?")), avatar(player));
+  const number = el("b", "player-number", String(player.number || "?"));
+  row.append(number, avatar(player));
   const name = el("strong", `player-name${String(player.login || "").length > 12 ? " long" : ""}`, player.login || "player");
   row.append(name);
   if (player.simulated) row.append(el("span", "sim-tag", "SIM"));
   if (options.vote) {
     row.style.setProperty("--vote-fill", `${options.bar || 0}%`);
     if (options.votes) row.classList.add("has-votes");
-    if (options.votes) row.append(el("span", "vote-count", String(options.votes)));
+    if (options.votes) number.append(el("span", "vote-count", String(options.votes)));
     if (options.showChat) {
       row.classList.add("has-chat-votes");
       const chatBar = el("i", "chat-vote-bar");
@@ -105,17 +106,6 @@ function playerRow(player, options = {}) {
   }
   if (options.busted) row.append(el("span", "busted-mini", `BUSTED by @${options.busted.accuser?.login || "detective"}`));
   return row;
-}
-
-function voteRowOptions(tally = {}, leader = 1, chatLeader = 1, showChat = false) {
-  return {
-    vote: true,
-    votes: tally.votes || 0,
-    bar: ((tally.votes || 0) / leader) * 100,
-    chatVotes: tally.chatVotes || 0,
-    chatBar: ((tally.chatVotes || 0) / chatLeader) * 100,
-    showChat,
-  };
 }
 
 function messageSlip(message, index = 0, options = {}) {

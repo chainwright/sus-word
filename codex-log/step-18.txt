@@ -1,0 +1,9 @@
+Step 18: a regression from step 17, seen at 854×480 (rec/p18_board_480p.jpg). In VOTE and REVEAL the board's player rows now cut names to 4 letters ("drov…", "roma…", "jo_pl…") because the CHAT chip and the vote count sit in the same row. In ROUND the same names fit in full ("drovosek7777", "romabuilds").
+
+Fix it so names in VOTE and REVEAL stay as readable as in ROUND:
+- move the CHAT count out of the name line (a small second line under the name, or a thin bar along the bottom of the row with the number at its end);
+- hide CHAT entirely on a row where it is 0;
+- keep the seated vote count readable.
+"drovosek7777", "romabuilds", "nightbyte", "tomtom_irl" and "pixel_mara" must fit at 854×480 with 12 players.
+
+Add a test if the layout logic lives in JS. Check every overlay mock in a browser for console errors. Copy this prompt as codex-log/step-18.txt. Keep npm test green. Do not commit; give me the commit message.

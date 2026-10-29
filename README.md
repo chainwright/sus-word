@@ -69,7 +69,7 @@ The card page first checks that the Twitch name spoke in chat recently, then giv
 
 ## Built with Codex
 
-Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first rehearsal simulator was drafted outside Codex and later rewritten in Codex (step 15). The current game is covered by 89 automated tests:
+Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first rehearsal simulator was drafted outside Codex and later rewritten in Codex (step 15). The current game is covered by 90 automated tests:
 
 1. Pure game logic, word detection, scoring, and tests.
 2. Twitch OAuth, EventSub chat, server routes, and live state.
@@ -88,3 +88,4 @@ Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first reh
 15. A deterministic real-channel simulator whose players never post to Twitch.
 16. Dynamic reveal timing, live accusation slams, round MVPs, host polish, and Champion screens.
 17. Live overlay stability and first-render safety, crowd tie-break voting, legibility, card-state preservation, and case-file chat summaries.
+18. A 480p vote-board pass that keeps full player names beside seated and crowd tallies.
