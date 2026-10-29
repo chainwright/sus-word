@@ -4,9 +4,11 @@ import { test } from "node:test";
 
 import {
   shouldAnimateVoteBanner,
+  syncBoardNoteVisibility,
   updateCompactLobbyClock,
   overlayRenderPlan,
   voteInstruction,
+  voteNameColumnBudget,
   votePlayerLayout,
   voteRowOptions,
 } from "../public/overlay-state.js";
@@ -46,7 +48,7 @@ test("crowd vote rows hide zero CHAT counts without taking name-line space", () 
   });
 });
 
-test("the 854 by 480 vote layout preserves all twelve player names", async () => {
+test("the 854 by 480 vote rows preserve fixture logins and a 73px physical name-column budget", async () => {
   const names = [
     "drovosek7777", "cydshop", "romabuilds", "pixel_mara", "quietfox", "tomtom_irl",
     "nightbyte", "akira_k", "lumi", "bigsalad", "jo_plays", "marrow",
@@ -60,10 +62,42 @@ test("the 854 by 480 vote layout preserves all twelve player names", async () =>
   const css = await readFile(new URL("../public/overlay.css", import.meta.url), "utf8");
   assert.doesNotMatch(css, /\.vote-row \.player-name\{padding-right:22px/);
   assert.match(css, /\.vote-banner>span\{[^}]*white-space:nowrap/);
+  assert.deepEqual(voteNameColumnBudget(854, 480), {
+    scale: 2 / 3,
+    logicalNameWidth: 110.5,
+    physicalNameWidth: 73.66666666666666,
+  });
+});
+
+test("an empty or whitespace-only board note is always hidden", () => {
+  const note = { textContent: " \n", hidden: false };
+  assert.equal(syncBoardNoteVisibility(note), false);
+  assert.equal(note.hidden, true);
+  note.textContent = "VOTES ARE LIVE";
+  assert.equal(syncBoardNoteVisibility(note), true);
+  assert.equal(note.hidden, false);
+});
+
+test("board headings stay on one unclipped line with the compact vote title", async () => {
+  assert.equal(voteInstruction(1).boardTitle, "WHO HID IT?");
+  const css = await readFile(new URL("../public/overlay.css", import.meta.url), "utf8");
+  assert.match(css, /\.board-head strong,\.board-head span\{[^}]*white-space:nowrap/);
+  assert.match(css, /\.board-head\{[^}]*height:42px[^}]*overflow:hidden/);
+});
+
+test("the reveal payoff is at least as large as board player names", async () => {
+  const css = await readFile(new URL("../public/overlay.css", import.meta.url), "utf8");
+  const playerSize = Number(css.match(/\.player-name\{font-size:(\d+)px\}/)?.[1]);
+  const payoffSize = Number(css.match(/\.case-card \.reveal-caption\{[^}]*font:700 (\d+)px/)?.[1]);
+  const twoImpostorSize = Number(css.match(/\.reveal-cases\.two \.reveal-caption\{[^}]*font:700 (\d+)px/)?.[1]);
+  assert.equal(playerSize, 20);
+  assert.ok(payoffSize >= playerSize);
+  assert.ok(twoImpostorSize >= playerSize);
 });
 
 test("vote instructions follow the table's Imposter count", () => {
   assert.deepEqual(voteInstruction(1), {
+    boardTitle: "WHO HID IT?",
     boardMeta: "TOP VOTE ACCUSED",
     outcome: "top vote is accused",
     howTo: "Type a player's number in chat, or tap them on your card · top vote is accused",

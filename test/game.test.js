@@ -266,11 +266,14 @@ describe("state machine and role selection", () => {
 describe("round messages and reveal payload", () => {
   test("private cards hold the result until the reveal ends plus six seconds", () => {
     const { clock, game } = createGame();
+    let revealEvent;
+    game.once("reveal", (event) => { revealEvent = event; });
     const [alice, bruno] = startRound(game);
     game.recordMessage({ userId: alice.id, text: "I lit a candle last night" });
     game.beginVote();
     game.vote(bruno.id, alice.id);
     game.finishVote();
+    assert.equal(revealEvent.revealHoldMs, DEFAULT_DURATIONS.revealOne + DEFAULT_DURATIONS.cardResultDelay);
 
     const duringReveal = game.getCard(bruno.sessionId);
     assert.equal(duringReveal.revealHold, true);

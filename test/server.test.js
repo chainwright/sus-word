@@ -370,12 +370,24 @@ test("early number votes are saved with one reply and rejected votes get feedbac
   game.reset();
 });
 
-test("bot announcements use v3 copy and every message stays within 500 characters", () => {
+test("bot announcements stay within 500 characters and delay the case file until reveal hold ends", () => {
   const messages = [];
+  const scheduled = [];
+  let nextTimerId = 1;
   const game = new Game({ random: () => 0 });
   const service = createSusWordServer({
     game,
     env: { PUBLIC_URL: "https://sus.example" },
+    setTimeout(callback, delay) {
+      const timer = { id: nextTimerId, callback, delay };
+      nextTimerId += 1;
+      scheduled.push(timer);
+      return timer;
+    },
+    clearTimeout(timer) {
+      const index = scheduled.indexOf(timer);
+      if (index >= 0) scheduled.splice(index, 1);
+    },
     logger: { log(message) { messages.push(message.replace(/^\[offline\] /, "")); }, error() {} },
   });
   for (let index = 0; index < 30; index += 1) {
@@ -399,7 +411,12 @@ test("bot announcements use v3 copy and every message stays within 500 character
   assert.ok(messages.every((message) => message.length <= 500));
   assert.ok(splitChatMessage("word ".repeat(200)).every((message) => message.length <= 500));
   game.finishVote();
-  const caseFiles = messages.filter((message) => /^Round 1: [A-Z]+ (?:slipped in at|never landed)/.test(message));
+  let caseFiles = messages.filter((message) => /^Round 1: [A-Z]+ (?:slipped in at|never landed)/.test(message));
+  assert.equal(caseFiles.length, 0);
+  assert.equal(scheduled.length, 1);
+  assert.equal(scheduled[0].delay, 26_000);
+  scheduled[0].callback();
+  caseFiles = messages.filter((message) => /^Round 1: [A-Z]+ (?:slipped in at|never landed)/.test(message));
   assert.equal(caseFiles.length, 1);
   assert.equal(messages.some((message) => message.includes("was the Imposter!")), false);
   game.reset();

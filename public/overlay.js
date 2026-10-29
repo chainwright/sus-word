@@ -3,6 +3,7 @@ import {
   formatOverlayClock,
   overlayRenderPlan,
   shouldAnimateVoteBanner,
+  syncBoardNoteVisibility,
   updateCompactLobbyClock,
   voteInstruction,
   votePlayerLayout,
@@ -55,6 +56,13 @@ function el(tag, className = "", text) {
   if (className) value.className = className;
   if (text !== undefined) value.textContent = text;
   return value;
+}
+
+function setBoardNote(...children) {
+  const note = $("#board-note");
+  note.replaceChildren(...children);
+  syncBoardNoteVisibility(note);
+  return note;
 }
 
 function fit() {
@@ -262,8 +270,7 @@ function renderLobby(next) {
   $("#hints").hidden = true;
   $("#leaderboard").hidden = true;
   renderBoardRoster(next.players || [], {});
-  const note = $("#board-note");
-  note.replaceChildren(el("strong", "", "JOINING NOW?"), document.createTextNode("Type !join in chat, then open the card link it replies with. Takes 20 seconds."));
+  setBoardNote(el("strong", "", "JOINING NOW?"), document.createTextNode("Type !join in chat, then open the card link it replies with. Takes 20 seconds."));
   if (full) {
     $("#how-panel").hidden = false;
     $("#how-ready").textContent = `${next.claimedCount || 0} players ready · 3 needed to start`;
@@ -288,8 +295,7 @@ function renderRound(next, newRound = false) {
   $("#hints").hidden = false;
   renderHints(round.hints || {});
   renderBoardRoster(round.players || next.players || [], round.messageCounts || {}, round.busted || []);
-  const note = $("#board-note");
-  note.replaceChildren(el("strong", "", "HOW TO VOTE (at 0:00)"), document.createTextNode("Type a player's number in chat, like 2, or tap them on your card. Glowing = talking now."));
+  setBoardNote(el("strong", "", "HOW TO VOTE (at 0:00)"), document.createTextNode("Type a player's number in chat, like 2, or tap them on your card. Glowing = talking now."));
   $("#leaderboard").hidden = false;
   renderLeaderboard(next.leaderboard || next.scores || []);
   renderMessages(round.latestMessages || round.recentMessages || round.messages || []);
@@ -312,13 +318,12 @@ function renderVote(next, entering = false) {
     document.createTextNode(instruction.bannerLines[1]),
   );
   $("#board").hidden = false;
-  $("#board-title").textContent = "WHO HID A WORD?";
+  $("#board-title").textContent = instruction.boardTitle;
   $("#board-meta").textContent = instruction.boardMeta;
   $("#hints").hidden = false;
   renderHints(round.hints || {});
   $("#player-grid").replaceChildren(...players.map((player) => playerRow(player, votePlayerLayout(player, tallies.get(player.id), max, chatMax, showChat))));
-  const note = $("#board-note");
-  note.replaceChildren(el("strong", "", "VOTES ARE LIVE"), document.createTextNode(instruction.howTo));
+  const note = setBoardNote(el("strong", "", "VOTES ARE LIVE"), document.createTextNode(instruction.howTo));
   if (showChat) note.append(el("small", "chat-legend", "CHAT · tie-break only"));
   $("#leaderboard").hidden = true;
   renderMessages(round.latestMessages || round.recentMessages || []);
@@ -373,15 +378,15 @@ function showRevealEnd(next, results) {
   layer.append(cases);
   $("#board").hidden = false;
   $("#board-title").textContent = "FINAL VOTES";
-  $("#board-meta").textContent = "";
   $("#hints").hidden = true;
   const round = next.round || {};
   const tallies = new Map((round.tallies || next.round?.reveal?.tallies || []).map((entry) => [entry.player?.id || entry.playerId, entry]));
   const max = Math.max(1, ...[...tallies.values()].map(({ votes = 0 }) => votes));
   const chatMax = Math.max(1, ...[...tallies.values()].map(({ chatVotes = 0 }) => chatVotes));
   const showChat = [...tallies.values()].some(({ chatVotes = 0 }) => chatVotes > 0);
+  $("#board-meta").textContent = showChat ? "CHAT · TIE-BREAK ONLY" : "";
   $("#player-grid").replaceChildren(...stablePlayers(round.players || next.players || []).map((player) => playerRow(player, votePlayerLayout(player, tallies.get(player.id), max, chatMax, showChat))));
-  $("#board-note").replaceChildren(...(showChat ? [el("small", "chat-legend", "CHAT · tie-break only")] : []));
+  setBoardNote();
   $("#leaderboard").hidden = false;
   renderLeaderboard(next.round?.reveal?.leaderboard || next.leaderboard || next.scores || [], next.scores || []);
   if (!params.has("mock") || params.get("play") === "1") later(() => cases.classList.add("shrunk"), 2_500);
@@ -544,14 +549,14 @@ function renderReveal(next) {
   const results = reveal?.imposters?.length ? reveal.imposters : [reveal].filter(Boolean);
   $("#board").hidden = false;
   $("#board-title").textContent = "FINAL VOTES";
-  $("#board-meta").textContent = "";
   $("#hints").hidden = true;
   const tallies = new Map((next.round?.tallies || reveal?.tallies || []).map((entry) => [entry.player?.id || entry.playerId, entry]));
   const leader = Math.max(1, ...[...tallies.values()].map(({ votes = 0 }) => votes));
   const chatLeader = Math.max(1, ...[...tallies.values()].map(({ chatVotes = 0 }) => chatVotes));
   const showChat = [...tallies.values()].some(({ chatVotes = 0 }) => chatVotes > 0);
+  $("#board-meta").textContent = showChat ? "CHAT · TIE-BREAK ONLY" : "";
   $("#player-grid").replaceChildren(...stablePlayers(next.round?.players || next.players || []).map((player) => playerRow(player, votePlayerLayout(player, tallies.get(player.id), leader, chatLeader, showChat))));
-  $("#board-note").replaceChildren(...(showChat ? [el("small", "chat-legend", "CHAT · tie-break only")] : []));
+  setBoardNote();
   $("#leaderboard").hidden = false;
   renderLeaderboard(next.scores || next.leaderboard || []);
   const play = params.get("play") === "1" || !params.has("mock");
@@ -576,6 +581,9 @@ function updateRevealBoard(next) {
   const tallies = new Map((next.round?.tallies || reveal?.tallies || []).map((entry) => [entry.player?.id || entry.playerId, entry]));
   const leader = Math.max(1, ...[...tallies.values()].map(({ votes = 0 }) => votes));
   const chatLeader = Math.max(1, ...[...tallies.values()].map(({ chatVotes = 0 }) => chatVotes));
+  const showChat = [...tallies.values()].some(({ chatVotes = 0 }) => chatVotes > 0);
+  $("#board-meta").textContent = showChat ? "CHAT · TIE-BREAK ONLY" : "";
+  setBoardNote();
   $("#player-grid").replaceChildren(...stablePlayers(next.round?.players || next.players || []).map((player) => {
     const tally = tallies.get(player.id) || {};
     return playerRow(player, votePlayerLayout(
@@ -583,7 +591,7 @@ function updateRevealBoard(next) {
       tally,
       leader,
       chatLeader,
-      [...tallies.values()].some(({ chatVotes = 0 }) => chatVotes > 0),
+      showChat,
     ));
   }));
   renderLeaderboard(next.scores || next.leaderboard || []);

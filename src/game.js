@@ -734,7 +734,10 @@ export class Game extends EventEmitter {
     this.lastReveal.otherTablesMessage = this.tables.size > 1
       ? `Other tables: ${caughtCount} caught, ${gotAwayCount} got away.` : null;
     this.#transition(PHASES.REVEAL);
-    this.#publish("reveal", this.lastReveal);
+    this.#publish("reveal", {
+      ...this.lastReveal,
+      revealHoldMs: revealDuration + this.durations.cardResultDelay,
+    });
     this.#setTimer("reveal", revealDuration, () => this.nextRound());
     return { ok: true, state: this.state, reveal: this.lastReveal, revealDuration };
   }

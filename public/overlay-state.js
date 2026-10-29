@@ -40,6 +40,25 @@ export function updateCompactLobbyClock(target, milliseconds) {
   return true;
 }
 
+export function syncBoardNoteVisibility(target) {
+  if (!target) return false;
+  const visible = Boolean(String(target.textContent || "").trim());
+  target.hidden = !visible;
+  return visible;
+}
+
+export function voteNameColumnBudget(viewportWidth = 854, viewportHeight = 480) {
+  const scale = Math.min(viewportWidth / 1280, viewportHeight / 720);
+  const boardContentWidth = 396 - (2 * 8) - (2 * 10);
+  const rowWidth = (boardContentWidth - 7) / 2;
+  const logicalNameWidth = rowWidth - (2 * 4) - 26 - 24 - (2 * 4);
+  return {
+    scale,
+    logicalNameWidth,
+    physicalNameWidth: logicalNameWidth * scale,
+  };
+}
+
 export function voteRowOptions(tally = {}, leader = 1, chatLeader = 1, showChat = false) {
   const votes = tally.votes || 0;
   const chatVotes = tally.chatVotes || 0;
@@ -65,6 +84,7 @@ export function votePlayerLayout(player = {}, tally = {}, leader = 1, chatLeader
 export function voteInstruction(impostorCount = 1) {
   const multiple = Number(impostorCount) > 1;
   return {
+    boardTitle: "WHO HID IT?",
     boardMeta: multiple ? "TOP 2 ACCUSED" : "TOP VOTE ACCUSED",
     outcome: multiple ? "top 2 are accused" : "top vote is accused",
     howTo: `Type a player's number in chat, or tap them on your card · ${multiple ? "top 2 are accused" : "top vote is accused"}`,

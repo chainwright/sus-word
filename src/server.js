@@ -121,9 +121,12 @@ export function createSusWordServer(options = {}) {
   const aliasReplies = new Set();
   const joinReplies = new Set();
   const joinReplyPending = new Set();
+  const caseFileTimers = new Set();
   let lobbyAnnouncementHasLink = false;
   let lobbyAnnouncementSequence = 0;
   const serverNow = options.now ?? (() => Date.now());
+  const scheduleTimeout = options.setTimeout ?? setTimeout;
+  const cancelTimeout = options.clearTimeout ?? clearTimeout;
 
   if (env.CHANNEL_LOGIN) game.configureStreamer?.(env.CHANNEL_LOGIN);
 
@@ -235,6 +238,8 @@ export function createSusWordServer(options = {}) {
       joinReplyPending.clear();
       lobbyAnnouncementHasLink = false;
       lobbyAnnouncementSequence += 1;
+      for (const timer of caseFileTimers) cancelTimeout(timer);
+      caseFileTimers.clear();
     }
     if (to === PHASES.LOBBY) {
       lobbyAnnouncementHasLink = false;
@@ -274,10 +279,20 @@ export function createSusWordServer(options = {}) {
     waitlistAnnouncementRound = game.roundNumber;
     announce("🕵️ New players are waiting for the next round.");
   });
-  game.on("reveal", ({ caseFileMessage, otherTablesMessage }) => {
+  game.on("reveal", ({ caseFileMessage, otherTablesMessage, revealHoldMs }) => {
     flushBusted();
-    announce(caseFileMessage);
-    announce(otherTablesMessage);
+    let timer;
+    let fired = false;
+    timer = scheduleTimeout(() => {
+      fired = true;
+      if (timer !== undefined) caseFileTimers.delete(timer);
+      announce(caseFileMessage);
+      announce(otherTablesMessage);
+    }, Math.max(0, Number(revealHoldMs) || 0));
+    if (!fired) {
+      timer?.unref?.();
+      caseFileTimers.add(timer);
+    }
   });
 
   function sendJson(socket, payload) {
@@ -727,6 +742,8 @@ export function createSusWordServer(options = {}) {
     if (bustedTimer) clearTimeout(bustedTimer);
     bustedTimer = null;
     bustedBatch = [];
+    for (const timer of caseFileTimers) cancelTimeout(timer);
+    caseFileTimers.clear();
     for (const client of clients) client.socket.close();
     await new Promise((resolveClose) => {
       if (!started) return resolveClose();

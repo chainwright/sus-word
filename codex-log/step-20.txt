@@ -1,0 +1,9 @@
+Step 20. A fresh judge pass on c53b273 (playtest/JUDGE_2026-10-29.md, section "Re-check 3"; read it in full) found these. Fix each with a test:
+
+1. Regression: the empty note box is back in the reveal and champion overlay frames (overlay.html?mock=reveal, reveal2, reveal-miss, champion). Hide the note box whenever it has no text, and add a test that an empty note never renders a visible box.
+2. Regression: the board title "WHO HID A WORD?" wraps and gets cut off at 854×480 (vote and round mocks). Make it fit on one line, or two clean lines with nothing clipped, at 854×480 and 1920×1080.
+3. The "9 people read it, nobody noticed" line on the reveal is about 11 px of Courier at 480p. It's the moment the pitch sells, so make it a clearly readable line (at least the size of the player names at 854×480), in keeping with the case-file style.
+4. The case-file chat line spoils the round: it posts when the reveal starts, so chat sees the word and verdict before viewers on a delayed stream. Post it only after the reveal hold ends (when the overlay has shown the verdict), and keep a test for the order.
+5. Make the "twelve names fit at 480p" claim true: add a browser-free layout check that's honest about what it measures (e.g. a test that the name column's computed width budget at 854×480 fits the longest allowed Twitch name at the board font), or reword the test name and the README to say exactly what is checked.
+
+Check every overlay and card mock in a browser for console errors. Copy this prompt as codex-log/step-20.txt. Keep npm test green. Do not commit; give me one commit message and the list of done items.
