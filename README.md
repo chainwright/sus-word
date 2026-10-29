@@ -9,7 +9,7 @@ Sus Word is a live Twitch chat game about hiding an ordinary word in plain sight
 1. Viewers type `!join`, open the private card, enter their exact Twitch name, then send the card's `!join CODE` command.
 2. Each table gets one Imposter, or two at tables with 10–12 players. Every player keeps the same table number for the session.
 3. The Imposter has three minutes to use it naturally in chat. Category and first-letter hints appear as time runs out.
-4. Players vote with a number such as `2`, `#2`, `!2`, or `!vote 2`. Votes typed early are saved, and the vote has a silent six-second grace period.
+4. Seated players vote with a number such as `2`, `#2`, `!2`, or `!vote 2`. Votes typed early are saved, and the vote has a silent six-second grace period. Viewers without a card can vote too; their CHAT votes only break ties between seated votes.
 5. The overlay rewinds chat, highlights the exact hidden word, reveals the verdict, shows the round leaders, and then deals new roles.
 
 ## Setup in 5 steps
@@ -35,7 +35,7 @@ One table is the whole game for a small stream. When more people claim cards, Su
 - A table of 3–9 players has one Imposter. A table of 10–12 has two, each with their own word.
 - The table on stream (the featured table) plays in Twitch chat. Every other table talks in its own chat inside the phone card, so the main chat stays readable.
 - `!accuse name word` is a live accusation: one shot per round, valid only after the word was smuggled. Right answer: that Imposter is busted on the spot.
-- Viewers without a card are the crowd: they can accuse and vote on the featured table.
+- Viewers without a card are the crowd: they can accuse and vote on the featured table. Crowd votes appear as a separate CHAT bar and only break a tie between seated votes; they cannot choose a suspect by themselves.
 - The streamer always sits at the featured table, so their voice only counts where everyone can hear it. Turn off **Host plays** to just host.
 - The featured table rotates every round, and the host can pick any table. **FINAL** seats the top scorer from each table for one last round on stream.
 
@@ -53,7 +53,7 @@ Open the host page in Google Chrome and turn on **🎙 Mic**. Allow microphone a
 | `!join CODE` | Anyone | Joins and links the private card in one command. |
 | `!claim CODE` | Anyone | Backward-compatible way to link a card. |
 | `!leave` | Player | Leaves the game. |
-| `2`, `#2`, `!2`, `!vote 2` | Player or crowd | Votes for that stable player number. An early vote is saved. |
+| `2`, `#2`, `!2`, `!vote 2` | Player or crowd | Votes for that stable player number. A player's early vote is saved; crowd votes only break seated-vote ties. |
 | `!accuse name word` | Player or crowd | One live accusation per round. |
 | `!sus start` | Broadcaster/mod | Opens the lobby. |
 | `!sus go` | Broadcaster/mod | Starts a round. |
@@ -69,7 +69,7 @@ The card page first checks that the Twitch name spoke in chat recently, then giv
 
 ## Built with Codex
 
-Everything was built in one Codex thread, step by step, with 80 automated tests covering the current game:
+Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first rehearsal simulator was drafted outside Codex and later rewritten in Codex (step 15). The current game is covered by 89 automated tests:
 
 1. Pure game logic, word detection, scoring, and tests.
 2. Twitch OAuth, EventSub chat, server routes, and live state.
@@ -83,6 +83,8 @@ Everything was built in one Codex thread, step by step, with 80 automated tests 
 10. Table screens, phone table chat, and the streamer's seat.
 11. Playtest-driven joining, stable numbers, number voting, and clearer bot messages.
 12. The v3 phone card, motion cues, vote grid, and delayed private results.
-13. The v3 stream overlay, full reveal timeline, and 480p readability.
-14. A deterministic real-channel simulator whose players never post to Twitch.
-15. Dynamic reveal timing, live accusation slams, round MVPs, and Champion screens.
+13. The v3 stream overlay and full reveal timeline.
+14. Reveal and 480p readability polish.
+15. A deterministic real-channel simulator whose players never post to Twitch.
+16. Dynamic reveal timing, live accusation slams, round MVPs, host polish, and Champion screens.
+17. Live overlay stability and first-render safety, crowd tie-break voting, legibility, card-state preservation, and case-file chat summaries.

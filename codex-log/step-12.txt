@@ -1,0 +1,6 @@
+Step 11 is committed. Step 12: the phone card, SPEC_v3 §1 (card side of joining) and §5, plus the card part of §6 Motion. Read SPEC_v3 §1, §5, §6 again and look at design/v3/card_*.png.
+- Join screen: name step with the live "✓ @name is in chat" / "not seen yet" check, then the code step with COPY "!join CODE", a real 44 px Change name button, and the wrong-account message.
+- Role screens for Imposter and Detective exactly as §5 (neutral frame, role colour only inside the sheet, 2-imposter copy, tips, example), DELIVERED state, vote screen with tap-to-vote on a 3-column grid of real avatars + stable numbers, reveal hold ("Watch the stream") until reveal end + 6 s, result screen with points, total and rank, error toasts (§7).
+- New-round signal: face-down folder → flip → stamp slam → highlighter sweep (timings in §6), chime with mute toggle (AudioContext unlocked on the GET MY CODE tap), two border flashes at 150 ms, vibration [80,60,80] where supported, Screen Wake Lock, aria-live, prefers-reduced-motion → 200 ms crossfades.
+- Mocks: /card?mock=join, join-wrong, imposter, imposter-2, delivered, detective, vote, reveal-hold, result.
+Mobile first (390 px), no horizontal scroll, smallest text 14 px. Keep npm test green, add tests for the reveal hold and the join screen states. Do not commit; give me the commit message.

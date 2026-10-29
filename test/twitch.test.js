@@ -78,6 +78,7 @@ describe("Twitch chat normalization", () => {
     assert.equal(normalizeChatEvent({ ...base, message: { text: "@a @b @c your role is on your card" } }, "42"), null);
     assert.equal(normalizeChatEvent({ ...base, message: { text: "🗳️🗳️ VOTE NOW: 30 SECONDS 🗳️🗳️ Type a number: 1 a" } }, "42"), null);
     assert.equal(normalizeChatEvent({ ...base, message: { text: "⏳ 10 seconds left to vote" } }, "42"), null);
+    assert.equal(normalizeChatEvent({ ...base, message: { text: "Round 3: LEMON hid in plain sight for 1:12 · 9 read it" } }, "42"), null);
     assert.equal(normalizeChatEvent({ ...base, message: { text: "Category: home" } }, "42"), null);
 
     const command = normalizeChatEvent({ ...base, message: { text: "!sus start" } }, "42");
@@ -196,5 +197,28 @@ describe("Twitch Helix client", () => {
     clock.tick(1);
     await second;
     assert.deepEqual(sentAt, [0, 1_500]);
+  });
+
+  test("drops low-priority replies when more than three chat sends are queued", async () => {
+    let requests = 0;
+    const client = new TwitchClient({
+      clientId: "client",
+      clientSecret: "secret",
+      botLogin: "bot",
+      channelLogin: "channel",
+      tokens: { access_token: "token", refresh_token: "refresh" },
+      fetchImpl: async () => {
+        requests += 1;
+        return jsonResponse({ data: [{ is_sent: true }] });
+      },
+    });
+    client.bot = { id: "bot-id", login: "bot" };
+    client.broadcaster = { id: "channel-id", login: "channel" };
+    client.chatQueueLength = 4;
+    assert.deepEqual(await client.sendChat("low value reply", { priority: "low" }), {
+      dropped: true,
+      reason: "chat_queue_busy",
+    });
+    assert.equal(requests, 0);
   });
 });

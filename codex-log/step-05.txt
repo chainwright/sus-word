@@ -1,0 +1,17 @@
+New feature, step 5: "Streamer voice". Viewers can only type, but the streamer talks on stream. Their speech should count as game messages,
+so the streamer can be a suspect too, and even the Imposter hiding the word in what they say out loud.
+
+1. public/host.(html|js): add a "🎙 Mic" toggle that uses the browser's Web Speech API (webkitSpeechRecognition, continuous, interimResults, lang en-US,
+   auto-restart on `end`/`network` errors while toggled on). Show the live interim transcript under the button and a small level/status dot.
+   Send each FINAL transcript chunk to the server over the existing host WebSocket as {type:"voice", text}.
+   If the API is missing, show "Voice needs Google Chrome" and keep everything else working.
+2. Server/game: a voice chunk is recorded as a message from the broadcaster (CHANNEL_LOGIN) with source:"voice". It goes through the same
+   recordMessage path, so findWord, smuggle, decoys, counts and the reveal all work unchanged. The broadcaster must still !join and !claim like anyone
+   else to be in the roster (the host page should show "You are not in the game yet: type !join and claim your card" if not).
+   The 3-word sentence rule applies to each chunk. Voice chunks from the host are accepted only from a host WebSocket connected from localhost.
+3. Overlay: voice messages appear in the evidence tray and the rewind as slips with a 🎙 mark and "(said out loud)". In the reveal caption for a voice smuggle use
+   "{elapsed} into the round. Said out loud on stream. Nobody noticed." / "...Someone noticed." The bot's reveal line says "said out loud" instead of quoting chat.
+4. Demo: in --fast mode, let the "streamer" fake player sometimes speak via the same voice path, and occasionally be the Imposter who smuggles by voice.
+5. Tests: a voice chunk smuggles the word for a broadcaster Imposter; a voice chunk from a non-roster broadcaster is ignored; the reveal caption for voice.
+6. README: a short "Streamer voice" section (Chrome only, needs mic permission, works from the host page).
+Keep npm test green. Do not commit; give me the commit message.

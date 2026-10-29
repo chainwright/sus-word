@@ -1,0 +1,13 @@
+Step 8: make Sus Word hold up with big chats (30+ players). Rules stay the same; only the screens must scale.
+1. Overlay ROUND board: show at most 8 Polaroids: the 8 players with the most messages this round (ties: most recent message first), in the 2-column grid.
+   Below them, a small pinned paper tag "+N detectives" when more players are in the round. When someone outside the top 8 posts, they may enter it
+   (animate the swap gently, no layout jumps). The bottom evidence tray is unchanged.
+2. Overlay LOBBY: same cap of 8 Polaroids (most recent joins) plus "+N more joined".
+3. Overlay VOTE: show the top 5 suspects by votes (ties: alphabetical), each with tallies, plus a line "N votes cast · M players".
+   The tally strokes must still fit: above 12 votes on one row, switch that row to a big number "×17" written in red marker.
+4. Reveal leaderboard: top 5 only (already) — verify.
+5. Host page: the players folder shows at most 8 with "+N"; add a small scrollable full list behind a "see all" toggle.
+6. Mock: /overlay?mock=round&players=30, /overlay?mock=vote&players=30, /overlay?mock=lobby&players=30 and /host?mock=round&players=30
+   generate that many fake players with varied counts and votes so I can screenshot them.
+7. Tests for the top-8 selection and the top-5 vote list (pure functions).
+Keep npm test green. Do not commit; give me the commit message.

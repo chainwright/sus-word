@@ -1,4 +1,4 @@
-import { cardScreen, voteProgress } from "./card-view.js";
+import { cardRenderSignature, cardScreen, voteProgress } from "./card-view.js";
 
 const root = document.querySelector("#card-root");
 const connection = document.querySelector("#connection");
@@ -19,6 +19,10 @@ let toastTimer = null;
 let muted = localStorage.getItem("sus-word-muted") === "true";
 let chatDraft = "";
 let chatFocused = false;
+let detailsOpen = false;
+let accuseDraft = { target: "", word: "" };
+let interactiveRound = null;
+let lastRenderSignature = null;
 
 function node(tag, className = "", text) {
   const element = document.createElement(tag);
@@ -272,6 +276,8 @@ function appendRoundTools(page) {
   page.append(hintCards());
   if (!state.onStream) page.append(sideTableChat());
   const details = node("details", "table-details");
+  details.open = detailsOpen;
+  details.addEventListener("toggle", () => { detailsOpen = details.open; });
   details.append(node("summary", "", `Table ${state.tableId} players and accusation`));
   const mates = node("div", "mini-mates");
   for (const mate of state.tableMates || []) {
@@ -329,9 +335,13 @@ function accusePanel() {
     option.value = mate.login;
     select.append(option);
   }
+  select.value = accuseDraft.target;
+  select.addEventListener("change", () => { accuseDraft.target = select.value; });
   const word = node("input");
   word.placeholder = "Secret word";
   word.maxLength = 20;
+  word.value = accuseDraft.word;
+  word.addEventListener("input", () => { accuseDraft.word = word.value; });
   const button = node("button", "small-action danger", state.accusationUsed ? "SHOT USED" : "ACCUSE");
   button.disabled = state.accusationUsed;
   form.append(select, word, button);
@@ -355,7 +365,7 @@ function renderRole(role, signal) {
   const sheet = paperSheet(`role-sheet ${role === "IMPOSTER" ? "imposter-sheet" : "detective-sheet"}`);
   sheet.setAttribute("aria-live", "polite");
   sheet.append(node("p", "step-label", "YOUR ROLE THIS ROUND"));
-  const stamp = node("div", `role-stamp ${role.toLowerCase()}-stamp`, `${role === "IMPOSTER" ? "🕵️" : "🔎"} ${role}`);
+  const stamp = node("div", `role-stamp ${role.toLowerCase()}-stamp`, `${role === "IMPOSTER" ? "🤫" : "🔎"} ${role}`);
   sheet.append(stamp);
   let highlight = null;
   if (role === "IMPOSTER") {
@@ -382,14 +392,16 @@ function renderRole(role, signal) {
 function renderVote() {
   const page = node("div", "vote-page");
   const banner = node("header", "vote-banner");
-  banner.append(node("h1", "", `🗳️ VOTE NOW! · ${state.impostorCount || 1} TO CATCH`));
+  banner.append(node("h1", "", "🗳️ VOTE NOW!"));
   const timer = node("time", "vote-count");
   timer.dataset.timer = "vote";
   timer.setAttribute("aria-live", "polite");
   const progress = node("div", "vote-progress");
   progress.append(node("i"));
   banner.append(timer, progress);
-  page.append(banner, node("p", "vote-instruction", "Tap who hid a word. Tap another player to change your vote."));
+  page.append(banner, node("p", "vote-instruction", (state.impostorCount || 1) > 1
+    ? "Vote your top suspect · top 2 are accused"
+    : "Vote your top suspect · the top vote is accused"));
   const grid = node("section", "vote-grid");
   const mates = [...(state.tableMates || [])].sort((left, right) => (left.number || 0) - (right.number || 0));
   for (const mate of mates) {
@@ -399,7 +411,8 @@ function renderVote() {
     button.type = "button";
     button.disabled = own;
     button.dataset.playerId = mate.id;
-    button.append(node("span", "vote-number", String(mate.number || "?")), playerPhoto(mate, "vote-avatar"), node("strong", "vote-name", `${mate.login}${own ? " · you" : ""}`));
+    button.append(node("span", "vote-number", String(mate.number || "?")), playerPhoto(mate, "vote-avatar"), node("strong", "vote-name", mate.login));
+    if (own) button.append(node("span", "vote-you", "YOU"));
     button.append(node("span", "vote-marker", selected ? "✓ YOUR VOTE" : ""));
     button.addEventListener("click", () => {
       if (!sendCardAction({ type: "vote", number: mate.number })) return;
@@ -482,8 +495,20 @@ function resultRow(container, label, value, valueClass = "") {
 }
 
 function render(nextState) {
+  const nextSignature = cardRenderSignature(nextState);
+  const nextRound = nextState.roundNumber ?? null;
+  if (interactiveRound !== null && nextRound !== interactiveRound) {
+    detailsOpen = false;
+    accuseDraft = { target: "", word: "" };
+  }
+  interactiveRound = nextRound;
   state = nextState;
   receivedAt = Date.now();
+  if (nextSignature === lastRenderSignature) {
+    updateTimers();
+    return;
+  }
+  lastRenderSignature = nextSignature;
   const screen = cardScreen(state);
   const signal = ["imposter", "detective"].includes(screen) && state.state === "ROUND" && state.roundNumber !== signaledRound;
   if (signal) signaledRound = state.roundNumber;

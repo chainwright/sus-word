@@ -25,6 +25,7 @@ export function isGameAnnouncement(text) {
     /^@\w+ (?:almost! Type !join|get your secret card:|you're in! Keep your card open|voting opens when the timer ends\.|there is no player \d+ at your table\.|that player isn't at your table\.|you can't vote for yourself\.|you're not seated this round\.|voting is closed\.|that vote couldn't be counted\.|this code was made for @)/i,
     /^Sus Word! Type !join/i,
     /^Round \d+ has begun\./i,
+    /^Round \d+:/i,
     /^Category:/i,
     /^Starts with:/i,
     /^Vote! !vote name/i,
@@ -101,6 +102,7 @@ export class TwitchClient extends EventEmitter {
     this.seenMessageIds = new Set();
     this.refreshPromise = null;
     this.chatTail = Promise.resolve();
+    this.chatQueueLength = 0;
     this.lastChatAt = -Infinity;
     this.stopped = true;
     this.connected = false;
@@ -165,9 +167,13 @@ export class TwitchClient extends EventEmitter {
     return response.data?.[0] ?? null;
   }
 
-  sendChat(message) {
+  sendChat(message, options = {}) {
     const text = String(message ?? "").trim().slice(0, 500);
     if (!text) return Promise.reject(new Error("Cannot send an empty chat message"));
+    if (options.priority === "low" && this.chatQueueLength > 3) {
+      return Promise.resolve({ dropped: true, reason: "chat_queue_busy" });
+    }
+    this.chatQueueLength += 1;
     const task = this.chatTail.catch(() => {}).then(async () => {
       if (!this.bot?.id || !this.broadcaster?.id) {
         throw new Error("Twitch client has not started");
@@ -185,6 +191,8 @@ export class TwitchClient extends EventEmitter {
           message: text,
         },
       });
+    }).finally(() => {
+      this.chatQueueLength = Math.max(0, this.chatQueueLength - 1);
     });
     this.chatTail = task;
     return task;

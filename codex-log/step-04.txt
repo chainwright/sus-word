@@ -1,0 +1,12 @@
+Step 3 is committed. After a visual review I appended layout fixes at the end of public/overlay.css (player tiles 2×2, vote rows, reveal spacing); keep them.
+Step 4, the last build step:
+1. src/demo.js (npm run demo): starts the server in offline mode and drives a full game with 4 fake players (pixel_mara, tomtom_irl, quietfox, streamer)
+   through the real game API: lobby with joins and claims, a round with natural-sounding chat every few seconds where the Imposter smuggles the word mid-round
+   in a real sentence, one accidental decoy, the hints, votes, and the reveal. Then it loops. Use a `--fast` flag that shortens the timers to
+   (round 60 s, hints at 30/50 s, vote 15 s) for rehearsals. Use DiceBear-free local avatars: generate simple SVG avatars as data URIs (no network).
+2. README.md for a streamer: what it is (with design/A_casefile_reveal.jpg), how a round works, setup in 5 steps
+   (register a Twitch app with redirect http://localhost:3000/auth/callback, .env, npm install, npm run auth, npm start + OBS browser source
+   http://localhost:3000/overlay at 1920×1080, and `cloudflared tunnel --url http://localhost:3000` → PUBLIC_URL for remote players),
+   the chat commands, how claim codes keep roles private without OAuth, and a "Built with Codex" section listing the 4 build steps.
+   Keep it short and plain.
+Keep npm test green. Do not commit; give me the commit message.

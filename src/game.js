@@ -111,8 +111,22 @@ export function selectVoteAccused(tallies, count) {
   const boundary = sorted[count - 1].votes;
   const above = sorted.filter(({ votes }) => votes > boundary);
   const atBoundary = sorted.filter(({ votes }) => votes === boundary);
-  return (above.length + atBoundary.length <= count ? [...above, ...atBoundary] : above)
-    .map(({ player }) => player.id);
+  if (above.length + atBoundary.length <= count) {
+    return [...above, ...atBoundary].map(({ player }) => player.id);
+  }
+  const slots = count - above.length;
+  if (slots <= 0) return above.map(({ player }) => player.id);
+  const byChat = [...atBoundary].sort((left, right) => (
+    (right.chatVotes ?? 0) - (left.chatVotes ?? 0)
+    || left.player.login.localeCompare(right.player.login)
+  ));
+  const chatBoundary = byChat[slots - 1]?.chatVotes ?? 0;
+  if (chatBoundary <= 0) return above.map(({ player }) => player.id);
+  const chatAbove = byChat.filter(({ chatVotes = 0 }) => chatVotes > chatBoundary);
+  const chatAtBoundary = byChat.filter(({ chatVotes = 0 }) => chatVotes === chatBoundary);
+  const resolved = chatAbove.length + chatAtBoundary.length <= slots
+    ? [...chatAbove, ...chatAtBoundary] : chatAbove;
+  return [...above, ...resolved].map(({ player }) => player.id);
 }
 
 export class Game extends EventEmitter {
@@ -562,6 +576,7 @@ export class Game extends EventEmitter {
       table.endedAt = now;
       table.voteEndsAt = now + this.durations.vote;
       table.votes = new Map(table.earlyVotes);
+      table.crowdVotes = new Map(table.crowdEarlyVotes);
     }
     this.votes = new Map([...this.tables.values()].flatMap((table) => [...table.votes]));
     this.#transition(PHASES.VOTE);
@@ -586,7 +601,9 @@ export class Game extends EventEmitter {
     const voter = this.#rememberParticipant(input);
     if (!voter) return { ok: false, reason: "not_a_player" };
     if (this.mutedPlayerIds.has(voter.id)) return { ok: false, reason: "muted" };
-    const table = this.#tableForPlayer(voter.id);
+    const seatedTable = this.#tableForPlayer(voter.id);
+    const crowd = !seatedTable && input.transport === "twitch";
+    const table = seatedTable ?? (crowd ? this.tables.get(this.featuredTableId) : null);
     if (!table) return { ok: false, reason: "not_seated" };
     if (this.state === PHASES.VOTE
       && this.#now() > table.voteEndsAt + this.durations.voteGrace) {
@@ -595,15 +612,30 @@ export class Game extends EventEmitter {
     const target = this.#resolveVoteTarget(targetReference, table);
     if (!target) return { ok: false, reason: "unknown_target" };
     if (voter.id === target.id) return { ok: false, reason: "self_vote" };
-    this.roundVoteTables.set(voter.id, table.id);
+    if (crowd) {
+      const previousTableId = this.crowdVoteTables.get(voter.id);
+      if (previousTableId && previousTableId !== table.id) {
+        const previousTable = this.tables.get(previousTableId);
+        previousTable?.crowdEarlyVotes.delete(voter.id);
+        previousTable?.crowdVotes.delete(voter.id);
+      }
+      this.crowdParticipants.add(voter.id);
+      this.crowdVoteTables.set(voter.id, table.id);
+    } else {
+      this.roundVoteTables.set(voter.id, table.id);
+    }
     if (this.state === PHASES.ROUND) {
-      const previousTargetId = table.earlyVotes.get(voter.id) ?? null;
-      const shouldReply = !table.earlyVoteReplies.has(voter.id);
-      table.earlyVotes.set(voter.id, target.id);
-      table.earlyVoteReplies.add(voter.id);
-      this.votes.set(voter.id, target.id);
+      const voteMap = crowd ? table.crowdEarlyVotes : table.earlyVotes;
+      const previousTargetId = voteMap.get(voter.id) ?? null;
+      const shouldReply = !crowd && !table.earlyVoteReplies.has(voter.id);
+      voteMap.set(voter.id, target.id);
+      if (!crowd) {
+        table.earlyVoteReplies.add(voter.id);
+        this.votes.set(voter.id, target.id);
+      }
       const result = {
         ok: true,
+        crowd,
         early: true,
         saved: true,
         shouldReply,
@@ -617,11 +649,13 @@ export class Game extends EventEmitter {
       this.#publish("earlyVote", result);
       return { ...result, state: this.state };
     }
-    const previousTargetId = table.votes.get(voter.id) ?? null;
-    table.votes.set(voter.id, target.id);
-    this.votes.set(voter.id, target.id);
+    const voteMap = crowd ? table.crowdVotes : table.votes;
+    const previousTargetId = voteMap.get(voter.id) ?? null;
+    voteMap.set(voter.id, target.id);
+    if (!crowd) this.votes.set(voter.id, target.id);
     const result = {
       ok: true,
+      crowd,
       tableId: table.id,
       replaced: previousTargetId !== null,
       previousTargetId,
@@ -708,8 +742,14 @@ export class Game extends EventEmitter {
     const table = this.tables.get(Number(tableId));
     if (!table) return [];
     const counts = new Map([...table.roster.keys()].map((id) => [id, 0]));
+    const chatCounts = new Map([...table.roster.keys()].map((id) => [id, 0]));
     for (const targetId of table.votes.values()) counts.set(targetId, (counts.get(targetId) ?? 0) + 1);
-    return [...table.roster.values()].map((player) => ({ player: this.#publicPlayer(player), votes: counts.get(player.id) ?? 0 }));
+    for (const targetId of table.crowdVotes.values()) chatCounts.set(targetId, (chatCounts.get(targetId) ?? 0) + 1);
+    return [...table.roster.values()].map((player) => ({
+      player: this.#publicPlayer(player),
+      votes: counts.get(player.id) ?? 0,
+      chatVotes: chatCounts.get(player.id) ?? 0,
+    }));
   }
 
   getCard(sessionId) {
@@ -822,6 +862,7 @@ export class Game extends EventEmitter {
       phaseDurationMs: this.state === PHASES.REVEAL
         ? this.#revealDuration() : this.durations[this.state.toLowerCase()] ?? 0,
       remainingMs: Math.max(0, (this.#phaseEndsAt() ?? now) - now),
+      newRound: this.state === PHASES.ROUND && now - table?.startedAt < 4_000,
       final: this.isFinalRound,
       canFinal: this.state === PHASES.LOBBY && this.lastRoundSeating.length > 0,
       champion: this.state === PHASES.REVEAL ? this.lastChampion : null,
@@ -969,6 +1010,8 @@ export class Game extends EventEmitter {
         earlyVotes: new Map(),
         earlyVoteReplies: new Set(),
         votes: new Map(),
+        crowdEarlyVotes: new Map(),
+        crowdVotes: new Map(),
         scoreChanges: new Map([...roster.keys()].map((playerId) => [playerId, 0])),
         reveal: null,
         phaseResult: null,
@@ -1089,6 +1132,11 @@ export class Game extends EventEmitter {
     });
     const botMessage = results.length === 1 ? primary.botMessage
       : `🕵️ Table ${table.id}: ${results.map((result) => `@${result.impostor.login} ${result.word.toUpperCase()} — ${result.verdict}`).join(" · ")}`;
+    const caseFileMessage = `Round ${table.number}: ${results.map((result) => (
+      result.evidence
+        ? `${result.word.toUpperCase()} hid in plain sight for ${result.elapsed} · ${result.readerCount} read it`
+        : `${result.word.toUpperCase()} never landed · 0 read it`
+    )).join(" · ")}`;
     return {
       ...primary,
       tableId: table.id,
@@ -1097,6 +1145,7 @@ export class Game extends EventEmitter {
       scoreChanges,
       leaderboard: this.#leaderboard(5),
       botMessage,
+      caseFileMessage,
     };
   }
 
@@ -1267,7 +1316,11 @@ export class Game extends EventEmitter {
     this.#setTimer("lobby", this.durations.lobby, () => {
       if (this.state !== PHASES.LOBBY) return;
       const result = this.go();
-      if (!result.ok && this.state === PHASES.LOBBY) this.#armLobbyTimer();
+      if (!result.ok && this.state === PHASES.LOBBY) {
+        this.lobbyOpenedAt = this.#now();
+        this.#armLobbyTimer();
+        this.#publish("lobbyTimer", { remainingMs: this.durations.lobby });
+      }
     });
   }
 
@@ -1420,6 +1473,9 @@ export class Game extends EventEmitter {
 
   #phaseEndsAt() {
     const table = this.tables.get(this.featuredTableId);
+    if (this.state === PHASES.LOBBY && this.lobbyOpenedAt !== null) {
+      return this.lobbyOpenedAt + this.durations.lobby;
+    }
     if (!table) return null;
     if (this.state === PHASES.ROUND) return table.endsAt;
     if (this.state === PHASES.VOTE) return table.voteEndsAt;

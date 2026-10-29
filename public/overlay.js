@@ -1,4 +1,5 @@
 import { readerCountLabel } from "/display.js";
+import { overlayRenderPlan } from "/overlay-state.js";
 
 const $ = (selector) => document.querySelector(selector);
 const stage = $("#stage");
@@ -17,6 +18,7 @@ let lastVoteSecond = null;
 let audioContext = null;
 let seenAccusations = new Set();
 let accusationsInitialized = false;
+let newRoundShown = null;
 
 function audio() {
   if (!audioContext) audioContext = new AudioContext();
@@ -91,13 +93,29 @@ function playerRow(player, options = {}) {
   row.append(name);
   if (player.simulated) row.append(el("span", "sim-tag", "SIM"));
   if (options.vote) {
-    const bar = el("i", "vote-bar");
-    bar.style.width = `${options.bar || 0}%`;
-    row.append(bar);
+    row.style.setProperty("--vote-fill", `${options.bar || 0}%`);
+    if (options.votes) row.classList.add("has-votes");
     if (options.votes) row.append(el("span", "vote-count", String(options.votes)));
+    if (options.showChat) {
+      row.classList.add("has-chat-votes");
+      const chatBar = el("i", "chat-vote-bar");
+      chatBar.style.width = `${options.chatBar || 0}%`;
+      row.append(chatBar, el("small", "chat-vote-label", `CHAT ${options.chatVotes || 0}`));
+    }
   }
   if (options.busted) row.append(el("span", "busted-mini", `BUSTED by @${options.busted.accuser?.login || "detective"}`));
   return row;
+}
+
+function voteRowOptions(tally = {}, leader = 1, chatLeader = 1, showChat = false) {
+  return {
+    vote: true,
+    votes: tally.votes || 0,
+    bar: ((tally.votes || 0) / leader) * 100,
+    chatVotes: tally.chatVotes || 0,
+    chatBar: ((tally.chatVotes || 0) / chatLeader) * 100,
+    showChat,
+  };
 }
 
 function messageSlip(message, index = 0, options = {}) {
@@ -238,6 +256,8 @@ function lobbyIsFull(next) {
 
 function renderLobby(next) {
   const full = lobbyIsFull(next);
+  $("#how-panel").hidden = true;
+  $("#compact-lobby").hidden = true;
   $("#board").hidden = false;
   $("#board-title").textContent = "PLAYERS";
   $("#board-meta").textContent = "12 max";
@@ -280,16 +300,18 @@ function renderRound(next, newRound = false) {
 function renderVote(next) {
   const round = next.round || {};
   const players = stablePlayers(round.players || next.players || []);
-  const tallies = new Map((round.tallies || []).map((entry) => [entry.player?.id || entry.playerId, entry.votes || 0]));
-  const max = Math.max(1, ...tallies.values());
+  const tallies = new Map((round.tallies || []).map((entry) => [entry.player?.id || entry.playerId, entry]));
+  const max = Math.max(1, ...[...tallies.values()].map(({ votes = 0 }) => votes));
+  const chatMax = Math.max(1, ...[...tallies.values()].map(({ chatVotes = 0 }) => chatVotes));
+  const showChat = [...tallies.values()].some(({ chatVotes = 0 }) => chatVotes > 0);
   $("#vote-banner").hidden = false;
   $("#board").hidden = false;
   $("#board-title").textContent = "WHO HID A WORD?";
-  $("#board-meta").textContent = `${round.impostorCount || next.impostorCount || 1} to catch`;
+  $("#board-meta").textContent = (round.impostorCount || next.impostorCount || 1) > 1 ? "TOP 2 ACCUSED" : "TOP VOTE ACCUSED";
   $("#hints").hidden = false;
   renderHints(round.hints || {});
-  $("#player-grid").replaceChildren(...players.map((player) => playerRow(player, { vote: true, votes: tallies.get(player.id) || 0, bar: ((tallies.get(player.id) || 0) / max) * 100 })));
-  $("#board-note").replaceChildren(el("strong", "", "VOTES ARE LIVE"), document.createTextNode("Bars fill as chat votes. You can change your vote until 0:00. Top votes are accused."));
+  $("#player-grid").replaceChildren(...players.map((player) => playerRow(player, voteRowOptions(tallies.get(player.id), max, chatMax, showChat))));
+  $("#board-note").replaceChildren(el("strong", "", "VOTES ARE LIVE"), document.createTextNode("Vote your top suspect · top 2 are accused"));
   $("#leaderboard").hidden = true;
   renderMessages(round.latestMessages || round.recentMessages || []);
   if (!reduced.matches) $("#vote-banner").animate([{ transform: "translateY(-100%)" }, { transform: "translateY(7px)" }, { transform: "translateY(0)" }], { duration: 350, easing: "cubic-bezier(.2,.8,.2,1)" });
@@ -329,9 +351,8 @@ function finalCase(result) {
   const { line } = highlightedEvidence(result);
   card.append(head);
   if (result.evidence) card.append(line, el("p", "reveal-caption", result.caption || "Hidden in plain sight."));
-  else card.append(el("div", "never-delivered-line", "THE WORD NEVER MADE IT OUT"));
   const verdict = result.verdict || (result.evidence ? "GOT AWAY" : "WORD NEVER LANDED");
-  const displayVerdict = !result.evidence ? "NEVER DELIVERED" : verdict === "CAUGHT" ? "BUSTED" : verdict;
+  const displayVerdict = !result.evidence ? "THE WORD NEVER MADE IT OUT" : verdict === "CAUGHT" ? "BUSTED" : verdict;
   card.append(el("b", `verdict${verdict === "GOT AWAY" ? " away" : verdict.includes("NEVER") ? " miss" : ""}`, `${displayVerdict}${verdict === "GOT AWAY" ? " +3" : ""}`));
   return card;
 }
@@ -347,9 +368,11 @@ function showRevealEnd(next, results) {
   $("#board-meta").textContent = "";
   $("#hints").hidden = true;
   const round = next.round || {};
-  const tallies = new Map((round.tallies || next.round?.reveal?.tallies || []).map((entry) => [entry.player?.id || entry.playerId, entry.votes || 0]));
-  const max = Math.max(1, ...tallies.values());
-  $("#player-grid").replaceChildren(...stablePlayers(round.players || next.players || []).map((player) => playerRow(player, { vote: true, votes: tallies.get(player.id) || 0, bar: ((tallies.get(player.id) || 0) / max) * 100 })));
+  const tallies = new Map((round.tallies || next.round?.reveal?.tallies || []).map((entry) => [entry.player?.id || entry.playerId, entry]));
+  const max = Math.max(1, ...[...tallies.values()].map(({ votes = 0 }) => votes));
+  const chatMax = Math.max(1, ...[...tallies.values()].map(({ chatVotes = 0 }) => chatVotes));
+  const showChat = [...tallies.values()].some(({ chatVotes = 0 }) => chatVotes > 0);
+  $("#player-grid").replaceChildren(...stablePlayers(round.players || next.players || []).map((player) => playerRow(player, voteRowOptions(tallies.get(player.id), max, chatMax, showChat))));
   $("#board-note").replaceChildren();
   $("#leaderboard").hidden = false;
   renderLeaderboard(next.round?.reveal?.leaderboard || next.leaderboard || next.scores || [], next.scores || []);
@@ -515,9 +538,11 @@ function renderReveal(next) {
   $("#board-title").textContent = "FINAL VOTES";
   $("#board-meta").textContent = "";
   $("#hints").hidden = true;
-  const tallies = new Map((next.round?.tallies || reveal?.tallies || []).map((entry) => [entry.player?.id || entry.playerId, entry.votes || 0]));
-  const leader = Math.max(1, ...tallies.values());
-  $("#player-grid").replaceChildren(...stablePlayers(next.round?.players || next.players || []).map((player) => playerRow(player, { vote: true, votes: tallies.get(player.id) || 0, bar: ((tallies.get(player.id) || 0) / leader) * 100 })));
+  const tallies = new Map((next.round?.tallies || reveal?.tallies || []).map((entry) => [entry.player?.id || entry.playerId, entry]));
+  const leader = Math.max(1, ...[...tallies.values()].map(({ votes = 0 }) => votes));
+  const chatLeader = Math.max(1, ...[...tallies.values()].map(({ chatVotes = 0 }) => chatVotes));
+  const showChat = [...tallies.values()].some(({ chatVotes = 0 }) => chatVotes > 0);
+  $("#player-grid").replaceChildren(...stablePlayers(next.round?.players || next.players || []).map((player) => playerRow(player, voteRowOptions(tallies.get(player.id), leader, chatLeader, showChat))));
   $("#board-note").replaceChildren();
   $("#leaderboard").hidden = false;
   renderLeaderboard(next.scores || next.leaderboard || []);
@@ -538,6 +563,23 @@ function renderReveal(next) {
   if (params.get("play") === "1") later(() => { clearReveal(); renderReveal(next); }, revealDuration);
 }
 
+function updateRevealBoard(next) {
+  const reveal = next.round?.reveal;
+  const tallies = new Map((next.round?.tallies || reveal?.tallies || []).map((entry) => [entry.player?.id || entry.playerId, entry]));
+  const leader = Math.max(1, ...[...tallies.values()].map(({ votes = 0 }) => votes));
+  const chatLeader = Math.max(1, ...[...tallies.values()].map(({ chatVotes = 0 }) => chatVotes));
+  $("#player-grid").replaceChildren(...stablePlayers(next.round?.players || next.players || []).map((player) => {
+    const tally = tallies.get(player.id) || {};
+    return playerRow(player, voteRowOptions(
+      tally,
+      leader,
+      chatLeader,
+      [...tallies.values()].some(({ chatVotes = 0 }) => chatVotes > 0),
+    ));
+  }));
+  renderLeaderboard(next.scores || next.leaderboard || []);
+}
+
 function animateNewRound() {
   const bar = $("#new-roles");
   bar.hidden = false;
@@ -548,18 +590,28 @@ function animateNewRound() {
 }
 
 function render(next) {
+  const previous = state;
+  const plan = overlayRenderPlan(previous, next);
   state = next;
   receivedAt = Date.now();
-  const phase = next.phase || next.state || "IDLE";
-  hideBase();
-  if (phase !== "REVEAL") { clearReveal(); revealKey = ""; }
+  const phase = plan.phase;
+  if (plan.resetBase) hideBase();
+  if (phase !== "REVEAL" && plan.phaseChanged) { clearReveal(); revealKey = ""; }
   if (phase === "IDLE") $("#idle-tag").hidden = false;
   else if (phase === "LOBBY") renderLobby(next);
-  else if (phase === "ROUND") renderRound(next, params.get("mock") === "newround" || next.newRound);
+  else if (phase === "ROUND") {
+    const shouldSignal = (params.get("mock") === "newround" || next.newRound) && newRoundShown !== next.roundNumber;
+    renderRound(next, shouldSignal);
+    if (shouldSignal) newRoundShown = next.roundNumber;
+  }
   else if (phase === "VOTE") renderVote(next);
   else if (phase === "REVEAL") {
-    const key = `${next.roundNumber}:${next.round?.reveal?.imposters?.length || 1}`;
-    if (key !== revealKey) { revealKey = key; clearReveal(); renderReveal(next); }
+    if (plan.sameReveal) updateRevealBoard(next);
+    else if (plan.revealKey !== revealKey) {
+      revealKey = plan.revealKey;
+      clearReveal();
+      renderReveal(next);
+    }
   }
   updateClocks();
 }
@@ -601,7 +653,11 @@ function mockState(kind) {
   base.phase = base.state;
   if (base.state === "LOBBY") return base;
   const messageCounts = Object.fromEntries(players.map((player, index) => [player.id, [7, 5, 3, 4, 2, 6, 1, 3, 1, 2, 1, 0][index] || 0]));
-  const tallies = players.map((player, index) => ({ player, votes: [0, 5, 0, 3, 1, 0, 0, 0, 0, 1, 0, 0][index] || 0 }));
+  const tallies = players.map((player, index) => ({
+    player,
+    votes: [0, 5, 0, 3, 1, 0, 0, 0, 0, 1, 0, 0][index] || 0,
+    chatVotes: [2, 7, 1, 4, 0, 1, 0, 0, 0, 0, 0, 0][index] || 0,
+  }));
   base.round = { players, remainingMs: base.remainingMs, impostorCount: kind === "reveal2" ? 2 : 1, hints: { category: "FOOD · HOME", letter: kind === "vote" ? "L · B" : null }, messageCounts, latestMessages: messages.slice(0, 3), recentMessages: messages, tallies };
   if (base.state === "REVEAL") {
     const first = { impostor: players[3], word: "lemon", evidence: kind === "reveal-miss" ? null : messages[3], messages, elapsed: "1:48", readerCount: 9, caught: true, verdict: kind === "reveal-miss" ? "WORD NEVER LANDED" : "CAUGHT", caption: kind === "reveal-miss" ? "THE WORD NEVER MADE IT OUT" : "1:48 into the round · 9 people read it · someone noticed" };

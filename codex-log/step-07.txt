@@ -1,0 +1,33 @@
+Step 7: bring the stream overlay and the phone card up to the same photo-real "detective's desk" world as the new host page.
+Attached: design/overlay_round_v2.jpg (approved target for the ROUND phase) and the host page look you just built. New assets in public/img/:
+cork.jpg (cork texture, tile or cover it), case_folder.jpg (a top-down manila folder with a TOP SECRET stamp on a walnut desk, portrait),
+plus desk.jpg and stopwatch.webp you already know. Keep all game logic, data flow and phase timing unchanged; this is a visual rebuild of
+public/overlay.(css|js|html) and public/card.(css|js|html). Keep the earlier layout fixes' intent (nothing overflows the board, names readable).
+
+OVERLAY (1920×1080, transparent, OBS):
+- Right column 1340–1900: a real cork board (cork.jpg as background) inside a CSS walnut frame (dark wood gradient border ~16px, inner shadow).
+  - Header: a torn kraft label with a red stamp "SUS WORD" and "· ROUND n".
+  - Timer: the brass stopwatch.webp (~240 px) pinned to the board, live mm:ss on its dial and a red sweep hand (like the host page).
+    It is pinned with red string to two lined index cards: "CATEGORY:" and "STARTS WITH:", padlock until revealed, then a flip.
+  - Players: Polaroids with a white frame, real avatars, name under the photo, a small dark speech-badge with the message count;
+    a slight tilt each; a red pin; a gentle wiggle on each new message.
+- Bottom strip (x 0–1320, y 860–1080): the top edge of a dark walnut desk (use desk.jpg cropped/darkened, with a soft top shadow) holding the
+  3 latest messages as pinned typed paper slips (Courier Prime), voice lines with a small microphone icon and "(said out loud)".
+- LOBBY and VOTE use the same cork board: the lobby pins Polaroids as people join; the vote draws red marker tallies on paper strips next to each Polaroid.
+- REVEAL (full screen ~20 s, same sequence as now): the background becomes desk.jpg darkened, with a single warm lamp spotlight (radial gradient)
+  on the center where the action is. The Imposter Polaroid drops in and the red IMPOSTER rubber stamp slams with a small camera shake.
+  The rewind runs as paper slips sliding backward under the light, with an old brass counter running back, then stops on the evidence slip.
+  The highlighter sweep lights the exact word. Then a stamped paper "GOT AWAY +3" / "CAUGHT" / "WORD NEVER LANDED" lands at the right in softer light,
+  then the sneakiness line typed on a slip, then a leaderboard index card. Dust particles float faintly in the lamp beam (CSS, subtle).
+- Add soft real shadows to every paper (two layered box-shadows) and a faint paper grain.
+
+CARD (phone, 390×844 first):
+- Background: case_folder.jpg as a cover, so the phone shows a manila folder on a desk. The content sits on the folder cover below the TOP SECRET stamp.
+- Claim screen: a typed form on paper: "Your Twitch name", a big ink-dark button "GET MY CLAIM CODE"; then the code shown huge on a torn paper strip
+  with "Type !claim CODE in chat" and a copy button.
+- IMPOSTER: a red stamp "IMPOSTER" slams in, the secret word on a slip with the yellow highlighter, the mission typed, a small brass timer, "Not delivered yet" → "✓ Delivered"
+  turns into a green stamp.
+- DETECTIVE: a stamp "DETECTIVE" and a magnifying-glass emoji, with "Someone in chat is hiding a word. Watch closely."
+- Big tap targets, no horizontal scroll, works after reload.
+Update /overlay?mock=lobby|round|vote|reveal and add /card?mock=claim|imposter|detective so I can screenshot each.
+Keep npm test green. Do not commit; give me the commit message.

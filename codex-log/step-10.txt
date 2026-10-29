@@ -1,0 +1,19 @@
+Step 9 is committed. Step 10: TABLES_SPEC.md sections 7, 8, 12 and 13, plus the screens for tables. Read sections 7–13 again first.
+Logic:
+- §12 Streamer at the featured table: always seated there (moves with it), voice + chat count only for that table, can be an Imposter, can be accused/voted.
+  A "Host plays" switch (host page, default on; persisted in memory) — off = never seated. The featured table may hold 12 + the streamer.
+- §13 Side tables chat in the card: card WebSocket {type:"tableChat", text} → same recordMessage path for that player's table (only when their table is NOT featured).
+  Card actions {type:"accuse", target, word} and {type:"vote", target} for side tables. Server-side limits: 200 chars, 1 msg / 2 s per player, strip URLs.
+  Twitch chat messages from side-table players are crowd chatter, not evidence. `!sus mute name` (broadcaster/mod) removes a player from tables for the session.
+Screens (keep the detective-desk look):
+- Overlay: a small brass plate "TABLE n of N · P players · on stream" on the board header; live BUSTED stamp on a featured Polaroid with "busted by @x";
+  a short "accusation ticker" slip for the featured table (✅ @fox busted @mara · ❌ @kai guessed wrong); in REVEAL, multi-Imposter reveal one by one
+  (short version for all but the last) and a bottom strip with other tables' results; FINAL round shows "FINAL TABLE" and a CHAMPION stamp at the end.
+- Card: table number and status ("ON STREAM: talk in Twitch chat" vs "Side table: talk here"), the table chat (last 20 messages, input box,
+  send on Enter, a 🔒 if it's the featured table), table-mates as mini Polaroids, an Accuse panel (pick a name + type the word, one shot, disabled after use),
+  a Vote panel in VOTE phase, hints for your table, your result at REVEAL. Mobile first, no horizontal scroll.
+- Host: a tables strip (T1 12 · T2 11 · …) with "feature" buttons, the "Host plays" switch, a FINAL stamp button (enabled in LOBBY), and the busted/accuse log.
+- Mocks: /overlay?mock=round&tables=3, /overlay?mock=reveal&tables=3, /card?mock=side, /card?mock=featured, /host?mock=round&tables=17.
+- Demo: `node src/demo.js --fast --players 30` drives side tables through the card path (tableChat/accuse/vote) and the featured table through chat.
+- Tests for §12 and §13 rules (seating of the streamer, side-table evidence only via card, rate limits, mute).
+Keep npm test green. Do not commit; give me the commit message.

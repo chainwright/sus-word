@@ -1,0 +1,8 @@
+New phase. We ran the first live playtest on Twitch with real people (3 players, 6 rounds) and the rules did not land: players didn't know their role, typed "ijoin", put the wrong name on the card and got stuck for 10 minutes, voted too early or 1-2 s too late, and couldn't tell when voting started. Read design/v3/SPEC_v3.md in full and look at the frames in design/v3/*.png.
+
+Step 11 (logic only, no visual work yet): SPEC_v3 §1 Joining, §2 Stable player numbers and simpler voting, §3 Bot messages, and the matching tests from §8.
+- Name check before issuing a code (login seen in chat in the last 15 min); one-command link `!join CODE` (keep `!claim CODE`); aliases join/ijoin with a single friendly reply; wrong-account code reply; Change name works while a code is pending (creating a new code replaces the old one).
+- Stable numbers in join order for the session, per table; number-only votes (2, #2, !2, !vote 2); 6 s silent grace after the vote deadline; a vote typed during ROUND is saved and replied to once per player per round; rejected votes get a short reply; number/vote messages never count as smuggling and are flagged so the overlay won't show them as slips.
+- Bot messages exactly as in §3, English, ≤500 chars per message; ignore link spam from non-players.
+- Expose the player number and the "vote saved early" state in the overlay/card state payloads so the next steps can render them.
+Keep npm test green, add the tests. Do not commit; give me the commit message.

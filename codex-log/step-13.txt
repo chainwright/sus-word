@@ -1,0 +1,14 @@
+Step 12 is committed. First, card polish found at a true 390 px viewport (fix these before the overlay work):
+- The header is duplicated: "SUS WORD · ROUND 3 / PREVIEW" row and "SUS WORD · ROUND 3 / timer" row. Keep one row: title left, timer pill + mute icon right.
+- "TABLE 1 OF 1" wraps to two lines; hide the table bar entirely when there is only one table, and keep it on one line otherwise.
+- The DELIVERED chip is below the fold on the Imposter card; move the delivered/not-yet status right under the secret word.
+- Vote tiles show a small red stub under every tile; remove it.
+Then Step 13: the overlay, SPEC_v3 §4 and the overlay part of §6 Motion, including the full reveal timeline. Read §4 and §6 again and look at design/v3/ov_*.png.
+- Transparent page background; art only on panels. First lobby = big HOW TO PLAY panel; later lobbies = compact bar, full panel again for 15 s when a new player joins.
+- Round: slim strip, cork board with hints, 12-player grid (stable number, real avatar, name, talking glow), leaderboard top 3, three chat slips (never vote/number messages), no vote counts until VOTE.
+- Vote: dropping banner with flipping digits, last-5-s pulse, 14 px bars scaled to the leader, rows never re-sort, VOTES LOCKED stamp.
+- Reveal: the timeline table in §6 exactly (dim + vignette with the camera visible, rewind with blur/scanlines and a running timestamp, lift, highlighter, "N people read it" count-up at ≥40 px, beat, BUSTED slam + shake + flash or GOT AWAY ink-bleed + floating +3, second imposter with a 2 s rewind, never-delivered variant, FLIP leaderboard re-sort with ▲/▼, cards shrink to a bottom bar after 10 s).
+- New round: split-flap strip, NEW ROLES bar, paper shuffle of rows. Hints: note flip + thud.
+- Sizes from §4 (≥20 px for anything a viewer acts on). prefers-reduced-motion support.
+- Mocks: /overlay?mock=lobby-first, lobby, round, round12, vote, reveal, reveal2, reveal-miss, newround. Add `?play=1` to a reveal mock to loop the animation for recording.
+Keep npm test green. Do not commit; give me the commit message.

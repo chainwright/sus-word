@@ -316,6 +316,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 4px s
 .vote-number { position: absolute; top: 5px; left: 7px; color: var(--red); font: 700 22px/1 "Oswald", sans-serif; }
 .vote-avatar { width: 55px; height: 55px; margin: 0 auto 5px; overflow: hidden; display: grid; place-items: center; border-radius: 50%; color: #fff; background: #6d5a79; font-weight: 700; }
 .vote-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.vote-you { display: block; color: var(--red); font: 700 14px/1 "Oswald"; }
 .vote-marker { position: absolute; left: 50%; bottom: -8px; min-height: 18px; padding: 2px 6px; translate: -50% 0; color: #fff; background: var(--red); font: 700 14px/1 "Oswald", sans-serif; white-space: nowrap; }
 .vote-marker:empty { display: none; }
 .vote-footer { margin: 22px 16px; color: #f8e4c4; font-size: 15px; text-align: center; }

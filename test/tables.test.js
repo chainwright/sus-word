@@ -312,6 +312,17 @@ describe("multi-Imposter vote and scoring", () => {
     assert.deepEqual(selectVoteAccused(tallies, 3), ["a", "b", "c"]);
   });
 
+  test("uses chat votes only to break a seated-vote boundary tie", () => {
+    const tallies = [
+      { player: { id: "a", login: "a" }, votes: 5, chatVotes: 0 },
+      { player: { id: "b", login: "b" }, votes: 3, chatVotes: 4 },
+      { player: { id: "c", login: "c" }, votes: 3, chatVotes: 2 },
+      { player: { id: "d", login: "d" }, votes: 0, chatVotes: 20 },
+    ];
+    assert.deepEqual(selectVoteAccused(tallies, 2), ["a", "b"]);
+    assert.deepEqual(selectVoteAccused(tallies.map((entry) => ({ ...entry, votes: 0 })), 2), []);
+  });
+
   test("scores escapes, catches, correct votes, busts, and missed words", () => {
     const { game } = startGame(12);
     const table = game.tables.get(1);

@@ -119,6 +119,7 @@ export function createSusWordServer(options = {}) {
   const cardMessageTimes = new Map();
   const chatSeenAt = new Map();
   const aliasReplies = new Set();
+  const joinReplies = new Set();
   const serverNow = options.now ?? (() => Date.now());
 
   if (env.CHANNEL_LOGIN) game.configureStreamer?.(env.CHANNEL_LOGIN);
@@ -225,6 +226,10 @@ export function createSusWordServer(options = {}) {
   });
   game.on("card", ({ sessionId: sid }) => broadcastCardStates(sid));
   game.on("state", ({ to }) => {
+    if (to === PHASES.IDLE) {
+      aliasReplies.clear();
+      joinReplies.clear();
+    }
     if (to === PHASES.LOBBY) {
       announce(`🕵️ Sus Word! Type !join to play. Get your secret card: ${publicUrl}/card`);
     }
@@ -255,9 +260,10 @@ export function createSusWordServer(options = {}) {
     waitlistAnnouncementRound = game.roundNumber;
     announce("🕵️ New players are waiting for the next round.");
   });
-  game.on("reveal", ({ botMessage, otherTablesMessage }) => {
+  game.on("reveal", ({ botMessage, caseFileMessage, otherTablesMessage }) => {
     flushBusted();
     announce(botMessage);
+    announce(caseFileMessage);
     announce(otherTablesMessage);
   });
 
@@ -435,14 +441,14 @@ export function createSusWordServer(options = {}) {
     }
   }
 
-  function announce(message) {
+  function announce(message, options = {}) {
     if (!message) return;
     for (const part of splitChatMessage(message)) {
       if (!twitch) {
         logger.log?.(`[offline] ${part}`);
         continue;
       }
-      twitch.sendChat(part).catch((error) => logger.error?.(`[chat] ${error.message}`));
+      twitch.sendChat(part, options).catch((error) => logger.error?.(`[chat] ${error.message}`));
     }
   }
 
@@ -543,7 +549,7 @@ export function createSusWordServer(options = {}) {
       const shouldReply = !aliasReplies.has(key);
       if (shouldReply) {
         aliasReplies.add(key);
-        announce(`@${login} almost! Type !join (with the !)`);
+        announce(`@${login} almost! Type !join (with the !)`, { priority: "low" });
       }
       return { ok: true, ignored: true, action: "join_alias", replied: shouldReply };
     }
@@ -555,8 +561,13 @@ export function createSusWordServer(options = {}) {
         displayName: player.displayName,
         avatar: player.avatar,
       });
-      announce(`@${login} get your secret card: ${publicUrl}/card`);
-      return result;
+      const key = String(message.userId ?? login);
+      const shouldReply = !joinReplies.has(key);
+      if (shouldReply) {
+        joinReplies.add(key);
+        announce(`@${login} get your secret card: ${publicUrl}/card`, { priority: "low" });
+      }
+      return { ...result, replied: shouldReply };
     }
     if (command.type === "claim") {
       const player = await playerDetails(message);
@@ -581,8 +592,8 @@ export function createSusWordServer(options = {}) {
         transport: "twitch",
       }, target);
       if (result.ok && result.early && result.shouldReply) {
-        announce(`@${login} voting opens when the timer ends. Your number guess is saved: ${result.targetNumber}`);
-      } else if (!result.ok) {
+        announce(`@${login} voting opens when the timer ends. Your number guess is saved: ${result.targetNumber}`, { priority: "low" });
+      } else if (!result.ok && joinedPlayer && game.playerTables.has(joinedPlayer.id)) {
         announceVoteRejection(login, result, command.number);
       }
       return { ...result, voteMessage: true, visible: false };
@@ -612,14 +623,14 @@ export function createSusWordServer(options = {}) {
       case "unknown_target":
         announce(number
           ? `@${login} there is no player ${number} at your table.`
-          : `@${login} that player isn't at your table.`);
+          : `@${login} that player isn't at your table.`, { priority: "low" });
         break;
-      case "self_vote": announce(`@${login} you can't vote for yourself.`); break;
+      case "self_vote": announce(`@${login} you can't vote for yourself.`, { priority: "low" }); break;
       case "not_seated":
-      case "not_a_player": announce(`@${login} you're not seated this round.`); break;
+      case "not_a_player": announce(`@${login} you're not seated this round.`, { priority: "low" }); break;
       case "invalid_state":
-      case "vote_closed": announce(`@${login} voting is closed.`); break;
-      default: announce(`@${login} that vote couldn't be counted.`);
+      case "vote_closed": announce(`@${login} voting is closed.`, { priority: "low" }); break;
+      default: announce(`@${login} that vote couldn't be counted.`, { priority: "low" });
     }
   }
 

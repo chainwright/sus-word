@@ -1,0 +1,11 @@
+Read AGENTS.md and SPEC.md fully, and look at the frames in design/.
+
+Step 1 of the build: the foundation and the game logic, no Twitch and no UI yet.
+1. package.json (type: module, scripts start/auth/test/demo), .env.example, LICENSE (MIT, 2026, Roma Pryvrotskyi), npm install express ws dotenv.
+2. src/words.js: 300+ words tagged with categories (SPEC §6) and findWord(message, word) with every rule in §6.
+3. src/game.js: the full state machine from §5 as a pure class with an injected clock and an event emitter:
+   lobby/join/leave, claim codes (§4), Imposter only from claimed players and not the same twice in a row, hints at 90 s and 150 s,
+   smuggle + accidental decoy tracking, votes (one per player, replaceable, self-votes ignored), the reveal payload (§7, including the
+   "k people read this" count), and scoring.
+4. test/words.test.js and test/game.test.js covering everything above, including a wrong-name claim being rejected.
+Run npm test until it is green. Then commit with a clear message.

@@ -144,6 +144,29 @@ describe("claims and lobby players", () => {
 });
 
 describe("state machine and role selection", () => {
+  test("lobby state exposes its live countdown", () => {
+    const { clock, game } = createGame();
+    game.start();
+    assert.equal(game.getPublicState().remainingMs, DEFAULT_DURATIONS.lobby);
+    clock.tick(1_000);
+    assert.equal(game.getPublicState().remainingMs, DEFAULT_DURATIONS.lobby - 1_000);
+    clock.tick(DEFAULT_DURATIONS.lobby - 1_000);
+    assert.equal(game.state, PHASES.LOBBY);
+    assert.equal(game.getPublicState().remainingMs, DEFAULT_DURATIONS.lobby);
+  });
+
+  test("a real round exposes the new-round signal for four seconds", () => {
+    const { clock, game } = createGame();
+    claimPlayers(game);
+    game.start();
+    game.go();
+    assert.equal(game.getPublicState().newRound, true);
+    clock.tick(3_999);
+    assert.equal(game.getPublicState().newRound, true);
+    clock.tick(1);
+    assert.equal(game.getPublicState().newRound, false);
+  });
+
   test("auto-starts after 60 seconds only with at least three claimed players", () => {
     const { clock, game } = createGame();
     claimPlayers(game, ["alice", "bruno"]);
@@ -156,6 +179,8 @@ describe("state machine and role selection", () => {
 
     const created = game.createClaim("session-chloe", "chloe");
     game.claim(created.code, "chloe", "user-3");
+    assert.equal(game.state, PHASES.LOBBY);
+    clock.tick(DEFAULT_DURATIONS.lobby);
     assert.equal(game.state, PHASES.ROUND);
     assert.notEqual(game.currentRound.impostorId, "guest");
   });
@@ -524,5 +549,40 @@ describe("voting and scoring", () => {
     assert.equal(game.lastReveal.verdict, "GOT AWAY");
     assert.equal(game.scores.get(chloe.id), 0);
     assert.equal(game.scores.get(alice.id), 3);
+  });
+
+  test("crowd votes break seated ties but cannot decide without seated votes", () => {
+    const { game } = createGame();
+    const [alice, bruno, chloe] = startRound(game);
+    game.recordMessage({ userId: alice.id, text: "This candle smells lovely" });
+    game.beginVote();
+    game.vote(alice.id, chloe.id);
+    game.vote(bruno.id, alice.id);
+    game.vote(chloe.id, bruno.id);
+    const crowd = game.vote({ userId: "crowd-1", login: "viewer", transport: "twitch" }, { number: 1 });
+    assert.equal(crowd.ok, true);
+    assert.equal(crowd.crowd, true);
+    assert.equal(game.getTallies().find(({ player }) => player.id === alice.id).chatVotes, 1);
+    game.finishVote();
+    assert.equal(game.lastReveal.verdict, "CAUGHT");
+
+    const second = createGame().game;
+    const [nextAlice] = startRound(second);
+    second.recordMessage({ userId: nextAlice.id, text: "This candle smells lovely" });
+    second.beginVote();
+    second.vote({ userId: "crowd-2", login: "viewer_two", transport: "twitch" }, { number: 1 });
+    second.finishVote();
+    assert.equal(second.lastReveal.verdict, "GOT AWAY");
+  });
+
+  test("reveal includes one concise case-file line for chat", () => {
+    const { clock, game } = createGame();
+    const [alice, bruno] = startRound(game);
+    clock.tick(72_000);
+    game.recordMessage({ userId: alice.id, text: "This candle smells lovely" });
+    game.recordMessage({ userId: bruno.id, text: "That sounds cozy" });
+    game.beginVote();
+    game.finishVote();
+    assert.equal(game.lastReveal.caseFileMessage, "Round 1: CANDLE hid in plain sight for 1:12 · 1 read it");
   });
 });

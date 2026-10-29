@@ -1,0 +1,6 @@
+Step 14 is committed. Step 15: rewrite the rehearsal simulator (`npm run sim`, src/sim.js + test/sim.test.js) from scratch for v3, so it exercises the new flows. Read the current README section about it first and keep its promise: it connects to the real channel and bot like a normal stream, seats a few simulated players inside the game, their names start with "Sim", their lines show on the overlay and in the reveal, and they never post in Twitch chat.
+- Sim players join through the v3 path (name check satisfied internally, `!join CODE` equivalent), get stable numbers, chat with short believable lines on a topic, and a simulated Imposter smuggles its word in a natural sentence at a random time between 0:40 and 2:20.
+- During VOTE they vote by number with a small random delay, some within the 6 s grace window, so the vote bars and grace logic are visible on stream.
+- Options: --players N (default 3), --rounds N, --fast (shorter phases for testing), --seed for repeatable runs.
+- The overlay must label sim players clearly (a small "SIM" tag on their board row and slips) so a viewer never mistakes them for real people.
+Tests: seeded runs are deterministic; sim players never send to Twitch; SIM tag is in the public state. Keep npm test green. Do not commit; give me the commit message.

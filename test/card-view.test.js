@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { cardScreen, voteProgress } from "../public/card-view.js";
+import { cardRenderSignature, cardScreen, voteProgress } from "../public/card-view.js";
 
 describe("card screen selection", () => {
   test("selects every joining state, including wrong-account recovery", () => {
@@ -23,5 +23,22 @@ describe("card screen selection", () => {
     assert.equal(voteProgress({ phaseDurationMs: 30_000, remainingMs: 19_000 }), 19 / 30);
     assert.equal(voteProgress({ phaseDurationMs: 30_000, remainingMs: 2_000 }, 3_000), 0);
     assert.equal(voteProgress({ phaseDurationMs: 30_000, remainingMs: 40_000 }), 1);
+  });
+
+  test("ignores unrelated featured-table chat when deciding whether to redraw the card", () => {
+    const base = {
+      linked: true,
+      state: "ROUND",
+      roundNumber: 3,
+      role: "DETECTIVE",
+      onStream: true,
+      messages: [{ id: "one", text: "hello", player: { id: "p1" } }],
+    };
+    assert.equal(cardRenderSignature(base), cardRenderSignature({
+      ...base,
+      remainingMs: 12_000,
+      messages: [...base.messages, { id: "two", text: "unrelated chat", player: { id: "p2" } }],
+    }));
+    assert.notEqual(cardRenderSignature(base), cardRenderSignature({ ...base, delivered: true }));
   });
 });

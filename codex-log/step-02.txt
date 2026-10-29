@@ -1,0 +1,20 @@
+Step 1 is committed (I committed it outside the sandbox). Step 2: connect it to Twitch and serve it. Three small fixes first:
+a) Reveal caption: "Nobody noticed." is only true when the Imposter got away. When CAUGHT, say "{k} people read this. Someone noticed." Add a test.
+b) If the word was never smuggled, the verdict must not be "GOT AWAY". Use "WORD NEVER LANDED", score 0 for the Imposter, and detectives who voted right still get +1. Add a test.
+c) Lobby auto-start: if the 60 s lobby timer fires with fewer than 3 claimed players, re-arm it instead of going silent.
+
+Then build (SPEC §3, §4, §9):
+1. src/auth.js (npm run auth): a one-time OAuth authorization-code flow on http://localhost:3000/auth/callback with scopes
+   user:read:chat user:write:chat user:bot channel:bot. Save tokens to .tokens.json. Print which login was authorized. Also export refresh() for 401s.
+2. src/twitch.js: Helix helpers (users by login with cached avatars, channel info, send chat via POST /helix/chat/messages with a 1.5 s queue),
+   an EventSub WebSocket client (welcome → subscribe channel.chat.message v1 with {broadcaster_user_id, user_id: bot}, keepalive watchdog,
+   session_reconnect, exponential backoff on drop), and token refresh on 401. Ignore messages from the bot's own user id ONLY when they start with the bot's
+   prefix "🕵️" or are game announcements, because in our demo the bot and the broadcaster are the same account and the broadcaster also plays.
+3. src/server.js (npm start): express + ws on port 3000.
+   - Routes: /overlay, /card and /host static pages (placeholders for now: simple HTML that prints the live state JSON); /api/card (session cookie);
+     POST /api/card/start {login} → claim code; POST /api/host/:action for start/go/vote/next/end/reset.
+   - A WebSocket /ws?view=overlay|card|host that pushes public state to overlays/hosts and private card state only to the matching session.
+   - Wire chat commands from §9 to the game. Post bot announcements from game events (lobby open with PUBLIC_URL/card, round start, hints, vote, reveal botMessage).
+   - If Twitch credentials are missing, run in offline mode so the overlay can be developed with npm run demo later.
+4. Tests for command parsing and the claim route. Keep npm test green.
+Do not try to git commit (the sandbox blocks .git); just tell me the commit message.

@@ -1,0 +1,33 @@
+Step 2 is committed. Step 3: the three real pages, replacing the placeholders. The attached images are the approved "Case File" concept frames
+(round, vote, reveal, phone card). Match their look closely: kraft paper and pale cork, paper evidence slips with red pins, Polaroid avatars,
+red rubber stamps, a yellow highlighter, a typewriter font for chat text, a tall condensed bold font for headings, a thin red string, flat and clean.
+Text in the frames is placeholder; use live data.
+
+Fonts: download OFL fonts into public/fonts and self-host them with @font-face: "Courier Prime" (chat text) and "Oswald" 600/700 (headings),
+from the google/fonts GitHub repo (ofl/courierprime, ofl/oswald). Add public/fonts/OFL.txt.
+
+1. public/overlay.(html|css|js): 1920×1080, body background transparent (OBS browser source). It connects to /ws?view=overlay and reconnects.
+   - IDLE: only a small "SUS WORD" tag in the bottom-right corner.
+   - LOBBY: right column "SUS WORD · LOBBY" with the join line "Type !join · get your card at {cardUrl}", Polaroids pinned as people join (🔒 = claimed),
+     and "Need 3 card holders · {n}/3".
+   - ROUND (frame 1): right column 1340–1900 px with the header, a timer ring (SVG, red arc draining, ≥96 px digits), two Wordle-style flip hint cards
+     that flip open at the hint events, and player Polaroids with message counts that bump and wiggle on each message. In the bottom strip
+     (y 860–1060, x 40–1300), the latest 3 player messages slide in as pinned paper slips. The webcam (top-left) and center stay empty.
+   - VOTE (frame 2): "WHO IS SUS?" with a countdown, a row per suspect with red marker tally strokes drawn by animation as votes arrive
+     (5-bar tally groups), and a "Vote in chat: !vote name" slip.
+   - REVEAL (frame 3, full screen, about 20 s): the exact sequence in SPEC §7. Dim, then "THE IMPOSTER WAS…" with shuffling Polaroids,
+     a flip to the Imposter, and the IMPOSTER stamp slamming down (scale 1.6→1 plus a small screen shake).
+     Then the rewind: the round's messages scroll backward fast as slips, with a running-back timestamp counter, and ease to a stop on the evidence message.
+     That message grows, and a highlighter sweep animates across the exact characters [index, index+length]. Then the caption, the verdict slip
+     (GOT AWAY / CAUGHT / WORD NEVER LANDED stamped), the sneakiness line, and a mini leaderboard. Show accidental decoys as small slips if any.
+     If nothing was smuggled, show the word crossed out.
+   - Use CSS + the Web Animations API only. Short WebAudio sounds (synthesized, no files): a soft thud for stamps, a tick in the last 10 s, and a rewind whirr.
+   - Names ≥28 px. Escape all user text (never innerHTML with chat content).
+2. public/card.(html|css|js), mobile first (frame 4):
+   enter your Twitch name → shows "Type !claim CODE in chat" with a copy button → once linked, a waiting screen → each round shows the role.
+   - IMPOSTER: "TOP SECRET" stamp, the word on a highlighted slip, the mission, a timer, and "Not delivered yet" / "✓ Delivered".
+   - DETECTIVE: a case file saying someone is hiding a word.
+   - Big tap targets. It must survive a page reload (cookie session).
+3. public/host.(html|js): a simple, clean control panel with Start / Go / Vote now / Next / End / Reset, the live state, the player list and the card URL.
+4. Add a quick visual test page /overlay?mock=round|vote|reveal that renders each phase from fixture data, so screenshots can be taken without a live game.
+Keep npm test green. Do not commit; give me the commit message.

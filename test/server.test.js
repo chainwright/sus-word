@@ -213,6 +213,10 @@ test("join aliases reply once and !join CODE links the matching account", async 
   assert.equal((await service.handleChatMessage({ ...chatter, text: "join " })).replied, false);
   assert.equal(messages.filter((message) => message.includes("almost!")).length, 1);
 
+  assert.equal((await service.handleChatMessage({ ...chatter, text: "!join" })).replied, true);
+  assert.equal((await service.handleChatMessage({ ...chatter, text: "!join" })).replied, false);
+  assert.equal(messages.filter((message) => message.includes("get your secret card")).length, 1);
+
   const claim = game.createClaim({ sessionId: "alice-session", login: "alice" });
   const linked = await service.handleChatMessage({ ...chatter, text: `!join ${claim.code}` });
   assert.equal(linked.ok, true);
@@ -289,14 +293,25 @@ test("early number votes are saved with one reply and rejected votes get feedbac
   assert.equal(messages.at(-1), "@bruno there is no player 99 at your table.");
   await service.handleChatMessage({ ...base, text: "2" });
   assert.equal(messages.at(-1), "@bruno you can't vote for yourself.");
-  await service.handleChatMessage({
+  const beforeCrowd = messages.length;
+  const crowdVote = await service.handleChatMessage({
     id: "outsider-vote",
     userId: "outsider",
     login: "outsider",
     displayName: "Outsider",
     text: "1",
   });
-  assert.equal(messages.at(-1), "@outsider you're not seated this round.");
+  assert.equal(crowdVote.ok, true);
+  assert.equal(crowdVote.crowd, true);
+  assert.equal(messages.length, beforeCrowd);
+  await service.handleChatMessage({
+    id: "outsider-bad-vote",
+    userId: "another-outsider",
+    login: "another_outsider",
+    displayName: "Another outsider",
+    text: "99",
+  });
+  assert.equal(messages.length, beforeCrowd);
   assert.equal(game.currentRound.messages.length, 0);
   game.reset();
 });
@@ -329,6 +344,8 @@ test("bot announcements use v3 copy and every message stays within 500 character
   assert.ok(messages.includes("⏳ 10 seconds left to vote"));
   assert.ok(messages.every((message) => message.length <= 500));
   assert.ok(splitChatMessage("word ".repeat(200)).every((message) => message.length <= 500));
+  game.finishVote();
+  assert.ok(messages.some((message) => /^Round 1: [A-Z]+ (?:hid in plain sight|never landed)/.test(message)));
   game.reset();
   void service;
 });

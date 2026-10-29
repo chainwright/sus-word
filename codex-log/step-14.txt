@@ -1,0 +1,11 @@
+Step 13 is committed. Step 14: polish found by capturing the overlay at 1280×720 and the reveal frame by frame (mocks reveal2?play=1, round12, vote, lobby-first, reveal-miss).
+Reveal:
+- The lifted message card scales from the wrong origin and is cut off on the left ("@pixel_mara" → "el_mara:"). Scale from its centre and keep the whole card inside the camera area (left 24 px .. right edge of the camera area).
+- "1 people read it" → "1 person read it"; pluralise everywhere.
+- reveal-miss: the line "THE WORD NEVER MADE IT OUT" appears twice and the word is struck through inside the message row. Show: avatar, @name, "WORD: LEMON", one big line "THE WORD NEVER MADE IT OUT", grey "NEVER DELIVERED" stamp. No fake message row.
+Readability (SPEC_v3 §4: ≥20 px for anything a viewer acts on, ≥15 px for labels):
+- Board names are cut to 5–6 letters ("drovo…", "night…"). In 2 columns give the name the space: smaller avatar (24 px), number badge 26 px, message-count chip moved below or removed; shrink to 15 px Oswald before ellipsis so "drovosek7777", "romabuilds", "nightbyte", "tomtom_irl", "pixel_mara" fit.
+- Message-count chips and the leaderboard are about 10 px. Leaderboard rows ≥16 px; counts ≥15 px.
+- Vote banner instruction text ≥20 px.
+- Lobby-first footer "Players with cards: 12 / 3 needed" → "12 players ready · 3 needed to start".
+Add a test or a mock assertion for the pluralisation. Keep npm test green. Do not commit; give me the commit message.

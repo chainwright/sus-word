@@ -1,0 +1,27 @@
+Step 6: redesign the streamer host page (public/host.html/.css/.js) to match the attached approved concept design/host_desk.jpg,
+"the detective's desk at night". The current host page looks flat and dated. This page appears in our demo video, so it must look premium.
+
+Real image assets are already in public/img/ (use them, don't redraw them):
+- desk.jpg: the full-bleed background (dark walnut desk, lamp glow top-left, props at the edges). Use background-size: cover.
+- stopwatch.webp (transparent): the round timer. Overlay the live time (mm:ss, big, in Oswald, ink color) centered on its blank ivory dial,
+  plus a thin red CSS sweep hand rotating with the remaining time. Under it, a paper label "ROUND n" / "LOBBY" / "VOTE" / "REVEAL".
+- microphone.webp (transparent): the mic toggle. Clicking the mic (or a brass toggle switch next to it with "MIC ON/OFF") turns streamer voice on/off,
+  with the existing Web Speech logic. While on, a warm glow sits behind it.
+- vu_meter.webp (transparent): a live VU meter. Draw a black CSS needle pivoting from the bottom center of its face, driven by the real mic level
+  (a getUserMedia + AnalyserNode RMS; smoothing; idle at -20 when the mic is off).
+
+Layout at 1440×900 (scale the whole stage to fit any viewport, like the overlay's stage, never scroll):
+- Top center: a torn kraft paper label "SUS WORD"; to its right "● LIVE ON TWITCH" (red dot pulsing when the Twitch connection is up, "OFFLINE" otherwise).
+- Left: the two hint index cards (lined, with a pin): "CATEGORY:" value or a padlock, "STARTS WITH:" value or a padlock. They flip when revealed.
+  Below them, the microphone + toggle and the VU meter, and a torn paper strip "LAST HEARD: '…'" showing the latest recognized phrase (interim in grey italics).
+- Center: the stopwatch pinned on a paper sheet with red string to the hint cards (thin SVG lines).
+- Bottom center: five big wooden rubber-stamp buttons START, GO, VOTE NOW, NEXT, END (stamp-ink colors: black, green, black, navy, red),
+  each with a press-down animation and a short synthesized "thunk"; disabled ones look faded. RESET is a small text link under them with a confirm.
+- Right: a kraft folder "PLAYERS" with Polaroid avatars (Twitch avatars, name, a small message-count badge, 🔒 when claimed) in a 2-column grid,
+  and below it a clipped paper note with the live chat feed (last 6 player messages, typewriter font, voice lines marked 🎙).
+  NEVER show who the Imposter is or the secret word on this page: the streamer can be a player.
+- Bottom right: a paper tag "PLAYER CARD LINK" with the card URL and a copy button.
+- Keep the existing warnings (e.g. "You are not in the game yet: type !join and claim your card") as a small typed note.
+Self-hosted fonts only (already in public/fonts). Escape all user text. Keep all existing host actions and WebSocket behavior working.
+Add /host?mock=round to render a filled state from fixture data (no mic needed) so I can screenshot it.
+Keep npm test green. Do not commit; give me the commit message.

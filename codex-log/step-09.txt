@@ -1,0 +1,12 @@
+Step 9: implement TABLES_SPEC.md sections 1–6, 9, 10 and 11 in the game logic and server (no UI changes yet; step 10 will do the screens).
+Read TABLES_SPEC.md fully first. Keep the existing single-table behavior as the special case of one table, so all current tests keep passing
+(update a test only where the spec deliberately changes a rule, and say which).
+- src/game.js: tables, per-table roles/words/messages/smuggles/decoys/accusations/votes, crowd handling, featured table, final table, scoring.
+  Expose in getPublicState(): featured table full detail (same shape the overlay already uses), plus a compact `tables` summary
+  [{id, playerCount, phaseResult?}], crowd count, and the leaderboard. getCard(sessionId) returns the player's own table view per spec §8.
+  Never leak other tables' words or any Imposter identity in public state before REVEAL.
+- src/commands.js: parse `!accuse name word` (also `@name`).
+- src/server.js: route accuse; host actions `feature/:tableId` and `final`; rate-safe bot messages per §10 (batch busted lines every 10 s).
+- src/demo.js: add `--players N` (default 4) to simulate N virtual players across tables with natural chat, smuggles, some accusations (right and wrong), and votes.
+- Tests per §11, including the 200-player performance test.
+Keep npm test green. Do not commit; give me the commit message and a short list of any spec decisions you had to make.
