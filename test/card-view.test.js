@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { cardRenderSignature, cardScreen, voteProgress } from "../public/card-view.js";
+import {
+  cardRenderSignature,
+  cardScreen,
+  vibrateIfActivated,
+  voteProgress,
+} from "../public/card-view.js";
 
 describe("card screen selection", () => {
   test("selects every joining state, including wrong-account recovery", () => {
@@ -40,5 +45,21 @@ describe("card screen selection", () => {
       messages: [...base.messages, { id: "two", text: "unrelated chat", player: { id: "p2" } }],
     }));
     assert.notEqual(cardRenderSignature(base), cardRenderSignature({ ...base, delivered: true }));
+  });
+
+  test("vibrates only after a user gesture and when the API exists", () => {
+    const calls = [];
+    const inactive = {
+      userActivation: { hasBeenActive: false },
+      vibrate: (pattern) => calls.push(pattern),
+    };
+    assert.equal(vibrateIfActivated(inactive), false);
+    assert.equal(vibrateIfActivated({ vibrate: inactive.vibrate }), false);
+    assert.equal(vibrateIfActivated({ userActivation: { hasBeenActive: true } }), false);
+    assert.deepEqual(calls, []);
+
+    const active = { ...inactive, userActivation: { hasBeenActive: true } };
+    assert.equal(vibrateIfActivated(active), true);
+    assert.deepEqual(calls, [[80, 60, 80]]);
   });
 });

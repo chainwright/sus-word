@@ -370,7 +370,7 @@ test("early number votes are saved with one reply and rejected votes get feedbac
   game.reset();
 });
 
-test("bot announcements stay within 500 characters and delay the case file until reveal hold ends", () => {
+test("bot announcements post the case file at reveal end before the next lobby", () => {
   const messages = [];
   const scheduled = [];
   let nextTimerId = 1;
@@ -414,10 +414,14 @@ test("bot announcements stay within 500 characters and delay the case file until
   let caseFiles = messages.filter((message) => /^Round 1: [A-Z]+ (?:slipped in at|never landed)/.test(message));
   assert.equal(caseFiles.length, 0);
   assert.equal(scheduled.length, 1);
-  assert.equal(scheduled[0].delay, 26_000);
+  assert.equal(scheduled[0].delay, 20_000);
   scheduled[0].callback();
   caseFiles = messages.filter((message) => /^Round 1: [A-Z]+ (?:slipped in at|never landed)/.test(message));
   assert.equal(caseFiles.length, 1);
+  game.nextRound();
+  const caseIndex = messages.findIndex((message) => /^Round 1: [A-Z]+ (?:slipped in at|never landed)/.test(message));
+  const nextLobbyIndex = messages.findLastIndex((message) => message.startsWith("🕵️ Sus Word! Type !join"));
+  assert.ok(caseIndex < nextLobbyIndex);
   assert.equal(messages.some((message) => message.includes("was the Imposter!")), false);
   game.reset();
   void service;

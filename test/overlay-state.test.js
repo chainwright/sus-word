@@ -3,6 +3,10 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
 import {
+  caseFileHeadline,
+  championBoardModel,
+  missedWordCopy,
+  roundRule,
   shouldAnimateVoteBanner,
   syncBoardNoteVisibility,
   updateCompactLobbyClock,
@@ -93,6 +97,50 @@ test("the reveal payoff is at least as large as board player names", async () =>
   assert.equal(playerSize, 20);
   assert.ok(payoffSize >= playerSize);
   assert.ok(twoImpostorSize >= playerSize);
+});
+
+test("the reveal board promotes the case-file summary to its headline", () => {
+  assert.equal(caseFileHeadline({
+    caseFileMessage: "Round 3: LEMON slipped in at 1:48 · 9 read it · nobody noticed",
+  }), "LEMON slipped in at 1:48 · 9 read it · nobody noticed");
+  assert.equal(caseFileHeadline({
+    word: "lemon",
+    impostor: { login: "pixel_mara" },
+    evidence: null,
+  }), "LEMON never landed · @pixel_mara never found an opening");
+});
+
+test("a missed word has one-line stamp copy plus the real case details", async () => {
+  assert.deepEqual(missedWordCopy({ impostor: { login: "pixel_mara" } }), {
+    stamp: "NEVER DELIVERED",
+    headline: "THE WORD NEVER LANDED",
+    detail: "@pixel_mara never found an opening · 0 people saw it",
+  });
+  const css = await readFile(new URL("../public/overlay.css", import.meta.url), "utf8");
+  assert.match(css, /\.verdict\.miss\{[^}]*white-space:nowrap/);
+});
+
+test("round rules use singular copy at one-Imposter tables", () => {
+  assert.equal(roundRule(1), "The Imposter hides a word. Detectives hunt.");
+  assert.equal(roundRule(2), "Imposters hide words. Detectives hunt.");
+});
+
+test("vote and CHAT digits match the player-number font size", async () => {
+  const css = await readFile(new URL("../public/overlay.css", import.meta.url), "utf8");
+  assert.match(css, /\.vote-row \.vote-count\{font-size:20px\}/);
+  assert.match(css, /\.chat-vote-label\{font-size:20px\}/);
+  assert.match(css, /\.chat-legend\{font-size:18px\}/);
+  assert.match(css, /\.vote-row\.has-votes \.player-name,\.vote-row\.has-chat-votes \.player-name\{transform:none\}/);
+  assert.match(css, /\.vote-row \.player-name\{[^}]*align-self:start[^}]*line-height:1/);
+});
+
+test("the Champion board replaces vote tallies with five final standings", () => {
+  const players = Array.from({ length: 6 }, (_, index) => ({ id: `p${index}`, login: `player${index}` }));
+  const leaderboard = players.map((player, index) => ({ player, score: 12 - index }));
+  const model = championBoardModel({ champion: players[0], leaderboard });
+  assert.equal(model.title, "FINAL STANDINGS");
+  assert.equal(model.headline, "@player0 · 12 points");
+  assert.equal(model.standings.length, 5);
 });
 
 test("vote instructions follow the table's Imposter count", () => {

@@ -1,0 +1,12 @@
+Step 21. A fresh judge pass on 1a3f0f9 (playtest/JUDGE_2026-10-29.md, section "Re-check 4"; read it in full). Fix each with a test:
+
+1. With the empty note gone, the bottom third of the board on reveal/champion is empty cork. Use that space for something that earns it: e.g. the round's case-file line ("LEMON slipped in at 1:48 · 9 read it · nobody noticed") as the board's headline payoff, or the leaderboard moved down. Make the payoff line the headline of the reveal, not a sub-line.
+2. The chat case-file summary now posts about 6 s into the next lobby. Post it right when the reveal hold ends, before the lobby starts (the order must stay: verdict on the overlay first, then chat). Keep the order test.
+3. The missed-word stamp (reveal-miss) wraps and its card is empty: make the stamp fit on one line and fill the card with the round's real info (the word, who hid it, that it never landed).
+4. The round strip says "Imposters" at one-Imposter tables: use the singular when there is one.
+5. Vote counts and CHAT digits are about 10 px at 480p: raise them to readable (at least the size of the player-number badges) without clipping names.
+6. The Champion screen still shows last round's votes: show the final standings instead.
+7. Add a real browser test of the overlay: a small script (e.g. using the Chrome DevTools protocol or Playwright if already available offline; otherwise headless Chrome with --dump-dom/--screenshot) that loads each overlay mock at 854x480 and asserts no element overflows its board cell and no console errors. Wire it as `npm run test:browser`, and say in the README what it measures. Keep `npm test` browser-free.
+8. Add a GitHub Actions workflow that runs `npm test` on push, and a CI badge in the README.
+
+Check every overlay and card mock in a browser for console errors. Copy this prompt as codex-log/step-21.txt. Keep npm test green. Do not commit; give me one commit message and the list of done items.

@@ -9,7 +9,8 @@
   "scripts": {
     "start": "node src/server.js",
     "auth": "node src/auth.js",
-    "test": "node --test",
+    "test": "node --test test/*.test.js",
+    "test:browser": "node scripts/browser-test.js",
     "demo": "node src/demo.js",
     "sim": "node src/sim.js"
   },

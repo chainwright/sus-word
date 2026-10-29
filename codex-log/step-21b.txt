@@ -1,0 +1,9 @@
+Step 21b. I ran `npm run test:browser` outside the sandbox. It passed overlay lobby-first, lobby, round and round12, then died with:
+Error: ENOTEMPTY: directory not empty, rmdir '/var/folders/.../T/sus-word-browser-XXXX/Default'
+The cleanup in the `finally` block masks the real failure, which happened on the next mock (overlay vote).
+
+1. Make cleanup robust: after Browser.close, wait for the Chrome process to exit (with a timeout, then SIGKILL), and use rm with maxRetries/retryDelay. A cleanup error must never replace the original error: report the original, then the cleanup problem as a warning.
+2. Make each failure say which mock and which check failed (overflow element and its box, or the console message).
+3. Then find and fix whatever really fails on overlay vote (and any later mock) so the whole browser run passes. You can't run Chrome in your sandbox, so reason from the check logic and the vote layout; I'll run it outside and send you the output if it still fails.
+
+Keep npm test green. Copy this prompt as codex-log/step-21b.txt. Do not commit; give me one commit message covering 21 and 21b.

@@ -1,0 +1,5 @@
+Step 21c. `npm run test:browser` outside the sandbox now passes every overlay mock and cards join, join-wrong and claim, then fails:
+Error: card imposter failed
+  - browser-log-error on page · Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet.
+
+Fix it at the source rather than whitelisting the message: only call navigator.vibrate when the page has had a user gesture (navigator.userActivation?.hasBeenActive) and vibrate exists, in one small helper used everywhere card.js vibrates. Add a unit test for the helper. Keep npm test green. Copy this prompt as codex-log/step-21c.txt. Do not commit; give me one commit message covering 21, 21b and 21c.

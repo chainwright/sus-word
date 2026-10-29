@@ -18,6 +18,13 @@ export function voteProgress(state = {}, elapsed = 0) {
   return Math.min(1, remaining / duration);
 }
 
+export function vibrateIfActivated(navigatorLike, pattern = [80, 60, 80]) {
+  if (navigatorLike?.userActivation?.hasBeenActive !== true) return false;
+  if (typeof navigatorLike.vibrate !== "function") return false;
+  navigatorLike.vibrate(pattern);
+  return true;
+}
+
 export function cardRenderSignature(state = {}) {
   const mate = (player = {}) => ({
     id: player.id,

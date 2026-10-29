@@ -1,4 +1,4 @@
-import { cardRenderSignature, cardScreen, voteProgress } from "./card-view.js";
+import { cardRenderSignature, cardScreen, vibrateIfActivated, voteProgress } from "./card-view.js";
 
 const root = document.querySelector("#card-root");
 const connection = document.querySelector("#connection");
@@ -548,7 +548,7 @@ function playChime() {
 
 function runNewRoundSignal(sheet, stamp, highlight) {
   playChime();
-  navigator.vibrate?.([80, 60, 80]);
+  vibrateIfActivated(navigator);
   if (reducedMotion.matches) {
     sheet.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200 });
     return;

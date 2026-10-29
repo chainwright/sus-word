@@ -1,0 +1,19 @@
+Step 21e. Your new check works, and it fails in real Chrome outside the sandbox (npm run test:browser). The first failure is overlay lobby-first at 854x480. Exact output (first lines):
+
+> sus-word@1.0.0 test:browser
+> node scripts/browser-test.js
+
+Error: overlay lobby-first at 854x480 failed
+  - player-name-vertical-clipped on .player-name · drovosek7777 · box {"left":632.3,"top":67.7,"width":73.7,"height":16.7,"clientWidth":111,"clientHeight":25,"scrollWidth":111,"scrollHeight":27}
+  - player-name-vertical-clipped on .player-name · cydshop · box {"left":754.7,"top":67.7,"width":73.7,"height":16.7,"clientWidth":111,"clientHeight":25,"scrollWidth":111,"scrollHeight":27}
+  - player-name-vertical-clipped on .player-name · romabuilds · box {"left":632.3,"top":101.7,"width":73.7,"height":16.7,"clientWidth":111,"clientHeight":25,"scrollWidth":111,"scrollHeight":27}
+  - player-name-vertical-clipped on .player-name · pixel_mara · box {"left":754.7,"top":101.7,"width":73.7,"height":16.7,"clientWidth":111,"clientHeight":25,"scrollWidth":111,"scrollHeight":27}
+  - player-name-vertical-clipped on .player-name · quietfox · box {"left":632.3,"top":135.7,"width":73.7,"height":16.7,"clientWidth":111,"clientHeight":25,"scrollWidth":111,"scrollHeight":27}
+  - player-name-vertical-clipped on .player-name · tomtom_irl · box {"left":754.7,"top":135.7,"width":73.7,"height":16.7,"clientWidth":111,"clientHeight":25,"scrollWidth":111,"scrollHeight":27}
+  - player-name-vertical-clipped on .player-name · nightbyte · box {"left":632.3,"top":169.7,"width":73.7,"height":16.7,"clientWidth":111,"clientHeight":25,"scrollWidth":111,"scrollHeight":27}
+  - player-name-vertical-clipped on .player-name · akira_k · box {"left":754.7,"top":169.7,"width":73.7,"height":16.7,"clientWidth":111,"clientHeight":25,"scrollWidth":111,"scrollHeight":27}
+  - player-name-vertical-clipped on .player-name · lumi · box {"left":632.3,"top":203.7,"width":73.7,"height":16.7,"clientWidth":111,"clientHeight":25,"scrollWidth":111,"scrollHeight":27}
+  - player-name-vertical-clipped on .player-name · bigsalad · box {"left":754.7,"top":203.7,"width":73.7,"height":16.7,"clientWidth":111,"clientHeight":25,"scrollWidth":111,"scrollHeight":27}
+  - player-name-vertical-clipped on .player-name · jo_plays · box {"left":632.3,"top":237.7,"width":73.7,"height":16.7,"clientWidth":111,"clientHeight":25,"scrollWidth":111,"scrollHeight":27}
+
+Each .player-name has scrollHeight 27 vs clientHeight 25 (2 px clipped at the bottom), seen at both 854x480 and 1920x1080 mocks. Fix the name box so the full glyphs fit (line-height/padding/height so that scrollHeight <= clientHeight for Oswald-like fonts with descenders), without making the cells taller than needed or reintroducing name/VOTE overlap. Don't loosen the check. Make the whole `npm run test:browser` pass. Keep npm test green. Copy this prompt as codex-log/step-21e.txt. Do not commit; give one commit message covering 21 through 21e.

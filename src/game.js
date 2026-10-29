@@ -737,6 +737,7 @@ export class Game extends EventEmitter {
     this.#publish("reveal", {
       ...this.lastReveal,
       revealHoldMs: revealDuration + this.durations.cardResultDelay,
+      caseFileDelayMs: revealDuration,
     });
     this.#setTimer("reveal", revealDuration, () => this.nextRound());
     return { ok: true, state: this.state, reveal: this.lastReveal, revealDuration };

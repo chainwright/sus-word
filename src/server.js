@@ -121,12 +121,24 @@ export function createSusWordServer(options = {}) {
   const aliasReplies = new Set();
   const joinReplies = new Set();
   const joinReplyPending = new Set();
-  const caseFileTimers = new Set();
+  const pendingCaseFiles = new Set();
   let lobbyAnnouncementHasLink = false;
   let lobbyAnnouncementSequence = 0;
   const serverNow = options.now ?? (() => Date.now());
   const scheduleTimeout = options.setTimeout ?? setTimeout;
   const cancelTimeout = options.clearTimeout ?? clearTimeout;
+
+  function clearCaseFiles() {
+    for (const pending of pendingCaseFiles) cancelTimeout(pending.timer);
+    pendingCaseFiles.clear();
+  }
+
+  function flushCaseFiles() {
+    for (const pending of [...pendingCaseFiles]) {
+      cancelTimeout(pending.timer);
+      pending.send();
+    }
+  }
 
   if (env.CHANNEL_LOGIN) game.configureStreamer?.(env.CHANNEL_LOGIN);
 
@@ -238,10 +250,10 @@ export function createSusWordServer(options = {}) {
       joinReplyPending.clear();
       lobbyAnnouncementHasLink = false;
       lobbyAnnouncementSequence += 1;
-      for (const timer of caseFileTimers) cancelTimeout(timer);
-      caseFileTimers.clear();
+      clearCaseFiles();
     }
     if (to === PHASES.LOBBY) {
+      flushCaseFiles();
       lobbyAnnouncementHasLink = false;
       lobbyAnnouncementSequence += 1;
       const sequence = lobbyAnnouncementSequence;
@@ -279,19 +291,23 @@ export function createSusWordServer(options = {}) {
     waitlistAnnouncementRound = game.roundNumber;
     announce("🕵️ New players are waiting for the next round.");
   });
-  game.on("reveal", ({ caseFileMessage, otherTablesMessage, revealHoldMs }) => {
+  game.on("reveal", ({ caseFileMessage, otherTablesMessage, caseFileDelayMs }) => {
     flushBusted();
-    let timer;
-    let fired = false;
-    timer = scheduleTimeout(() => {
-      fired = true;
-      if (timer !== undefined) caseFileTimers.delete(timer);
-      announce(caseFileMessage);
-      announce(otherTablesMessage);
-    }, Math.max(0, Number(revealHoldMs) || 0));
-    if (!fired) {
-      timer?.unref?.();
-      caseFileTimers.add(timer);
+    const pending = {
+      timer: null,
+      sent: false,
+      send() {
+        if (pending.sent) return;
+        pending.sent = true;
+        pendingCaseFiles.delete(pending);
+        announce(caseFileMessage);
+        announce(otherTablesMessage);
+      },
+    };
+    pending.timer = scheduleTimeout(pending.send, Math.max(0, Number(caseFileDelayMs) || 0));
+    if (!pending.sent) {
+      pending.timer?.unref?.();
+      pendingCaseFiles.add(pending);
     }
   });
 
@@ -742,8 +758,7 @@ export function createSusWordServer(options = {}) {
     if (bustedTimer) clearTimeout(bustedTimer);
     bustedTimer = null;
     bustedBatch = [];
-    for (const timer of caseFileTimers) cancelTimeout(timer);
-    caseFileTimers.clear();
+    clearCaseFiles();
     for (const client of clients) client.socket.close();
     await new Promise((resolveClose) => {
       if (!started) return resolveClose();

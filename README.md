@@ -1,5 +1,7 @@
 # Sus Word
 
+[![Tests](https://github.com/chainwright/sus-word/actions/workflows/test.yml/badge.svg)](https://github.com/chainwright/sus-word/actions/workflows/test.yml)
+
 Sus Word is a live Twitch chat game about hiding an ordinary word in plain sight. Players get a private role card, keep chatting, vote by stable player number, and watch the stream rewind the evidence.
 
 ![The Case File reveal](design/A_casefile_reveal.jpg)
@@ -41,6 +43,8 @@ One table is the whole game for a small stream. When more people claim cards, Su
 
 Tested in rehearsal with up to 200 virtual players; a 200-player round resolves in a few milliseconds.
 
+`npm test` runs the fast, browser-free logic suite. `npm run test:browser` launches local Chrome and loads every overlay mock at 854×480 and 1920×1080, checking real computed layout for board-cell overflow, clipped fixture names, name/VOTE overlap, and console errors. It also opens every card mock at 390×844 and checks its console. Set `CHROME_PATH` if Chrome is not in a standard location.
+
 ## Streamer voice
 
 Open the host page in Google Chrome and turn on **🎙 Mic**. Allow microphone access when Chrome asks. Final speech chunks count as the broadcaster's game messages, so the streamer can be suspected or can hide the word out loud as the Imposter. The broadcaster still needs to join and claim a card first.
@@ -69,7 +73,7 @@ The card page first checks that the Twitch name spoke in chat recently, then giv
 
 ## Built with Codex
 
-Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first rehearsal simulator was drafted outside Codex and later rewritten in Codex (step 15). The current game is covered by 99 automated tests:
+Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first rehearsal simulator was drafted outside Codex and later rewritten in Codex (step 15). The current game is covered by 106 browser-free automated tests, plus the real-Chrome mock check:
 
 1. Pure game logic, word detection, scoring, and tests.
 2. Twitch OAuth, EventSub chat, server routes, and live state.
@@ -91,3 +95,4 @@ Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first reh
 18. A 480p vote-board pass that removed the padding regression for the 12 reviewed fixture names; its test measures the 73.7 px name-column budget at 854×480 without claiming browser font measurement.
 19. The strict 480p vote-board re-check, reliable join replies, accurate case-file copy, and partial CHAT tie-breaks.
 20. Reveal-board regression fixes, readable payoff copy, spoiler-safe case-file timing, and honest layout-budget coverage.
+21. Case-file headline and miss-frame polish, readable vote totals, final standings, real Chrome layout checks, and push CI.

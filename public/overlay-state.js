@@ -47,6 +47,47 @@ export function syncBoardNoteVisibility(target) {
   return visible;
 }
 
+export function roundRule(impostorCount = 1) {
+  return Number(impostorCount) > 1
+    ? "Imposters hide words. Detectives hunt."
+    : "The Imposter hides a word. Detectives hunt.";
+}
+
+export function caseFileHeadline(reveal = {}) {
+  const supplied = String(reveal?.caseFileMessage || "").replace(/^Round\s+\d+:\s*/i, "").trim();
+  if (supplied) return supplied;
+  const result = reveal?.imposters?.[0] || reveal || {};
+  const word = String(result.word || "WORD").toUpperCase();
+  if (!result.evidence) {
+    return `${word} never landed · @${result.impostor?.login || "imposter"} never found an opening`;
+  }
+  const readers = Number(result.readerCount) || 0;
+  return `${word} slipped in at ${result.elapsed || "0:00"} · ${readers} read it · ${result.verdict === "GOT AWAY" ? "nobody noticed" : "caught"}`;
+}
+
+export function missedWordCopy(result = {}) {
+  return {
+    stamp: "NEVER DELIVERED",
+    headline: "THE WORD NEVER LANDED",
+    detail: `@${result.impostor?.login || "imposter"} never found an opening · 0 people saw it`,
+  };
+}
+
+export function championBoardModel(state = {}) {
+  const reveal = state?.round?.reveal || {};
+  const champion = state?.champion || reveal.champion || null;
+  const standings = reveal.leaderboard || state?.leaderboard || state?.scores || [];
+  const championEntry = standings.find((entry) => (entry.player || entry).id === champion?.id);
+  const score = championEntry?.score ?? champion?.score ?? 0;
+  return {
+    title: "FINAL STANDINGS",
+    meta: "FINAL SCORE",
+    champion,
+    standings: standings.slice(0, 5),
+    headline: `@${champion?.login || "winner"} · ${score} points`,
+  };
+}
+
 export function voteNameColumnBudget(viewportWidth = 854, viewportHeight = 480) {
   const scale = Math.min(viewportWidth / 1280, viewportHeight / 720);
   const boardContentWidth = 396 - (2 * 8) - (2 * 10);

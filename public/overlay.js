@@ -1,7 +1,11 @@
 import { readerCountLabel } from "/display.js";
 import {
+  caseFileHeadline,
+  championBoardModel,
   formatOverlayClock,
+  missedWordCopy,
   overlayRenderPlan,
+  roundRule,
   shouldAnimateVoteBanner,
   syncBoardNoteVisibility,
   updateCompactLobbyClock,
@@ -27,6 +31,7 @@ let audioContext = null;
 let seenAccusations = new Set();
 let accusationsInitialized = false;
 let newRoundShown = null;
+let revealBoardMode = "votes";
 
 function audio() {
   if (!audioContext) audioContext = new AudioContext();
@@ -60,6 +65,7 @@ function el(tag, className = "", text) {
 
 function setBoardNote(...children) {
   const note = $("#board-note");
+  note.className = "board-note paper";
   note.replaceChildren(...children);
   syncBoardNoteVisibility(note);
   return note;
@@ -220,10 +226,11 @@ function renderHints(hints = {}) {
   }
 }
 
-function renderLeaderboard(entries = [], prior = []) {
+function renderLeaderboard(entries = [], prior = [], options = {}) {
   const panel = $("#leaderboard");
-  panel.replaceChildren(el("h3", "", "LEADERBOARD"));
-  entries.slice(0, 3).forEach((entry, index) => {
+  panel.className = `leaderboard${options.final ? " final-standings" : ""}`;
+  panel.replaceChildren(el("h3", "", options.title || "LEADERBOARD"));
+  entries.slice(0, options.limit || 3).forEach((entry, index) => {
     const player = entry.player || entry;
     const old = prior.findIndex((item) => (item.player || item).id === player.id);
     const row = el("div", "leader-row");
@@ -240,6 +247,7 @@ function renderLeaderboard(entries = [], prior = []) {
 
 function renderBoardRoster(players, counts = {}, busted = []) {
   const grid = $("#player-grid");
+  grid.classList.remove("vote-grid");
   const rows = stablePlayers(players).map((player, index) => {
     const count = counts[player.id] || 0;
     const row = playerRow(player, { count, bump: count > (previousCounts[player.id] || 0), talking: count > (previousCounts[player.id] || 0), busted: busted.find((item) => item.impostor?.id === player.id) });
@@ -286,12 +294,13 @@ function renderLobby(next) {
 
 function renderRound(next, newRound = false) {
   const round = next.round || {};
+  const impostorCount = round.impostorCount || next.impostorCount || 1;
   $("#phase-strip").hidden = false;
   $("#strip-title").textContent = next.final ? "FINAL TABLE" : `ROUND ${next.roundNumber} · ${newRound ? "NEW ROLES" : "TALK"}`;
-  $("#strip-rule").textContent = "Imposters hide a word. Detectives hunt.";
+  $("#strip-rule").textContent = roundRule(impostorCount);
   $("#board").hidden = false;
   $("#board-title").textContent = next.final ? "FINAL TABLE" : `ROUND ${next.roundNumber}`;
-  $("#board-meta").textContent = `${round.impostorCount || next.impostorCount || 1} IMPOSTER${(round.impostorCount || next.impostorCount || 1) === 1 ? "" : "S"}`;
+  $("#board-meta").textContent = `${impostorCount} IMPOSTER${impostorCount === 1 ? "" : "S"}`;
   $("#hints").hidden = false;
   renderHints(round.hints || {});
   renderBoardRoster(round.players || next.players || [], round.messageCounts || {}, round.busted || []);
@@ -322,7 +331,9 @@ function renderVote(next, entering = false) {
   $("#board-meta").textContent = instruction.boardMeta;
   $("#hints").hidden = false;
   renderHints(round.hints || {});
-  $("#player-grid").replaceChildren(...players.map((player) => playerRow(player, votePlayerLayout(player, tallies.get(player.id), max, chatMax, showChat))));
+  const grid = $("#player-grid");
+  grid.classList.add("vote-grid");
+  grid.replaceChildren(...players.map((player) => playerRow(player, votePlayerLayout(player, tallies.get(player.id), max, chatMax, showChat))));
   const note = setBoardNote(el("strong", "", "VOTES ARE LIVE"), document.createTextNode(instruction.howTo));
   if (showChat) note.append(el("small", "chat-legend", "CHAT · tie-break only"));
   $("#leaderboard").hidden = true;
@@ -365,9 +376,70 @@ function finalCase(result) {
   card.append(head);
   if (result.evidence) card.append(line, el("p", "reveal-caption", result.caption || "Hidden in plain sight."));
   const verdict = result.verdict || (result.evidence ? "GOT AWAY" : "WORD NEVER LANDED");
-  const displayVerdict = !result.evidence ? "THE WORD NEVER MADE IT OUT" : verdict === "CAUGHT" ? "BUSTED" : verdict;
+  let displayVerdict = verdict === "CAUGHT" ? "BUSTED" : verdict;
+  if (!result.evidence) {
+    const copy = missedWordCopy(result);
+    displayVerdict = copy.stamp;
+    card.append(el("p", "never-delivered-line", copy.headline), el("p", "never-delivered-detail", copy.detail));
+  }
   card.append(el("b", `verdict${verdict === "GOT AWAY" ? " away" : verdict.includes("NEVER") ? " miss" : ""}`, `${displayVerdict}${verdict === "GOT AWAY" ? " +3" : ""}`));
   return card;
+}
+
+function revealTallies(next) {
+  const reveal = next.round?.reveal || {};
+  return new Map((next.round?.tallies || reveal.tallies || []).map((entry) => [entry.player?.id || entry.playerId, entry]));
+}
+
+function renderRevealVoteRows(next) {
+  const tallies = revealTallies(next);
+  const max = Math.max(1, ...[...tallies.values()].map(({ votes = 0 }) => votes));
+  const chatMax = Math.max(1, ...[...tallies.values()].map(({ chatVotes = 0 }) => chatVotes));
+  const showChat = [...tallies.values()].some(({ chatVotes = 0 }) => chatVotes > 0);
+  $("#board-meta").textContent = showChat ? "CHAT · TIE-BREAK ONLY" : "";
+  const grid = $("#player-grid");
+  grid.classList.add("vote-grid");
+  grid.replaceChildren(...stablePlayers(next.round?.players || next.players || []).map((player) => (
+    playerRow(player, votePlayerLayout(player, tallies.get(player.id), max, chatMax, showChat))
+  )));
+}
+
+function renderRevealVotesBoard(next) {
+  revealBoardMode = "votes";
+  $("#board").classList.remove("champion-board");
+  $("#board-title").textContent = "FINAL VOTES";
+  $("#hints").hidden = true;
+  renderRevealVoteRows(next);
+  setBoardNote();
+  $("#leaderboard").hidden = false;
+  renderLeaderboard(next.scores || next.leaderboard || []);
+}
+
+function renderRevealPayoffBoard(next) {
+  revealBoardMode = "payoff";
+  $("#board").classList.remove("champion-board");
+  $("#board-title").textContent = "CASE FILE";
+  $("#hints").hidden = true;
+  renderRevealVoteRows(next);
+  const note = setBoardNote(el("strong", "", "ROUND PAYOFF"), document.createTextNode(caseFileHeadline(next.round?.reveal)));
+  note.classList.add("reveal-payoff");
+  $("#leaderboard").hidden = false;
+  renderLeaderboard(next.round?.reveal?.leaderboard || next.leaderboard || next.scores || [], next.scores || []);
+}
+
+function renderChampionBoard(next) {
+  revealBoardMode = "champion";
+  const model = championBoardModel(next);
+  $("#board").classList.add("champion-board");
+  $("#board-title").textContent = model.title;
+  $("#board-meta").textContent = model.meta;
+  $("#hints").hidden = true;
+  $("#player-grid").classList.remove("vote-grid");
+  $("#player-grid").replaceChildren();
+  const note = setBoardNote(el("strong", "", "CHAMPION"), document.createTextNode(model.headline));
+  note.classList.add("champion-payoff");
+  $("#leaderboard").hidden = false;
+  renderLeaderboard(model.standings, [], { final: true, limit: 5, title: "TOP 5" });
 }
 
 function showRevealEnd(next, results) {
@@ -377,18 +449,7 @@ function showRevealEnd(next, results) {
   results.forEach((result) => cases.append(finalCase(result)));
   layer.append(cases);
   $("#board").hidden = false;
-  $("#board-title").textContent = "FINAL VOTES";
-  $("#hints").hidden = true;
-  const round = next.round || {};
-  const tallies = new Map((round.tallies || next.round?.reveal?.tallies || []).map((entry) => [entry.player?.id || entry.playerId, entry]));
-  const max = Math.max(1, ...[...tallies.values()].map(({ votes = 0 }) => votes));
-  const chatMax = Math.max(1, ...[...tallies.values()].map(({ chatVotes = 0 }) => chatVotes));
-  const showChat = [...tallies.values()].some(({ chatVotes = 0 }) => chatVotes > 0);
-  $("#board-meta").textContent = showChat ? "CHAT · TIE-BREAK ONLY" : "";
-  $("#player-grid").replaceChildren(...stablePlayers(round.players || next.players || []).map((player) => playerRow(player, votePlayerLayout(player, tallies.get(player.id), max, chatMax, showChat))));
-  setBoardNote();
-  $("#leaderboard").hidden = false;
-  renderLeaderboard(next.round?.reveal?.leaderboard || next.leaderboard || next.scores || [], next.scores || []);
+  renderRevealPayoffBoard(next);
   if (!params.has("mock") || params.get("play") === "1") later(() => cases.classList.add("shrunk"), 2_500);
 }
 
@@ -407,6 +468,7 @@ function showTopMoment(next, results) {
   const layer = $("#reveal-layer");
   const champion = next.champion || next.round?.reveal?.champion;
   if (champion) {
+    renderChampionBoard(next);
     layer.replaceChildren();
     const panel = el("section", "champion-moment paper");
     panel.append(el("small", "", "FINAL TABLE"), avatar(champion), el("h1", "", `@${champion.login}`), el("b", "", "CHAMPION"));
@@ -548,17 +610,7 @@ function renderReveal(next) {
   const reveal = next.round?.reveal;
   const results = reveal?.imposters?.length ? reveal.imposters : [reveal].filter(Boolean);
   $("#board").hidden = false;
-  $("#board-title").textContent = "FINAL VOTES";
-  $("#hints").hidden = true;
-  const tallies = new Map((next.round?.tallies || reveal?.tallies || []).map((entry) => [entry.player?.id || entry.playerId, entry]));
-  const leader = Math.max(1, ...[...tallies.values()].map(({ votes = 0 }) => votes));
-  const chatLeader = Math.max(1, ...[...tallies.values()].map(({ chatVotes = 0 }) => chatVotes));
-  const showChat = [...tallies.values()].some(({ chatVotes = 0 }) => chatVotes > 0);
-  $("#board-meta").textContent = showChat ? "CHAT · TIE-BREAK ONLY" : "";
-  $("#player-grid").replaceChildren(...stablePlayers(next.round?.players || next.players || []).map((player) => playerRow(player, votePlayerLayout(player, tallies.get(player.id), leader, chatLeader, showChat))));
-  setBoardNote();
-  $("#leaderboard").hidden = false;
-  renderLeaderboard(next.scores || next.leaderboard || []);
+  renderRevealVotesBoard(next);
   const play = params.get("play") === "1" || !params.has("mock");
   if (!play) {
     if (next.champion || reveal?.champion) showTopMoment(next, results);
@@ -577,24 +629,9 @@ function renderReveal(next) {
 }
 
 function updateRevealBoard(next) {
-  const reveal = next.round?.reveal;
-  const tallies = new Map((next.round?.tallies || reveal?.tallies || []).map((entry) => [entry.player?.id || entry.playerId, entry]));
-  const leader = Math.max(1, ...[...tallies.values()].map(({ votes = 0 }) => votes));
-  const chatLeader = Math.max(1, ...[...tallies.values()].map(({ chatVotes = 0 }) => chatVotes));
-  const showChat = [...tallies.values()].some(({ chatVotes = 0 }) => chatVotes > 0);
-  $("#board-meta").textContent = showChat ? "CHAT · TIE-BREAK ONLY" : "";
-  setBoardNote();
-  $("#player-grid").replaceChildren(...stablePlayers(next.round?.players || next.players || []).map((player) => {
-    const tally = tallies.get(player.id) || {};
-    return playerRow(player, votePlayerLayout(
-      player,
-      tally,
-      leader,
-      chatLeader,
-      showChat,
-    ));
-  }));
-  renderLeaderboard(next.scores || next.leaderboard || []);
+  if (revealBoardMode === "champion") renderChampionBoard(next);
+  else if (revealBoardMode === "payoff") renderRevealPayoffBoard(next);
+  else renderRevealVotesBoard(next);
 }
 
 function animateNewRound() {
@@ -681,7 +718,10 @@ function mockState(kind) {
     const first = { impostor: players[3], word: "lemon", evidence: kind === "reveal-miss" ? null : messages[3], messages, elapsed: "1:48", readerCount: 9, caught: true, verdict: kind === "reveal-miss" ? "WORD NEVER LANDED" : "CAUGHT", caption: kind === "reveal-miss" ? "THE WORD NEVER MADE IT OUT" : "1:48 into the round · 9 people read it · someone noticed" };
     const secondEvidence = { ...messages[1], index: 22, length: 7 };
     const second = { impostor: players[1], word: "blanket", evidence: secondEvidence, messages, elapsed: "0:51", readerCount: 1, caught: false, verdict: "GOT AWAY", caption: "0:51 into the round · 1 person read it · nobody noticed" };
-    base.round.reveal = { ...first, imposters: kind === "reveal2" ? [first, second] : undefined, leaderboard: base.scores.slice(0, 5), tallies };
+    const summary = kind === "reveal-miss"
+      ? "Round 3: LEMON never landed · 0 read it"
+      : "Round 3: LEMON slipped in at 1:48 · 9 read it · caught";
+    base.round.reveal = { ...first, caseFileMessage: summary, imposters: kind === "reveal2" ? [first, second] : undefined, leaderboard: base.scores.slice(0, 5), tallies };
     if (kind === "champion") {
       base.final = true;
       base.champion = players[0];

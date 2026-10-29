@@ -1,0 +1,5 @@
+Step 21d. Regression from 21b, seen in real Chrome screenshots at 854×480 (overlay vote, reveal, reveal-miss): on the board, player names are clipped at the bottom. Underscores and descenders vanish, so "jo_plays" reads "io plavs", "cydshop" reads "cvdshop", "pixel_mara" loses its underscore, "tomtom_irl" too. The "VOTE 5" labels sit right under the clipped names.
+
+Fix: give the name line its full line-height (no overflow clip on the vertical axis; clip only horizontally with ellipsis if needed), and put the VOTE label in its own band below, with no overlap. Every cell must show the full name with descenders and underscores at 854×480 and 1920×1080.
+
+Extend the browser test so this can't come back: for each board name element, assert its scrollHeight <= clientHeight (no vertical clipping) and that it doesn't overlap the VOTE label's box. Keep npm test green. Copy this prompt as codex-log/step-21d.txt. Do not commit; give me one commit message covering 21 through 21d.

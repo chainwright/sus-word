@@ -274,6 +274,7 @@ describe("round messages and reveal payload", () => {
     game.vote(bruno.id, alice.id);
     game.finishVote();
     assert.equal(revealEvent.revealHoldMs, DEFAULT_DURATIONS.revealOne + DEFAULT_DURATIONS.cardResultDelay);
+    assert.equal(revealEvent.caseFileDelayMs, DEFAULT_DURATIONS.revealOne);
 
     const duringReveal = game.getCard(bruno.sessionId);
     assert.equal(duringReveal.revealHold, true);
