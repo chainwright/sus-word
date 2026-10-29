@@ -87,6 +87,7 @@ function playerRow(player, options = {}) {
   row.append(el("b", "player-number", String(player.number || "?")), avatar(player));
   const name = el("strong", `player-name${String(player.login || "").length > 12 ? " long" : ""}`, player.login || "player");
   row.append(name);
+  if (player.simulated) row.append(el("span", "sim-tag", "SIM"));
   if (options.vote) {
     const bar = el("i", "vote-bar");
     bar.style.width = `${options.bar || 0}%`;
@@ -103,6 +104,7 @@ function messageSlip(message, index = 0) {
   const voice = message.source === "voice";
   slip.append(el("strong", "", `${voice ? "🎙 " : ""}${message.player?.login || "player"}${voice ? " (said out loud)" : ""}: `));
   slip.append(document.createTextNode(message.text || ""));
+  if (message.player?.simulated) slip.append(el("span", "sim-tag slip-sim-tag", "SIM"));
   return slip;
 }
 
@@ -250,6 +252,7 @@ function highlightedEvidence(result) {
   const evidence = result.evidence;
   if (!evidence) return { line: null, mark: null };
   const voice = evidence.source === "voice";
+  if (evidence.player?.simulated) line.append(el("span", "sim-tag evidence-sim-tag", "SIM"));
   line.append(document.createTextNode(`${voice ? "🎙 " : ""}${evidence.player?.login || result.impostor?.login}: “`));
   line.append(document.createTextNode(evidence.text.slice(0, evidence.index)));
   const mark = el("mark", "", evidence.text.slice(evidence.index, evidence.index + evidence.length));

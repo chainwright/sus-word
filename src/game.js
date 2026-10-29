@@ -57,6 +57,7 @@ function publicPlayer(player, score = 0) {
     muted: Boolean(player.muted),
     joinedAt: player.joinedAt ?? null,
     messageCount: player.messageCount ?? 0,
+    simulated: Boolean(player.simulated),
     score,
   };
 }
@@ -68,9 +69,10 @@ function userDetails(input, login, details = {}) {
       login: input.login ?? input.userLogin ?? input.chatterLogin,
       displayName: input.displayName ?? input.userName,
       avatar: input.avatar ?? input.profileImageUrl,
+      simulated: input.simulated,
     };
   }
-  return { id: input, login, ...details };
+  return { id: input, login, ...details, simulated: details.simulated };
 }
 
 function stableShuffle(items, random) {
@@ -243,6 +245,7 @@ export class Game extends EventEmitter {
       login: normalized,
       displayName: String(user.displayName ?? known?.displayName ?? user.login ?? normalized),
       avatar: String(user.avatar ?? known?.avatar ?? ""),
+      simulated: Boolean(user.simulated ?? known?.simulated),
     };
     const claimed = Boolean(existing?.claimed
       || [...this.sessions.values()].some((session) => session.userId === id));
@@ -339,6 +342,7 @@ export class Game extends EventEmitter {
       login,
       displayName: options.displayName ?? options.userName ?? login,
       avatar: options.avatar ?? options.profileImageUrl ?? "",
+      simulated: options.simulated,
     });
     const player = this.players.get(id);
     player.claimed = true;

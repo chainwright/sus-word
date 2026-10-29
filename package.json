@@ -11,7 +11,7 @@
     "auth": "node src/auth.js",
     "test": "node --test",
     "demo": "node src/demo.js",
-    "sim": "node src/sim.js --quick"
+    "sim": "node src/sim.js"
   },
   "dependencies": {
     "dotenv": "^18.0.9",

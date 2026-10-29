@@ -24,7 +24,7 @@ Open `http://localhost:3000/host` for controls. For an offline rehearsal, run `n
 
 ## Mixed rehearsal on your real channel
 
-Testing alone? `npm run sim` connects to your real Twitch channel like `npm start`, and also seats three simulated players (`--sim 5` for more). Their names start with "Sim", their lines show on the overlay and in the reveal, and they never post in Twitch chat. You join and claim a card as usual, start rounds with `!sus go` in chat, and play against them: they chat, one of them may be the Imposter and hide the word, and they vote. In this mode the lobby waits for `!sus go` and rounds are 75 seconds.
+Testing alone? `npm run sim` connects to your real Twitch channel like `npm start` and seats three clearly labelled simulated players. Their names start with "Sim", their lines appear on the overlay and in the reveal, and they never post in Twitch chat. Join normally, then start rounds with `!sus go`: they chat, hide a word when dealt Imposter, and vote by number. Use `--players 5`, `--rounds 3`, `--fast`, or `--seed rehearsal-1` for repeatable rehearsals. The lobby waits for `!sus go`.
 
 ## Big chats: tables
 

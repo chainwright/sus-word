@@ -26,5 +26,8 @@
 .case-card.lifted{left:134px;width:600px;transform-origin:center center}
 .never-delivered-line{margin-top:22px;padding:18px 14px;color:#67615b;background:#fff9e7;font:700 34px/1.1 "Oswald";text-align:center}
 .verdict.miss{font-size:36px}
+.sim-tag{position:absolute;right:3px;bottom:2px;padding:1px 4px;color:#fff;background:#315f87;font:700 12px/1 "Oswald";letter-spacing:.06em}
+.slip-sim-tag{right:7px;bottom:5px;font-size:13px}
+.evidence-sim-tag{position:static;display:inline-block;margin-right:7px;vertical-align:2px}
 
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.2s!important;animation-iteration-count:1!important;transition-duration:.2s!important}.rewind:after{display:none}.red-flash{display:none}}
