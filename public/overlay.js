@@ -1,716 +1,499 @@
-import {
-  selectLobbyPlayers,
-  selectRoundPlayers,
-  selectVoteSuspects,
-} from "/display.js";
-
-const stage = document.querySelector("#stage");
-const idleTag = document.querySelector("#idle-tag");
-const board = document.querySelector("#case-board");
-const lobbyView = document.querySelector("#lobby-view");
-const roundView = document.querySelector("#round-view");
-const voteView = document.querySelector("#vote-view");
-const revealView = document.querySelector("#reveal-view");
-const evidenceTray = document.querySelector("#evidence-tray");
-const connectionBadge = document.querySelector("#connection-badge");
-
-let currentState = null;
+const $ = (selector) => document.querySelector(selector);
+const stage = $("#stage");
+const params = new URLSearchParams(location.search);
+const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+let state = null;
 let receivedAt = Date.now();
 let reconnectDelay = 1_000;
 let previousCounts = {};
-let previousTallies = {};
-let previousMessages = [];
-let previousTopPlayerIds = [];
-let revealKey = null;
+let previousHint = {};
+let previousLobbyIds = new Set();
+let lobbyFullUntil = 0;
 let revealTimers = [];
-let lastTickSecond = null;
+let revealKey = "";
+let lastVoteSecond = null;
 let audioContext = null;
 
-function node(tag, className, text) {
-  const element = document.createElement(tag);
-  if (className) element.className = className;
-  if (text !== undefined) element.textContent = text;
-  return element;
-}
-
-function fitStage() {
-  const scale = Math.min(innerWidth / 1920, innerHeight / 1080);
-  stage.style.transform = `scale(${scale})`;
-}
-
-function formatTime(milliseconds) {
-  const seconds = Math.max(0, Math.ceil(milliseconds / 1_000));
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-}
-
-function initials(player) {
-  const name = player?.displayName || player?.login || "?";
-  return name.slice(0, 2).toUpperCase();
-}
-
-function avatarPhoto(player) {
-  const photo = node("div", "polaroid-photo");
-  if (player?.avatar) {
-    const image = node("img");
-    image.src = player.avatar;
-    image.alt = "";
-    image.addEventListener("error", () => image.replaceWith(document.createTextNode(initials(player))));
-    photo.append(image);
-  } else {
-    photo.textContent = initials(player);
-  }
-  return photo;
-}
-
-function polaroid(player, options = {}) {
-  const card = node("article", `polaroid ${options.className || ""}`.trim());
-  card.dataset.playerId = player.id;
-  card.style.setProperty("--tilt", `${options.tilt ?? 0}deg`);
-  card.append(avatarPhoto(player));
-  card.append(node("div", "polaroid-name", options.atName ? `@${player.login}` : player.displayName || player.login));
-  if (options.locked) card.append(node("span", "polaroid-lock", "🔒"));
-  return card;
-}
-
-function paperMessage(message, className = "message-slip") {
-  const slip = node("article", className);
-  const voice = message.source === "voice";
-  if (voice) slip.classList.add("voice-message");
-  const name = message.player?.displayName || message.player?.login || "unknown";
-  const author = node("strong", "", `${voice ? "🎙 " : ""}${name}${voice ? " (said out loud)" : ""}: `);
-  const text = node("span", "", message.text || "");
-  slip.append(author, text);
-  return slip;
-}
-
-function setViews(phase) {
-  const idle = phase === "IDLE";
-  idleTag.hidden = !idle;
-  board.hidden = idle || phase === "REVEAL";
-  lobbyView.hidden = phase !== "LOBBY";
-  roundView.hidden = phase !== "ROUND";
-  voteView.hidden = phase !== "VOTE";
-  evidenceTray.hidden = phase !== "ROUND";
-  revealView.hidden = phase !== "REVEAL";
-}
-
-function renderTableContext(state) {
-  const plate = document.querySelector("#table-plate");
-  const ticker = document.querySelector("#accusation-ticker");
-  const count = state.tables?.length || state.round?.tableCount || 0;
-  const tableId = state.featuredTableId || state.round?.tableId;
-  plate.hidden = !tableId || state.phase === "LOBBY";
-  plate.textContent = state.final
-    ? `FINAL TABLE · ${state.round?.players?.length || state.players.length} players · on stream`
-    : `TABLE ${tableId} of ${count || 1} · ${state.round?.players?.length || state.players.length} players · on stream`;
-  const accusations = (state.round?.accusations || []).slice(-2);
-  ticker.hidden = accusations.length === 0 || state.phase === "LOBBY";
-  ticker.replaceChildren(...accusations.map((entry) => node(
-    "span",
-    entry.correct ? "ticker-hit" : "ticker-miss",
-    entry.correct
-      ? `✅ @${entry.accuser.login} busted @${entry.target?.login || "suspect"}`
-      : `❌ @${entry.accuser.login} guessed wrong`,
-  )));
-}
-
-function renderLobby(state) {
-  document.querySelector("#phase-title").textContent = "SUS WORD";
-  document.querySelector("#round-label").textContent = state.roundNumber ? `· LOBBY · AFTER ROUND ${state.roundNumber}` : "· LOBBY";
-  const roster = document.querySelector("#lobby-roster");
-  const visible = selectLobbyPlayers(state.players);
-  roster.replaceChildren(...visible.map((player, index) => (
-    polaroid(player, { locked: player.claimed, tilt: [-2, 1, -1, 2][index % 4] })
-  )));
-  const overflow = document.querySelector("#lobby-overflow");
-  const hiddenCount = Math.max(0, state.players.length - visible.length);
-  overflow.hidden = hiddenCount === 0;
-  overflow.textContent = `+${hiddenCount} more joined`;
-  document.querySelector("#join-line").textContent = `Type !join · get your card at ${state.cardUrl || `${location.origin}/card`}`;
-  document.querySelector("#claim-count").textContent = state.claimedCount >= 3
-    ? `${state.claimedCount} card holders · ready`
-    : `Need 3 card holders · ${state.claimedCount}/3`;
-}
-
-function revealHint(selector, label, value) {
-  const card = document.querySelector(selector);
-  const strong = card.querySelector("strong");
-  const prior = strong.dataset.value || "";
-  const next = value || "🔒";
-  card.querySelector("span").textContent = label;
-  strong.textContent = next;
-  strong.dataset.value = next;
-  strong.classList.toggle("long", next.length > 7);
-  if (value && prior !== next) {
-    card.animate(
-      [{ transform: "rotateX(0deg)" }, { transform: "rotateX(90deg)" }, { transform: "rotateX(0deg)" }],
-      { duration: 700, easing: "cubic-bezier(.3,.1,.2,1)" },
-    );
-  }
-}
-
-function renderRound(state) {
-  document.querySelector("#phase-title").textContent = "SUS WORD";
-  document.querySelector("#round-label").textContent = state.final ? "FINAL TABLE" : `ROUND ${state.roundNumber}`;
-  revealHint("#category-hint", "CATEGORY", state.round?.hints?.category);
-  revealHint("#letter-hint", "STARTS WITH", state.round?.hints?.letter);
-
-  const roster = state.round?.players || state.players;
-  const visible = selectRoundPlayers(
-    roster,
-    state.round?.messageCounts,
-    state.round?.messageRecency,
-  );
-  const priorTop = new Set(previousTopPlayerIds);
-  const players = document.querySelector("#round-players");
-  const priorPositions = new Map([...players.children].map((card) => [
-    card.dataset.playerId,
-    { left: card.offsetLeft, top: card.offsetTop },
-  ]));
-  players.classList.toggle("compact", visible.length > 4);
-  const cards = visible.map((player, index) => {
-    const tilt = [-2, 1, -1, 2][index % 4];
-    const card = polaroid(player, { className: "round-player", tilt });
-    const count = state.round?.messageCounts?.[player.id] || 0;
-    card.append(node("span", "round-player-count", String(count)));
-    card.dataset.entering = String(previousTopPlayerIds.length > 0 && !priorTop.has(player.id));
-    card.dataset.bumped = String(count > (previousCounts[player.id] || 0));
-    const bust = state.round?.busted?.find(({ impostor }) => impostor?.id === player.id);
-    if (bust) {
-      const mark = node("div", "live-busted-stamp");
-      mark.append(node("strong", "", "BUSTED"), node("small", "", `by @${bust.accuser?.login || "detective"}`));
-      card.append(mark);
-    }
-    return card;
-  });
-  players.replaceChildren(...cards);
-  cards.forEach((card, index) => {
-    const tilt = [-2, 1, -1, 2][index % 4];
-    const prior = priorPositions.get(card.dataset.playerId);
-    if (card.dataset.entering === "true") {
-      card.animate(
-        [
-          { opacity: 0, transform: `translateY(14px) rotate(${tilt}deg) scale(.96)` },
-          { opacity: 1, transform: `translateY(0) rotate(${tilt}deg) scale(1)` },
-        ],
-        { duration: 420, easing: "cubic-bezier(.2,.8,.2,1)" },
-      );
-    } else if (prior && (prior.left !== card.offsetLeft || prior.top !== card.offsetTop)) {
-      card.animate(
-        [
-          { transform: `translate(${prior.left - card.offsetLeft}px, ${prior.top - card.offsetTop}px) rotate(${tilt}deg)` },
-          { transform: `translate(0, 0) rotate(${tilt}deg)` },
-        ],
-        { duration: 420, easing: "cubic-bezier(.2,.8,.2,1)" },
-      );
-    } else if (card.dataset.bumped === "true") {
-      card.animate(
-        [
-          { transform: `rotate(${tilt}deg) scale(1)` },
-          { transform: "rotate(-4deg) scale(1.11)" },
-          { transform: "rotate(3deg) scale(1.05)" },
-          { transform: `rotate(${tilt}deg) scale(1)` },
-        ],
-        { duration: 520, easing: "ease-out" },
-      );
-    }
-  });
-  previousTopPlayerIds = visible.map(({ id }) => id);
-  const overflow = document.querySelector("#round-overflow");
-  const hiddenCount = Math.max(0, roster.length - visible.length);
-  overflow.hidden = hiddenCount === 0;
-  overflow.textContent = `+${hiddenCount} detectives`;
-  previousCounts = { ...(state.round?.messageCounts || {}) };
-
-  const messages = state.round?.latestMessages || [];
-  const priorIds = new Set(previousMessages.map(({ id }) => id));
-  const slips = messages.map((message, index) => {
-    const slip = paperMessage(message);
-    slip.style.setProperty("--tilt", `${[-1.4, .8, -.4][index]}deg`);
-    if (!priorIds.has(message.id)) {
-      slip.animate(
-        [{ transform: "translateY(160px) rotate(3deg)", opacity: 0 }, { transform: `translateY(0) rotate(${[-1.4, .8, -.4][index]}deg)`, opacity: 1 }],
-        { duration: 520, easing: "cubic-bezier(.18,.8,.25,1)" },
-      );
-    }
-    return slip;
-  });
-  evidenceTray.replaceChildren(...slips);
-  previousMessages = messages;
-}
-
-function tallyMarks(count, previous) {
-  const fragment = document.createDocumentFragment();
-  for (let groupStart = 0; groupStart < count; groupStart += 5) {
-    const group = node("span", "tally-group");
-    const groupCount = Math.min(5, count - groupStart);
-    for (let index = 0; index < groupCount; index += 1) {
-      const stroke = node("i", `tally-stroke${index === 4 ? " fifth" : ""}`);
-      if (groupStart + index >= previous) {
-        stroke.animate(
-          [{ transform: `${index === 4 ? "rotate(77deg)" : "rotate(4deg)"} scaleY(0)`, opacity: 0 }, { transform: index === 4 ? "rotate(77deg) scaleY(1)" : "rotate(4deg) scaleY(1)", opacity: 1 }],
-          { duration: 280, delay: index * 55, easing: "ease-out", fill: "both" },
-        );
-      }
-      group.append(stroke);
-    }
-    fragment.append(group);
-  }
-  return fragment;
-}
-
-function renderVote(state) {
-  document.querySelector("#phase-title").textContent = "SUS WORD";
-  document.querySelector("#round-label").textContent = state.final ? "· VOTE · FINAL TABLE" : `· VOTE · ROUND ${state.roundNumber}`;
-  const allTallies = state.round?.tallies || [];
-  const visibleTallies = selectVoteSuspects(allTallies);
-  const rows = visibleTallies.map(({ player, votes }) => {
-    const row = node("article", "vote-row");
-    row.append(polaroid(player, { tilt: -1 }));
-    const slip = node("div", "tally-slip paper-slip");
-    if (votes > 12) {
-      const total = node("strong", "tally-total", `×${votes}`);
-      slip.append(total);
-      if (votes > (previousTallies[player.id] || 0)) {
-        total.animate(
-          [{ opacity: 0, transform: "rotate(-4deg) scale(.75)" }, { opacity: 1, transform: "rotate(-4deg) scale(1)" }],
-          { duration: 320, easing: "cubic-bezier(.2,.9,.2,1.15)" },
-        );
-      }
-    } else {
-      slip.append(tallyMarks(votes, previousTallies[player.id] || 0));
-    }
-    row.append(slip);
-    return row;
-  });
-  document.querySelector("#vote-rows").replaceChildren(...rows);
-  const votesCast = allTallies.reduce((sum, { votes }) => sum + votes, 0);
-  const playerCount = state.round?.players?.length || allTallies.length || state.players.length;
-  document.querySelector("#vote-summary").textContent = `${votesCast} votes cast · ${playerCount} players`;
-  previousTallies = Object.fromEntries(allTallies.map(({ player, votes }) => [player.id, votes]));
-}
-
-function remainingMs() {
-  if (!currentState) return 0;
-  if (Number.isFinite(currentState.remainingMs)) {
-    return Math.max(0, currentState.remainingMs - (Date.now() - receivedAt));
-  }
-  if (currentState.phaseEndsAt) return Math.max(0, currentState.phaseEndsAt - Date.now());
-  return Math.max(0, (currentState.round?.remainingMs || 0) - (Date.now() - receivedAt));
-}
-
-function updateClocks() {
-  if (!currentState) return;
-  const remaining = remainingMs();
-  if (currentState.phase === "ROUND") {
-    document.querySelector("#round-timer").textContent = formatTime(remaining);
-    const duration = Math.max(1, Number(currentState.phaseDurationMs) || 180_000);
-    const progress = Math.min(1, Math.max(0, 1 - remaining / duration));
-    document.querySelector("#round-timer-hand").style.transform = `rotate(${progress * 360}deg)`;
-    const second = Math.ceil(remaining / 1_000);
-    if (second <= 10 && second > 0 && second !== lastTickSecond) playTick();
-    lastTickSecond = second;
-  } else if (currentState.phase === "VOTE") {
-    document.querySelector("#vote-timer").textContent = formatTime(remaining);
-  }
-}
-
 function audio() {
-  const AudioEngine = window.AudioContext || window.webkitAudioContext;
-  if (!AudioEngine) return null;
-  audioContext ||= new AudioEngine();
+  if (!audioContext) audioContext = new AudioContext();
   return audioContext;
 }
 
-function playTick() {
+function tone(frequency, duration = .08, volume = .035, type = "sine") {
   const context = audio();
-  if (!context || context.state !== "running") return;
+  if (context.state !== "running") return;
   const oscillator = context.createOscillator();
   const gain = context.createGain();
-  oscillator.frequency.value = 860;
-  gain.gain.setValueAtTime(.035, context.currentTime);
-  gain.gain.exponentialRampToValueAtTime(.001, context.currentTime + .045);
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(frequency, context.currentTime);
+  gain.gain.setValueAtTime(volume, context.currentTime);
+  gain.gain.exponentialRampToValueAtTime(.0001, context.currentTime + duration);
   oscillator.connect(gain).connect(context.destination);
   oscillator.start();
-  oscillator.stop(context.currentTime + .05);
+  oscillator.stop(context.currentTime + duration);
 }
 
-function playThud() {
-  const context = audio();
-  if (!context || context.state !== "running") return;
-  const oscillator = context.createOscillator();
-  const gain = context.createGain();
-  oscillator.type = "triangle";
-  oscillator.frequency.setValueAtTime(105, context.currentTime);
-  oscillator.frequency.exponentialRampToValueAtTime(42, context.currentTime + .15);
-  gain.gain.setValueAtTime(.12, context.currentTime);
-  gain.gain.exponentialRampToValueAtTime(.001, context.currentTime + .18);
-  oscillator.connect(gain).connect(context.destination);
-  oscillator.start();
-  oscillator.stop(context.currentTime + .2);
+function thud() { tone(92, .18, .1, "triangle"); }
+function tickSound() { tone(880, .045, .025); }
+function rewindSound() { tone(74, 1.1, .018, "sawtooth"); }
+
+function el(tag, className = "", text) {
+  const value = document.createElement(tag);
+  if (className) value.className = className;
+  if (text !== undefined) value.textContent = text;
+  return value;
 }
 
-function playWhirr() {
-  const context = audio();
-  if (!context || context.state !== "running") return;
-  const oscillator = context.createOscillator();
-  const gain = context.createGain();
-  oscillator.type = "sawtooth";
-  oscillator.frequency.setValueAtTime(70, context.currentTime);
-  oscillator.frequency.linearRampToValueAtTime(145, context.currentTime + .35);
-  oscillator.frequency.linearRampToValueAtTime(55, context.currentTime + 1.1);
-  gain.gain.setValueAtTime(.015, context.currentTime);
-  gain.gain.exponentialRampToValueAtTime(.001, context.currentTime + 1.15);
-  oscillator.connect(gain).connect(context.destination);
-  oscillator.start();
-  oscillator.stop(context.currentTime + 1.2);
+function fit() {
+  const scale = Math.min(innerWidth / 1280, innerHeight / 720);
+  stage.style.transform = `translate(-50%,-50%) scale(${scale})`;
 }
 
-function highlightedMessage(evidence, className = "evidence-message") {
-  const line = node("div", className);
-  const voice = evidence.source === "voice";
-  if (voice) line.classList.add("voice-message");
-  line.append(document.createTextNode(`${voice ? "🎙 " : ""}@${evidence.player.login}${voice ? " (said out loud)" : ""}: `));
-  const before = evidence.text.slice(0, evidence.index);
-  const match = evidence.text.slice(evidence.index, evidence.index + evidence.length);
-  const after = evidence.text.slice(evidence.index + evidence.length);
-  line.append(document.createTextNode(before));
-  const mark = node("mark", "", match);
-  line.append(mark, document.createTextNode(after));
-  return { line, mark };
+function remaining() {
+  if (Number.isFinite(state?.remainingMs)) return Math.max(0, state.remainingMs - (Date.now() - receivedAt));
+  if (Number.isFinite(state?.round?.remainingMs)) return Math.max(0, state.round.remainingMs - (Date.now() - receivedAt));
+  return Math.max(0, (state?.phaseEndsAt || Date.now()) - Date.now());
 }
 
-function schedule(callback, milliseconds) {
-  const timer = setTimeout(callback, milliseconds);
-  revealTimers.push(timer);
+function clock(ms) {
+  const seconds = Math.max(0, Math.ceil(ms / 1_000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function avatar(player) {
+  const frame = el("span", "player-avatar");
+  if (player?.avatar) {
+    const image = el("img");
+    image.src = player.avatar;
+    image.alt = "";
+    frame.append(image);
+  } else frame.textContent = String(player?.login || "?").slice(0, 2).toUpperCase();
+  return frame;
+}
+
+function stablePlayers(source = []) {
+  return [...source].sort((a, b) => (a.number || 999) - (b.number || 999) || String(a.login).localeCompare(String(b.login))).slice(0, 12);
+}
+
+function voteLike(message) {
+  return message?.isVote || message?.voteMessage || message?.kind === "vote" || /^\s*(?:!vote\s+|[!#]?\d+\s*$)/i.test(message?.text || "");
+}
+
+function playerRow(player, options = {}) {
+  const row = el("article", `player-row${options.vote ? " vote-row" : ""}${options.talking ? " talking" : ""}`);
+  row.dataset.playerId = player.id;
+  row.append(el("b", "player-number", String(player.number || "?")), avatar(player));
+  const name = el("strong", `player-name${String(player.login || "").length > 12 ? " long" : ""}`, player.login || "player");
+  row.append(name);
+  if (options.count !== undefined) {
+    const badge = el("span", `message-count${options.bump ? " bump" : ""}`, String(options.count));
+    row.append(badge);
+  }
+  if (options.vote) {
+    const bar = el("i", "vote-bar");
+    bar.style.width = `${options.bar || 0}%`;
+    row.append(bar);
+    if (options.votes) row.append(el("span", "vote-count", String(options.votes)));
+  }
+  if (options.busted) row.append(el("span", "busted-mini", `BUSTED by @${options.busted.accuser?.login || "detective"}`));
+  return row;
+}
+
+function messageSlip(message, index = 0) {
+  const slip = el("article", "message-slip");
+  slip.style.setProperty("--tilt", `${[-1.1, .7, -.4][index % 3]}deg`);
+  const voice = message.source === "voice";
+  slip.append(el("strong", "", `${voice ? "🎙 " : ""}${message.player?.login || "player"}${voice ? " (said out loud)" : ""}: `));
+  slip.append(document.createTextNode(message.text || ""));
+  return slip;
+}
+
+function renderMessages(messages = []) {
+  const tray = $("#evidence-tray");
+  const safe = messages.filter((message) => !voteLike(message)).slice(-3);
+  tray.replaceChildren(...safe.map(messageSlip));
+  tray.hidden = safe.length === 0;
+  if (!reduced.matches) [...tray.children].forEach((slip, index) => slip.animate(
+    [{ transform: "translateY(-20px) rotate(0)", opacity: 0 }, { transform: `translateY(0) rotate(${[-1.1, .7, -.4][index]}deg)`, opacity: 1 }],
+    { duration: 220, easing: "ease-out" },
+  ));
+}
+
+function hideBase() {
+  for (const selector of ["#idle-tag", "#how-panel", "#phase-strip", "#compact-lobby", "#vote-banner", "#camera-dim", "#board", "#evidence-tray", "#reveal-layer", "#new-roles"]) $(selector).hidden = true;
+}
+
+function renderHints(hints = {}) {
+  for (const [key, selector] of [["category", "#hint-category"], ["letter", "#hint-letter"]]) {
+    const target = $(selector);
+    const next = hints[key] ? String(hints[key]).toUpperCase() : "🔒";
+    target.textContent = next;
+    if (previousHint[key] && previousHint[key] !== next && next !== "🔒" && !reduced.matches) {
+      const card = target.closest(".hint");
+      card.animate([{ transform: "rotateY(180deg)" }, { transform: "rotateY(0)" }], { duration: 400, easing: "ease-out" });
+      setTimeout(() => card.animate([{ transform: "translateX(-2px)" }, { transform: "translateX(2px)" }, { transform: "none" }], { duration: 120 }), 400);
+      setTimeout(thud, 400);
+    }
+    previousHint[key] = next;
+  }
+}
+
+function renderLeaderboard(entries = [], prior = []) {
+  const panel = $("#leaderboard");
+  panel.replaceChildren(el("h3", "", "LEADERBOARD"));
+  entries.slice(0, 3).forEach((entry, index) => {
+    const player = entry.player || entry;
+    const old = prior.findIndex((item) => (item.player || item).id === player.id);
+    const row = el("div", "leader-row");
+    const label = el("span", "", player.login || "player");
+    if (old >= 0 && old !== index) label.append(el("i", "rank-arrow", ` ${old > index ? "▲" : "▼"}`));
+    row.append(el("b", "", `${index + 1}.`), label, el("b", "", String(entry.score ?? player.score ?? 0)));
+    panel.append(row);
+    if (old >= 0 && old !== index && !reduced.matches) row.animate(
+      [{ transform: `translateY(${(old - index) * 23}px)` }, { transform: "translateY(0)" }],
+      { duration: 600, easing: "cubic-bezier(.2,.8,.2,1)" },
+    );
+  });
+}
+
+function renderBoardRoster(players, counts = {}, busted = []) {
+  const grid = $("#player-grid");
+  const rows = stablePlayers(players).map((player, index) => {
+    const count = counts[player.id] || 0;
+    const row = playerRow(player, { count, bump: count > (previousCounts[player.id] || 0), talking: count > (previousCounts[player.id] || 0), busted: busted.find((item) => item.impostor?.id === player.id) });
+    if (!reduced.matches && state?.newRound) row.animate([{ transform: `rotate(${index % 2 ? 2 : -2}deg)` }, { transform: "rotate(0)" }], { duration: 400, delay: index * 30 });
+    return row;
+  });
+  grid.replaceChildren(...rows);
+  previousCounts = { ...counts };
+}
+
+function lobbyIsFull(next) {
+  if (params.get("mock") === "lobby-first") return true;
+  if (params.get("mock") === "lobby") return false;
+  const ids = new Set((next.players || []).map(({ id }) => id));
+  const joined = [...ids].some((id) => !previousLobbyIds.has(id)) && previousLobbyIds.size > 0;
+  previousLobbyIds = ids;
+  if (joined) lobbyFullUntil = Date.now() + 15_000;
+  return (next.roundNumber || 0) <= 1 || Date.now() < lobbyFullUntil;
+}
+
+function renderLobby(next) {
+  const full = lobbyIsFull(next);
+  $("#board").hidden = false;
+  $("#board-title").textContent = "PLAYERS";
+  $("#board-meta").textContent = "12 max";
+  $("#hints").hidden = true;
+  $("#leaderboard").hidden = true;
+  renderBoardRoster(next.players || [], {});
+  const note = $("#board-note");
+  note.replaceChildren(el("strong", "", "JOINING NOW?"), document.createTextNode("Type !join in chat, then open the card link it replies with. Takes 20 seconds."));
+  if (full) {
+    $("#how-panel").hidden = false;
+    $("#how-ready").textContent = `Players with cards: ${next.claimedCount || 0} / 3 needed`;
+    $("#how-clock").textContent = `Starting in ${clock(remaining())}`;
+  } else {
+    const compact = $("#compact-lobby");
+    compact.hidden = false;
+    compact.replaceChildren(document.createTextNode(`Next round in ${clock(remaining())} · `), el("strong", "", `${next.claimedCount || 0} players ready`), document.createTextNode(" · new? type !join"));
+  }
+}
+
+function renderRound(next, newRound = false) {
+  const round = next.round || {};
+  $("#phase-strip").hidden = false;
+  $("#strip-title").textContent = next.final ? "FINAL TABLE" : `ROUND ${next.roundNumber} · ${newRound ? "NEW ROLES" : "TALK"}`;
+  $("#strip-rule").textContent = "Imposters hide a word in chat.\nDetectives hunt. Check your card.";
+  $("#board").hidden = false;
+  $("#board-title").textContent = next.final ? "FINAL TABLE" : `ROUND ${next.roundNumber}`;
+  $("#board-meta").textContent = `${round.impostorCount || next.impostorCount || 1} IMPOSTER${(round.impostorCount || next.impostorCount || 1) === 1 ? "" : "S"}`;
+  $("#hints").hidden = false;
+  renderHints(round.hints || {});
+  renderBoardRoster(round.players || next.players || [], round.messageCounts || {}, round.busted || []);
+  const note = $("#board-note");
+  note.replaceChildren(el("strong", "", "HOW TO VOTE (at 0:00)"), document.createTextNode("Type a player's number in chat, like 2, or tap them on your card. Glowing = talking now."));
+  $("#leaderboard").hidden = false;
+  renderLeaderboard(next.leaderboard || next.scores || []);
+  renderMessages(round.latestMessages || round.recentMessages || round.messages || []);
+  if (newRound) animateNewRound();
+}
+
+function renderVote(next) {
+  const round = next.round || {};
+  const players = stablePlayers(round.players || next.players || []);
+  const tallies = new Map((round.tallies || []).map((entry) => [entry.player?.id || entry.playerId, entry.votes || 0]));
+  const max = Math.max(1, ...tallies.values());
+  $("#vote-banner").hidden = false;
+  $("#board").hidden = false;
+  $("#board-title").textContent = "WHO HID A WORD?";
+  $("#board-meta").textContent = `${round.impostorCount || next.impostorCount || 1} to catch`;
+  $("#hints").hidden = false;
+  renderHints(round.hints || {});
+  $("#player-grid").replaceChildren(...players.map((player) => playerRow(player, { vote: true, votes: tallies.get(player.id) || 0, bar: ((tallies.get(player.id) || 0) / max) * 100 })));
+  $("#board-note").replaceChildren(el("strong", "", "VOTES ARE LIVE"), document.createTextNode("Bars fill as chat votes. You can change your vote until 0:00. Top votes are accused."));
+  $("#leaderboard").hidden = true;
+  renderMessages(round.latestMessages || round.recentMessages || []);
+  if (!reduced.matches) $("#vote-banner").animate([{ transform: "translateY(-100%)" }, { transform: "translateY(7px)" }, { transform: "translateY(0)" }], { duration: 350, easing: "cubic-bezier(.2,.8,.2,1)" });
 }
 
 function clearReveal() {
   revealTimers.forEach(clearTimeout);
   revealTimers = [];
-  revealView.getAnimations({ subtree: true }).forEach((animation) => animation.cancel());
-  revealView.replaceChildren();
+  $("#reveal-layer").replaceChildren();
 }
 
-function showReveal(state) {
-  const tableReveal = state.round.reveal;
-  const results = tableReveal.imposters?.length ? tableReveal.imposters : [tableReveal];
-  const reveal = {
-    ...results.at(-1),
-    leaderboard: tableReveal.leaderboard,
-    scoreChanges: tableReveal.scoreChanges,
-    otherTables: tableReveal.otherTables || [],
-    champion: tableReveal.champion || state.champion,
-  };
-  const speed = new URLSearchParams(location.search).has("mock") ? .18 : 1;
-  clearReveal();
+function later(fn, ms) {
+  const id = setTimeout(fn, reduced.matches ? Math.min(200, ms) : ms);
+  revealTimers.push(id);
+}
 
-  if (results.length > 1) {
-    const prior = node("aside", "prior-imposters");
-    results.slice(0, -1).forEach((result, index) => {
-      const caseCard = node("article", "prior-imposter reveal-paper");
-      caseCard.append(avatarPhoto(result.impostor));
-      caseCard.append(
-        node("strong", "", `@${result.impostor.login}`),
-        node("span", "", result.word.toUpperCase()),
-        node("b", "", result.verdict),
-      );
-      caseCard.animate(
-        [{ transform: "translateY(-100px) rotate(-8deg)", opacity: 0 }, { transform: `translateY(0) rotate(${index % 2 ? 2 : -2}deg)`, opacity: 1 }],
-        { duration: 440 * speed, delay: index * 650 * speed, fill: "both" },
-      );
-      prior.append(caseCard);
-    });
-    revealView.append(prior);
+function highlightedEvidence(result) {
+  const line = el("div", "evidence-line");
+  const evidence = result.evidence;
+  if (!evidence) {
+    line.append(el("strong", "crossed", result.word || "SECRET WORD"), document.createTextNode(" · THE WORD NEVER MADE IT OUT"));
+    return { line, mark: null };
   }
+  const voice = evidence.source === "voice";
+  line.append(document.createTextNode(`${voice ? "🎙 " : ""}${evidence.player?.login || result.impostor?.login}: “`));
+  line.append(document.createTextNode(evidence.text.slice(0, evidence.index)));
+  const mark = el("mark", "", evidence.text.slice(evidence.index, evidence.index + evidence.length));
+  line.append(mark, document.createTextNode(`${evidence.text.slice(evidence.index + evidence.length)}”`));
+  return { line, mark };
+}
 
-  const title = node("h1", "reveal-title reveal-paper", "THE IMPOSTER WAS…");
-  const deck = node("div", "shuffle-deck");
-  const roster = state.players.length ? state.players : [reveal.impostor];
-  const cards = roster.slice(0, 5).map((player, index) => {
-    const card = polaroid(player, { className: "shuffle-card", atName: true, tilt: (index - 2) * 2 });
-    card.style.zIndex = String(index + 1);
-    deck.append(card);
-    return card;
-  });
-  revealView.append(title, deck);
-  title.animate([{ opacity: 0, transform: "translateY(-20px)" }, { opacity: 1, transform: "translateY(0)" }], { duration: 550 * speed, fill: "both" });
-  cards.forEach((card, index) => card.animate(
-    [
-      { transform: `translateX(0) rotate(${(index - 2) * 2}deg)` },
-      { transform: `translateX(${index % 2 ? 155 : -155}px) rotate(${index % 2 ? 9 : -9}deg)` },
-      { transform: `translateX(0) rotate(${(2 - index) * 2}deg)` },
-    ],
-    { duration: 650 * speed, iterations: Math.max(2, Math.round(3 / speed)), delay: index * 60 * speed, easing: "ease-in-out" },
-  ));
+function finalCase(result) {
+  const card = el("article", "case-card");
+  const head = el("header", "case-head");
+  head.append(avatar(result.impostor), el("strong", "", `@${result.impostor?.login || "imposter"}`));
+  const word = el("span", "case-word");
+  word.append(document.createTextNode("WORD: "), el("mark", "", String(result.word || "unknown").toUpperCase()));
+  head.append(word);
+  const { line } = highlightedEvidence(result);
+  card.append(head, line, el("p", "reveal-caption", result.caption || (result.evidence ? "Hidden in plain sight." : "THE WORD NEVER MADE IT OUT")));
+  const verdict = result.verdict || (result.evidence ? "GOT AWAY" : "WORD NEVER LANDED");
+  const displayVerdict = verdict === "CAUGHT" ? "BUSTED" : verdict;
+  card.append(el("b", `verdict${verdict === "GOT AWAY" ? " away" : verdict.includes("NEVER") ? " miss" : ""}`, `${displayVerdict}${verdict === "GOT AWAY" ? " +3" : ""}`));
+  return card;
+}
 
-  schedule(() => {
-    deck.replaceChildren();
-    const finalCard = polaroid(reveal.impostor, { className: "shuffle-card final", atName: true });
-    deck.append(finalCard);
-    finalCard.animate(
-      [
-        { transform: "translateY(-190px) rotateY(90deg) scale(.88)", opacity: 0 },
-        { transform: "translateY(12px) rotateY(0deg) scale(1.03)", opacity: 1, offset: .82 },
-        { transform: "translateY(0) rotateY(0deg) scale(1)", opacity: 1 },
-      ],
-      { duration: 620 * speed, easing: "cubic-bezier(.18,.82,.2,1)", fill: "both" },
+function showRevealEnd(next, results) {
+  const layer = $("#reveal-layer");
+  layer.replaceChildren(el("h1", "reveal-title", `ROUND ${next.roundNumber} · THE REVEAL: ${results.length} IMPOSTER${results.length === 1 ? "" : "S"}`));
+  const cases = el("section", `reveal-cases${results.length > 1 ? " two" : ""}`);
+  results.forEach((result) => cases.append(finalCase(result)));
+  layer.append(cases);
+  $("#board").hidden = false;
+  $("#board-title").textContent = "FINAL VOTES";
+  $("#board-meta").textContent = "";
+  $("#hints").hidden = true;
+  const round = next.round || {};
+  const tallies = new Map((round.tallies || next.round?.reveal?.tallies || []).map((entry) => [entry.player?.id || entry.playerId, entry.votes || 0]));
+  const max = Math.max(1, ...tallies.values());
+  $("#player-grid").replaceChildren(...stablePlayers(round.players || next.players || []).map((player) => playerRow(player, { vote: true, votes: tallies.get(player.id) || 0, bar: ((tallies.get(player.id) || 0) / max) * 100 })));
+  $("#board-note").replaceChildren();
+  $("#leaderboard").hidden = false;
+  renderLeaderboard(next.round?.reveal?.leaderboard || next.leaderboard || next.scores || [], next.scores || []);
+  if (!params.has("mock") || params.get("play") === "1") later(() => cases.classList.add("shrunk"), 2_500);
+}
+
+function animateOneResult(next, result, index, done) {
+  const layer = $("#reveal-layer");
+  const start = index === 0 ? 0 : 9_000;
+  later(() => {
+    const title = el("h1", "reveal-title", index ? "THE SECOND IMPOSTER…" : "THE REVEAL");
+    layer.replaceChildren(title);
+    if (!reduced.matches) title.animate(
+      [{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0 0 0)" }],
+      { duration: 600, easing: "steps(14,end)", fill: "both" },
     );
-    const stamp = node("div", "imposter-stamp", "IMPOSTER");
-    revealView.append(stamp);
-    stamp.animate([{ transform: "rotate(-10deg) scale(1.6)", opacity: 0 }, { transform: "rotate(-10deg) scale(1)", opacity: 1 }], { duration: 320 * speed, delay: 420 * speed, easing: "cubic-bezier(.2,.9,.2,1.2)", fill: "both" });
-    schedule(() => {
-      playThud();
-      stage.animate([{ transform: stage.style.transform }, { transform: `${stage.style.transform} translate(6px,-3px)` }, { transform: `${stage.style.transform} translate(-4px,2px)` }, { transform: stage.style.transform }], { duration: 180 });
-    }, 430 * speed);
-  }, 2_500 * speed);
-
-  schedule(() => startRewind(reveal, speed), 5_000 * speed);
-  schedule(() => showVerdict(reveal, speed), 11_000 * speed);
-  schedule(() => showSneakiness(reveal, speed), 13_000 * speed);
-  schedule(() => showLeaderboard(reveal, speed), 16_000 * speed);
+    later(() => {
+      if (!result.evidence) {
+        const card = finalCase(result);
+        layer.append(card);
+        card.animate([{ opacity: 0, transform: "scale(.9)" }, { opacity: 1, transform: "scale(1)" }], { duration: 400 });
+        later(done, 1_300);
+        return;
+      }
+      const rewind = el("section", "rewind");
+      rewindSound();
+      const counter = el("time", "rewind-counter", result.messages?.at(-1)?.elapsed || "3:00");
+      const tape = el("div", "rewind-tape");
+      [...(result.messages || [])].reverse().filter((message) => !voteLike(message)).forEach((message, messageIndex) => tape.append(messageSlip(message, messageIndex)));
+      rewind.append(counter, tape);
+      layer.append(rewind);
+      const rewindMs = index ? 2_000 : 2_300;
+      tape.animate([{ transform: "translateY(-75%)", filter: "blur(4px)" }, { transform: "translateY(0)", filter: "blur(0)" }], { duration: rewindMs, easing: "cubic-bezier(.05,.7,.18,1)", fill: "both" });
+      const from = result.messages?.at(-1)?.elapsedMs || 180_000;
+      const to = result.evidence.elapsedMs || 0;
+      const begun = performance.now();
+      const tick = (now) => {
+        const progress = Math.min(1, (now - begun) / rewindMs);
+        counter.textContent = clock(from - (from - to) * progress);
+        if (progress < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+      later(() => {
+      rewind.remove();
+      const card = finalCase(result);
+      const caption = card.querySelector(".reveal-caption");
+      const stamp = card.querySelector(".verdict");
+      stamp.style.opacity = "0";
+      caption.style.opacity = "0";
+      const readerCount = result.readerCount ?? 0;
+      caption.replaceChildren(document.createTextNode(`${result.elapsed || result.evidence.elapsed || "1:12"} into the round · `), el("strong", "read-count", "0 people read it"), document.createTextNode(result.caught ? " · someone noticed" : " · nobody noticed"));
+      layer.append(card);
+      card.animate([{ transform: "scale(1)", boxShadow: "none" }, { transform: "scale(1.35)", boxShadow: "0 24px 38px #000b" }], { duration: 400, fill: "both" });
+      later(() => card.querySelector(".evidence-line mark")?.animate([{ backgroundSize: "0 70%" }, { backgroundSize: "100% 70%" }], { duration: 500, fill: "both" }), 500);
+      later(() => {
+        const count = card.querySelector(".read-count");
+        caption.style.opacity = "1";
+        const started = performance.now();
+        const roll = (now) => {
+          const progress = Math.min(1, (now - started) / 600);
+          count.textContent = `${Math.round(readerCount * progress)} people read it`;
+          if (progress < 1) requestAnimationFrame(roll);
+        };
+        requestAnimationFrame(roll);
+      }, 1_100);
+      later(() => {
+        const row = $(`.player-row[data-player-id='${CSS.escape(result.impostor?.id || "")}']`);
+        row?.classList.add("reveal-board-pulse");
+      }, 2_000);
+      later(() => {
+        stamp.style.opacity = "1";
+        thud();
+        stamp.animate(result.verdict === "GOT AWAY"
+          ? [{ clipPath: "circle(0 at 50% 50%)", opacity: .2 }, { clipPath: "circle(80% at 50% 50%)", opacity: 1 }]
+          : [{ transform: "rotate(-14deg) scale(2.2)", opacity: 0 }, { transform: "rotate(-8deg) scale(1)", opacity: 1 }],
+        { duration: result.verdict === "GOT AWAY" ? 400 : 160, fill: "both" });
+        if (result.verdict !== "GOT AWAY" && !reduced.matches) {
+          stage.animate([{ translate: "0" }, { translate: "3px -2px" }, { translate: "-3px 2px" }, { translate: "0" }], { duration: 120 });
+          const flash = el("div", "red-flash"); layer.append(flash); setTimeout(() => flash.remove(), 80);
+        } else if (result.verdict === "GOT AWAY") {
+          const points = el("b", "float-points", "+3"); layer.append(points);
+          points.animate([{ transform: "translateY(0)", opacity: 1 }, { transform: "translate(410px,-250px)", opacity: 0 }], { duration: 700, fill: "forwards" });
+        }
+      }, 2_800);
+      later(done, 4_000);
+      }, rewindMs);
+    }, 1_200);
+  }, start);
 }
 
-function startRewind(reveal, speed) {
-  playWhirr();
-  const area = node("section", "rewind-area");
-  const counter = node("time", "rewind-counter", reveal.messages.at(-1)?.elapsed || "3:00");
-  const tape = node("div", "rewind-tape");
-  const messages = [...reveal.messages].reverse();
-  tape.append(...messages.map((message) => paperMessage(message, "rewind-message reveal-paper")));
-  area.append(counter, tape);
-  revealView.append(area);
-  area.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180 * speed, fill: "both" });
-  tape.animate([{ transform: "translateY(-80%)", filter: "blur(2px)" }, { transform: "translateY(0)", filter: "blur(0)" }], { duration: 2_500 * speed, easing: "cubic-bezier(.05,.7,.18,1)", fill: "both" });
-  const from = reveal.messages.at(-1)?.elapsedMs || 180_000;
-  const to = reveal.evidence?.elapsedMs || 0;
-  const started = performance.now();
-  const duration = 2_350 * speed;
-  function updateCounter(now) {
-    const progress = Math.min(1, (now - started) / duration);
-    counter.textContent = formatTime(from - (from - to) * progress);
-    if (progress < 1) requestAnimationFrame(updateCounter);
+function renderReveal(next) {
+  $("#camera-dim").hidden = false;
+  $("#reveal-layer").hidden = false;
+  const reveal = next.round?.reveal;
+  const results = reveal?.imposters?.length ? reveal.imposters : [reveal].filter(Boolean);
+  $("#board").hidden = false;
+  $("#board-title").textContent = "FINAL VOTES";
+  $("#board-meta").textContent = "";
+  $("#hints").hidden = true;
+  const tallies = new Map((next.round?.tallies || reveal?.tallies || []).map((entry) => [entry.player?.id || entry.playerId, entry.votes || 0]));
+  const leader = Math.max(1, ...tallies.values());
+  $("#player-grid").replaceChildren(...stablePlayers(next.round?.players || next.players || []).map((player) => playerRow(player, { vote: true, votes: tallies.get(player.id) || 0, bar: ((tallies.get(player.id) || 0) / leader) * 100 })));
+  $("#board-note").replaceChildren();
+  $("#leaderboard").hidden = false;
+  renderLeaderboard(next.scores || next.leaderboard || []);
+  const play = params.get("play") === "1" || !params.has("mock");
+  if (!play) return showRevealEnd(next, results);
+  const finish = () => showRevealEnd(next, results);
+  if (results.length === 1) animateOneResult(next, results[0], 0, finish);
+  else {
+    animateOneResult(next, results[0], 0, () => {});
+    animateOneResult(next, results[1], 1, finish);
   }
-  requestAnimationFrame(updateCounter);
-  schedule(() => {
-    area.remove();
-    showEvidence(reveal, speed);
-  }, 2_550 * speed);
+  if (params.get("play") === "1") later(() => { clearReveal(); renderReveal(next); }, results.length > 1 ? 19_000 : 11_000);
 }
 
-function showEvidence(reveal, speed) {
-  const card = node("article", "evidence-card reveal-paper");
-  if (reveal.evidence) {
-    const { line, mark } = highlightedMessage(reveal.evidence);
-    mark.style.background = "linear-gradient(var(--yellow), var(--yellow)) no-repeat 0 75% / 0% 58%";
-    card.append(line);
-    schedule(() => mark.animate(
-      [{ backgroundSize: "0% 58%" }, { backgroundSize: "100% 58%" }],
-      { duration: 800 * speed, easing: "ease-out", fill: "both" },
-    ), 280 * speed);
-  } else {
-    const label = node("div", "evidence-message", "THE WORD NEVER MADE IT OUT");
-    const crossed = node("div", "crossed-word", reveal.word);
-    card.append(label, crossed);
-  }
-  card.append(node("p", "reveal-caption", reveal.caption));
-  revealView.append(card);
-  card.animate([{ transform: "scale(.7)", opacity: 0 }, { transform: "scale(1)", opacity: 1 }], { duration: 650 * speed, easing: "cubic-bezier(.2,.85,.2,1.1)", fill: "both" });
+function animateNewRound() {
+  const bar = $("#new-roles");
+  bar.hidden = false;
+  if (reduced.matches) return later(() => { bar.hidden = true; }, 3_000);
+  bar.animate([{ transform: "translateY(-100%)" }, { transform: "translateY(0)" }], { duration: 280, easing: "cubic-bezier(.2,.8,.2,1.2)", fill: "both" });
+  $("#strip-title").animate([{ transform: "rotateX(90deg)" }, { transform: "rotateX(0)" }], { duration: 300 });
+  later(() => bar.animate([{ transform: "translateY(0)" }, { transform: "translateY(-100%)" }], { duration: 250, fill: "forwards" }).finished.then(() => { bar.hidden = true; }), 3_000);
 }
 
-function showVerdict(reveal, speed) {
-  const panel = node("section", "verdict-panel");
-  panel.append(node("h2", "verdict-title reveal-paper", "VERDICT"));
-  const slip = node("div", "verdict-slip reveal-paper");
-  const stamp = node("div", `verdict-stamp${reveal.verdict.length > 12 ? " long" : ""}`, reveal.verdict);
-  const imposterChange = reveal.scoreChanges.find(({ player }) => player.id === reveal.impostor.id)?.delta || 0;
-  slip.append(stamp);
-  if (imposterChange) slip.append(node("strong", "verdict-points", `+${imposterChange}`));
-  panel.append(slip);
-  revealView.append(panel);
-  panel.animate([{ opacity: 0, transform: "translateX(80px)" }, { opacity: 1, transform: "translateX(0)" }], { duration: 500 * speed, fill: "both" });
-  stamp.animate([{ transform: "rotate(-9deg) scale(1.6)" }, { transform: "rotate(-9deg) scale(1)" }], { duration: 320 * speed, delay: 220 * speed, easing: "cubic-bezier(.2,.9,.2,1.2)", fill: "both" });
-  schedule(playThud, 240 * speed);
-}
-
-function showSneakiness(reveal, speed) {
-  const slip = node("blockquote", "sneakiness-slip reveal-paper", reveal.sneakiness);
-  revealView.append(slip);
-  slip.animate([{ opacity: 0, transform: "translateY(24px) rotate(-1deg)" }, { opacity: 1, transform: "translateY(0) rotate(-1deg)" }], { duration: 500 * speed, fill: "both" });
-}
-
-function showLeaderboard(reveal, speed) {
-  const boardElement = node("section", "leaderboard reveal-paper");
-  boardElement.append(node("h2", "", "LEADERBOARD"));
-  for (const entry of reveal.leaderboard.slice(0, 5)) {
-    const row = node("div", "leader-row");
-    const avatar = node("img", "mini-avatar");
-    avatar.src = entry.player.avatar || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='46' height='46'%3E%3Crect width='46' height='46' fill='%236b5b85'/%3E%3C/svg%3E";
-    avatar.alt = "";
-    row.append(avatar, node("span", "", `@${entry.player.login}`), node("strong", "", String(entry.score)));
-    boardElement.append(row);
-  }
-  revealView.append(boardElement);
-  boardElement.animate([{ opacity: 0, transform: "translateY(35px)" }, { opacity: 1, transform: "translateY(0)" }], { duration: 550 * speed, fill: "both" });
-
-  if (reveal.accidentalDecoys?.length) {
-    const stack = node("aside", "decoy-stack");
-    stack.append(node("h3", "", "ACCIDENTAL DECOYS"));
-    reveal.accidentalDecoys.slice(0, 3).forEach((decoy, index) => {
-      const slip = node("div", "decoy-slip reveal-paper");
-      slip.style.setProperty("--tilt", `${index % 2 ? 1 : -1}deg`);
-      slip.textContent = `${decoy.caption} “${decoy.text}”`;
-      stack.append(slip);
-    });
-    revealView.append(stack);
-    stack.animate([{ opacity: 0, transform: "translateX(-35px)" }, { opacity: 1, transform: "translateX(0)" }], { duration: 550 * speed, fill: "both" });
-  }
-
-  if (reveal.otherTables?.length) {
-    const strip = node("aside", "other-table-results reveal-paper");
-    strip.append(node("strong", "", "OTHER TABLES"));
-    for (const table of reveal.otherTables) {
-      // "T2: @mara got away · @ben busted" reads at a glance; bare verdicts didn't.
-      const summary = table.results
-        .map(({ impostor, verdict }) => `${impostor?.login ? `@${impostor.login} ` : ""}${String(verdict || "").toLowerCase()}`)
-        .join(" · ");
-      strip.append(node("span", "", `T${table.id}: ${summary}`));
-    }
-    revealView.append(strip);
-    strip.animate([{ transform: "translateY(100%)", opacity: 0 }, { transform: "translateY(0)", opacity: 1 }], { duration: 520 * speed, fill: "both" });
-  }
-
-  if (reveal.champion) {
-    const champion = node("div", "champion-stamp", `CHAMPION · @${reveal.champion.login}`);
-    revealView.append(champion);
-    champion.animate([{ transform: "rotate(-5deg) scale(1.7)", opacity: 0 }, { transform: "rotate(-5deg) scale(1)", opacity: 1 }], { duration: 360 * speed, delay: 600 * speed, fill: "both" });
-    schedule(playThud, 620 * speed);
-  }
-}
-
-function render(state) {
-  currentState = state;
+function render(next) {
+  state = next;
   receivedAt = Date.now();
-  const phase = state.phase || state.state;
-  if (phase !== "ROUND") previousTopPlayerIds = [];
-  setViews(phase);
-  renderTableContext(state);
-  if (phase !== "REVEAL" && revealKey !== null) {
-    clearReveal();
-    revealKey = null;
-  }
-  if (phase === "LOBBY") renderLobby(state);
-  if (phase === "ROUND") renderRound(state);
-  if (phase === "VOTE") renderVote(state);
-  if (phase === "REVEAL" && state.round?.reveal) {
-    const key = `${state.roundNumber}:${(state.round.reveal.imposters || [state.round.reveal]).map(({ outcome }) => outcome).join("-")}`;
-    if (revealKey !== key) {
-      revealKey = key;
-      showReveal(state);
-    }
+  const phase = next.phase || next.state || "IDLE";
+  hideBase();
+  if (phase !== "REVEAL") { clearReveal(); revealKey = ""; }
+  if (phase === "IDLE") $("#idle-tag").hidden = false;
+  else if (phase === "LOBBY") renderLobby(next);
+  else if (phase === "ROUND") renderRound(next, params.get("mock") === "newround" || next.newRound);
+  else if (phase === "VOTE") renderVote(next);
+  else if (phase === "REVEAL") {
+    const key = `${next.roundNumber}:${next.round?.reveal?.imposters?.length || 1}`;
+    if (key !== revealKey) { revealKey = key; clearReveal(); renderReveal(next); }
   }
   updateClocks();
 }
 
-function mockAvatar(initials, background, hair) {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><rect width="160" height="160" fill="${background}"/><circle cx="80" cy="69" r="40" fill="#efbd91"/><path d="M39 67c2-39 21-54 43-54 28 0 44 24 40 60-15-17-26-27-42-28-12 13-24 20-41 22Z" fill="${hair}"/><path d="M25 160c6-43 25-62 55-62s49 19 55 62" fill="#3e3347"/><text x="80" y="82" text-anchor="middle" font-size="22" font-family="sans-serif" fill="#3a2a23">${initials}</text></svg>`;
+function updateClocks() {
+  if (!state) return;
+  const ms = remaining();
+  $("#strip-timer").textContent = `⏱ ${clock(ms)}`;
+  const vote = $("#vote-time");
+  const second = Math.ceil(ms / 1_000);
+  vote.textContent = clock(ms);
+  if (second !== lastVoteSecond) {
+    vote.classList.remove("flip"); void vote.offsetWidth; vote.classList.add("flip");
+    $("#vote-banner").classList.toggle("last-five", second > 0 && second <= 5);
+    if (second > 0 && second <= 10) tickSound();
+    lastVoteSecond = second;
+  }
+  $("#votes-locked").classList.toggle("show", ms <= 0);
+  if (!$("#how-panel").hidden) $("#how-clock").textContent = `Starting in ${clock(ms)}`;
+}
+
+function mockAvatar(index) {
+  const hue = (index * 47 + 18) % 360;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect width="80" height="80" rx="40" fill="hsl(${hue} 52% 64%)"/><circle cx="40" cy="34" r="18" fill="#edbd96"/><path d="M20 34Q22 8 40 10Q62 11 60 38Q48 22 21 35" fill="hsl(${hue} 35% 25%)"/><path d="M12 80Q17 54 40 54Q65 54 69 80" fill="#39435c"/></svg>`;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
-const previewParams = new URLSearchParams(location.search);
-const previewPlayerCount = Math.min(60, Math.max(4, Number(previewParams.get("players")) || 4));
-const previewTableCount = Math.min(20, Math.max(1, Number(previewParams.get("tables")) || 1));
-const featuredPlayers = [
-  ["pixel_mara", "PM", "#9a65ca", "#31213d"],
-  ["tomtom_irl", "TT", "#6fbd8b", "#513126"],
-  ["quietfox", "QF", "#db8450", "#b84d24"],
-  ["romabuilds", "RB", "#72a9d2", "#a66b2e"],
-];
-const demoPlayers = Array.from({ length: previewPlayerCount }, (_, index) => {
-  const featured = featuredPlayers[index];
-  const login = featured?.[0] || `detective_${String(index + 1).padStart(2, "0")}`;
-  const initials = featured?.[1] || `D${(index + 1) % 10}`;
-  const background = featured?.[2] || `hsl(${(index * 47) % 360} 45% 58%)`;
-  const hair = featured?.[3] || `hsl(${(index * 29 + 18) % 360} 34% 25%)`;
-  return {
-    id: `p${index + 1}`,
-    login,
-    displayName: login,
-    avatar: mockAvatar(initials, background, hair),
-    claimed: index % 6 !== 5,
-    joinedAt: Date.now() - (previewPlayerCount - index) * 1_000,
-    score: Math.max(0, 12 - Math.floor(index / 2)),
-  };
-});
-
-const demoMessages = [
-  { id: "m1", player: demoPlayers[1], text: "who else is eating dinner rn", elapsedMs: 38_000, elapsed: "0:38" },
-  { id: "m2", player: demoPlayers[2], text: "the lights in my room keep flickering", elapsedMs: 57_000, elapsed: "0:57" },
-  { id: "m3", player: demoPlayers[3], text: "storm season is brutal", source: "voice", elapsedMs: 65_000, elapsed: "1:05" },
-  { id: "m4", player: demoPlayers[0], text: "ugh the power went out so I lit a candle lol", elapsedMs: 72_000, elapsed: "1:12" },
-  { id: "m5", player: demoPlayers[1], text: "that is such a cozy emergency plan", elapsedMs: 84_000, elapsed: "1:24" },
-  { id: "m6", player: demoPlayers[2], text: "honestly I need one for my desk", elapsedMs: 93_000, elapsed: "1:33" },
-];
-
+const names = ["drovosek7777", "cydshop", "romabuilds", "pixel_mara", "quietfox", "tomtom_irl", "nightbyte", "akira_k", "lumi", "bigsalad", "jo_plays", "marrow"];
 function mockState(kind) {
-  const tables = Array.from({ length: previewTableCount }, (_, index) => ({ id: index + 1, playerCount: 10 + (index % 3) }));
-  const base = { state: kind.toUpperCase(), phase: kind.toUpperCase(), roundNumber: 2, featuredTableId: 1, tables, players: demoPlayers, claimedCount: 4, cardUrl: "susword.example/card", scores: demoPlayers.map((player) => ({ player, score: player.score })) };
-  const messageCounts = Object.fromEntries(demoPlayers.map((player, index) => [player.id, (index * 7 + 3) % 19]));
-  const messageRecency = Object.fromEntries(demoPlayers.map((player, index) => [player.id, (index * 11) % previewPlayerCount]));
-  const voteCounts = Array(previewPlayerCount).fill(0);
-  let votesRemaining = previewPlayerCount;
-  const preferred = previewPlayerCount >= 20 ? [17, 5, 3, 2, 1, 1, 1] : [Math.ceil(previewPlayerCount / 2), 2, 1];
-  for (let index = 0; index < voteCounts.length && votesRemaining > 0; index += 1) {
-    const votes = Math.min(votesRemaining, preferred[index] ?? 1);
-    voteCounts[index] = votes;
-    votesRemaining -= votes;
+  const count = kind === "lobby-first" || kind === "round12" || ["vote", "reveal", "reveal2", "reveal-miss", "newround"].includes(kind) ? 12 : 7;
+  const players = Array.from({ length: count }, (_, index) => ({ id: `p${index + 1}`, number: index + 1, login: names[index] || `player_${index + 1}`, displayName: names[index], avatar: mockAvatar(index), claimed: true, score: 12 - index }));
+  const messages = [
+    { id: "m1", player: players[4] || players[0], text: "anyone else eating dinner rn", elapsedMs: 31_000, elapsed: "0:31" },
+    { id: "m2", player: players[1], text: "just made tea, need a blanket tonight", elapsedMs: 51_000, elapsed: "0:51" },
+    { id: "m3", player: players[7] || players[2], text: "what's everyone watching?", elapsedMs: 64_000, elapsed: "1:04" },
+    { id: "m4", player: players[3], text: "lemon cake is underrated", elapsedMs: 108_000, elapsed: "1:48", index: 0, length: 5 },
+  ];
+  const base = { state: kind.startsWith("lobby") ? "LOBBY" : kind === "vote" ? "VOTE" : kind.startsWith("reveal") ? "REVEAL" : "ROUND", roundNumber: kind === "lobby-first" ? 1 : 3, players, claimedCount: Math.max(3, count), phaseEndsAt: Date.now() + (kind === "vote" ? 19_000 : 72_000), remainingMs: kind === "vote" ? 19_000 : 72_000, scores: players.map((player) => ({ player, score: player.score })) };
+  base.phase = base.state;
+  if (base.state === "LOBBY") return base;
+  const messageCounts = Object.fromEntries(players.map((player, index) => [player.id, [7, 5, 3, 4, 2, 6, 1, 3, 1, 2, 1, 0][index] || 0]));
+  const tallies = players.map((player, index) => ({ player, votes: [0, 5, 0, 3, 1, 0, 0, 0, 0, 1, 0, 0][index] || 0 }));
+  base.round = { players, remainingMs: base.remainingMs, impostorCount: kind === "reveal2" ? 2 : 1, hints: { category: "FOOD · HOME", letter: kind === "vote" ? "L · B" : null }, messageCounts, latestMessages: messages.slice(0, 3), recentMessages: messages, tallies };
+  if (base.state === "REVEAL") {
+    const first = { impostor: players[3], word: "lemon", evidence: kind === "reveal-miss" ? null : messages[3], messages, elapsed: "1:48", readerCount: 9, caught: true, verdict: kind === "reveal-miss" ? "WORD NEVER LANDED" : "CAUGHT", caption: kind === "reveal-miss" ? "THE WORD NEVER MADE IT OUT" : "1:48 into the round · 9 people read it · someone noticed" };
+    const secondEvidence = { ...messages[1], index: 22, length: 7 };
+    const second = { impostor: players[1], word: "blanket", evidence: secondEvidence, messages, elapsed: "0:51", readerCount: 1, caught: false, verdict: "GOT AWAY", caption: "0:51 into the round · 1 person read it · nobody noticed" };
+    base.round.reveal = { ...first, imposters: kind === "reveal2" ? [first, second] : undefined, leaderboard: base.scores.slice(0, 5), tallies };
   }
-  if (kind === "lobby") return { ...base, state: "LOBBY", phase: "LOBBY", roundNumber: 1, claimedCount: demoPlayers.filter(({ claimed }) => claimed).length };
-  if (kind === "round") return { ...base, phaseEndsAt: Date.now() + 108_000, phaseDurationMs: 180_000, remainingMs: 108_000, round: { tableId: 1, tableCount: previewTableCount, players: demoPlayers, remainingMs: 108_000, hints: { category: "home", letter: null }, messageCounts, messageRecency, latestMessages: demoMessages.slice(0, 3), accusations: [{ correct: false, accuser: demoPlayers[2], at: 1 }, { correct: true, accuser: demoPlayers[1], target: demoPlayers[0], at: 2 }], busted: [{ impostor: demoPlayers[0], accuser: demoPlayers[1] }] } };
-  if (kind === "vote") return { ...base, phaseEndsAt: Date.now() + 21_000, round: { players: demoPlayers, tallies: demoPlayers.map((player, index) => ({ player, votes: voteCounts[index] })) } };
-  const evidence = { ...demoMessages[3], index: 34, length: 6 };
-  return {
-    ...base,
-    phase: "REVEAL",
-    state: "REVEAL",
-    round: {
-      reveal: {
-        impostor: demoPlayers[0], word: "candle", evidence, smuggled: true, caption: "1:12 into the round. 2 people read this. Nobody noticed.", messages: demoMessages,
-        accidentalDecoys: [{ ...demoMessages[1], caption: "@quietfox said it too, by accident." }], verdict: "GOT AWAY", outcome: "got_away", sneakiness: "Hid ‘candle’ inside a complaint about the power bill. Cold.",
-        scoreChanges: demoPlayers.map((player, index) => ({ player, delta: index ? 0 : 3, score: player.score })), leaderboard: demoPlayers.slice(0, 5).map((player) => ({ player, score: player.score })),
-        imposters: previewTableCount > 1 ? [
-          { impostor: demoPlayers[1], word: "teapot", evidence: null, messages: demoMessages, accidentalDecoys: [], verdict: "CAUGHT", outcome: "caught", caption: "Someone noticed.", sneakiness: "Chat caught the first clue." },
-          { impostor: demoPlayers[0], word: "candle", evidence, messages: demoMessages, accidentalDecoys: [{ ...demoMessages[1], caption: "@quietfox said it too, by accident." }], verdict: "GOT AWAY", outcome: "got_away", caption: "1:12 into the round. 2 people read this. Nobody noticed.", sneakiness: "Hid ‘candle’ in plain sight." },
-        ] : undefined,
-        otherTables: tables.slice(1).map((table, index) => ({ id: table.id, results: [{ impostor: demoPlayers[(index + 2) % demoPlayers.length], verdict: index % 2 ? "CAUGHT" : "GOT AWAY" }] })),
-      },
-    },
-  };
+  if (kind === "newround") base.newRound = true;
+  return base;
 }
 
 function connect() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   const socket = new WebSocket(`${protocol}//${location.host}/ws?view=overlay`);
-  socket.addEventListener("open", () => {
-    reconnectDelay = 1_000;
-    connectionBadge.hidden = true;
-  });
-  socket.addEventListener("message", (event) => {
-    const payload = JSON.parse(event.data);
-    if (payload.type === "state") render(payload.data);
-  });
-  socket.addEventListener("close", () => {
-    connectionBadge.hidden = !currentState || currentState.phase === "IDLE";
-    setTimeout(connect, reconnectDelay);
-    reconnectDelay = Math.min(15_000, reconnectDelay * 1.7);
-  });
+  socket.addEventListener("open", () => { reconnectDelay = 1_000; $("#connection-badge").hidden = true; });
+  socket.addEventListener("message", (event) => { const payload = JSON.parse(event.data); if (payload.type === "state") render(payload.data); });
+  socket.addEventListener("close", () => { $("#connection-badge").hidden = false; setTimeout(connect, reconnectDelay); reconnectDelay = Math.min(15_000, reconnectDelay * 1.7); });
 }
 
-addEventListener("resize", fitStage);
-addEventListener("pointerdown", () => audio()?.resume(), { once: true });
-fitStage();
+fit();
+addEventListener("resize", fit);
+addEventListener("pointerdown", () => audio().resume(), { once: true });
 setInterval(updateClocks, 250);
-
-const mock = previewParams.get("mock");
-if (["lobby", "round", "vote", "reveal"].includes(mock)) render(mockState(mock));
+const mock = params.get("mock");
+if (["lobby-first", "lobby", "round", "round12", "vote", "reveal", "reveal2", "reveal-miss", "newround"].includes(mock)) render(mockState(mock));
 else connect();

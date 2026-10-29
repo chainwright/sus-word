@@ -2,7 +2,6 @@ import { cardScreen, voteProgress } from "./card-view.js";
 
 const root = document.querySelector("#card-root");
 const connection = document.querySelector("#connection");
-const heading = document.querySelector("#card-heading");
 const soundToggle = document.querySelector("#sound-toggle");
 const signalBorder = document.querySelector("#signal-border");
 const toast = document.querySelector("#toast");
@@ -54,10 +53,12 @@ function playerPhoto(player, className = "player-photo") {
 function topBar(label, timerKind = "phase") {
   const bar = node("header", "card-topbar");
   bar.append(node("strong", "card-phase", label));
+  const tools = node("span", "card-top-tools");
   const timer = node("time", "card-timer");
   timer.dataset.timer = timerKind;
   timer.setAttribute("aria-live", "polite");
-  bar.append(timer);
+  tools.append(timer, soundToggle);
+  bar.append(tools);
   return bar;
 }
 
@@ -66,6 +67,7 @@ function paperSheet(className = "") {
 }
 
 function tableLabel() {
+  if ((state.tableCount || 1) <= 1) return null;
   const label = node("div", `table-label ${state.onStream ? "on-stream" : "side-table"}`);
   label.append(
     node("strong", "", `TABLE ${state.tableId || 1} OF ${state.tableCount || 1}`),
@@ -142,7 +144,6 @@ async function checkName(login, status) {
 }
 
 function renderLogin(options = {}) {
-  heading.textContent = "SUS WORD · JOIN";
   const page = node("div", "join-page");
   page.append(topBar("SUS WORD · JOIN", "lobby"));
   const sheet = paperSheet("join-sheet");
@@ -199,7 +200,6 @@ function renderLogin(options = {}) {
 }
 
 function renderClaim(claim) {
-  heading.textContent = "SUS WORD · JOIN";
   const page = node("div", "join-page claim-page");
   page.append(topBar("SUS WORD · JOIN", "lobby"));
   const sheet = paperSheet("join-sheet");
@@ -235,7 +235,6 @@ function renderClaim(claim) {
 }
 
 function renderWaiting() {
-  heading.textContent = "SUS WORD · CARD LINKED";
   const page = node("div", "waiting-page");
   page.append(topBar("SUS WORD · READY", "lobby"));
   const sheet = paperSheet("waiting-sheet");
@@ -348,10 +347,11 @@ function accusePanel() {
 }
 
 function renderRole(role, signal) {
-  heading.textContent = `SUS WORD · ROUND ${state.roundNumber}`;
   const page = node("div", "role-page");
   page.append(topBar(`SUS WORD · ROUND ${state.roundNumber}`));
-  page.append(node("div", "new-round-banner", "🔔 NEW ROUND: CHECK YOUR ROLE"), tableLabel());
+  page.append(node("div", "new-round-banner", "🔔 NEW ROUND: CHECK YOUR ROLE"));
+  const table = tableLabel();
+  if (table) page.append(table);
   const sheet = paperSheet(`role-sheet ${role === "IMPOSTER" ? "imposter-sheet" : "detective-sheet"}`);
   sheet.setAttribute("aria-live", "polite");
   sheet.append(node("p", "step-label", "YOUR ROLE THIS ROUND"));
@@ -361,7 +361,9 @@ function renderRole(role, signal) {
   if (role === "IMPOSTER") {
     sheet.append(node("p", "secret-label", "YOUR SECRET WORD THIS ROUND"));
     highlight = node("strong", "secret-word", state.word || "SECRET");
-    sheet.append(highlight, node("p", "role-job", "Your job: slip this word into chat inside a normal sentence before the timer runs out. Don’t get caught."));
+    sheet.append(highlight, node("div", `delivery-chip${state.delivered ? " delivered" : ""}`,
+      state.delivered ? `✓ DELIVERED ${state.deliveredAt || "0:00"} into the round` : "Word not sent yet"),
+    node("p", "role-job", "Your job: slip this word into chat inside a normal sentence before the timer runs out. Don’t get caught."));
     if (state.impostorCount > 1) sheet.append(node("p", "two-imposters", "2 Imposters this round; the other one has a different word."));
   } else {
     sheet.append(node("p", "role-job", state.impostorCount > 1
@@ -371,8 +373,6 @@ function renderRole(role, signal) {
   }
   sheet.append(roleTips(role));
   page.append(sheet);
-  if (role === "IMPOSTER") page.append(node("div", `delivery-chip${state.delivered ? " delivered" : ""}`,
-    state.delivered ? `✓ DELIVERED ${state.deliveredAt || "0:00"} into the round` : "Word not sent yet"));
   appendRoundTools(page);
   root.replaceChildren(page);
   updateTimers();
@@ -380,7 +380,6 @@ function renderRole(role, signal) {
 }
 
 function renderVote() {
-  heading.textContent = `SUS WORD · ROUND ${state.roundNumber} · VOTE`;
   const page = node("div", "vote-page");
   const banner = node("header", "vote-banner");
   banner.append(node("h1", "", `🗳️ VOTE NOW! · ${state.impostorCount || 1} TO CATCH`));
@@ -423,7 +422,6 @@ function renderVote() {
 }
 
 function renderRevealHold() {
-  heading.textContent = `SUS WORD · ROUND ${state.roundNumber} · REVEAL`;
   const page = node("div", "hold-page");
   page.append(topBar(`ROUND ${state.roundNumber} · THE REVEAL`, "hold"));
   const sheet = paperSheet("hold-sheet");
@@ -435,7 +433,6 @@ function renderRevealHold() {
 }
 
 function renderResult() {
-  heading.textContent = `SUS WORD · ROUND ${state.roundNumber} RESULT`;
   const page = node("div", "result-page");
   page.append(topBar(`SUS WORD · ROUND ${state.roundNumber} RESULT`, "lobby"));
   const sheet = paperSheet("result-sheet");

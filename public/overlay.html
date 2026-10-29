@@ -8,62 +8,32 @@
   </head>
   <body>
     <main id="stage" aria-live="polite">
-      <div id="idle-tag" class="paper-label">SUS WORD</div>
-
-      <aside id="case-board" class="case-board" hidden>
-        <header class="board-header paper-label">
-          <span id="phase-title">SUS WORD</span>
-          <small id="round-label"></small>
-        </header>
-        <div id="table-plate" class="table-plate" hidden></div>
-        <div id="accusation-ticker" class="accusation-ticker paper-slip" hidden></div>
-
-        <svg class="board-string" viewBox="0 0 528 1010" aria-hidden="true">
-          <path d="M 246 260 L 416 174 L 452 397" />
-        </svg>
-
-        <section id="lobby-view" class="phase-view lobby-view" hidden>
-          <div id="lobby-roster" class="lobby-roster"></div>
-          <div id="lobby-overflow" class="roster-overflow paper-slip" hidden></div>
-          <div class="join-slip paper-slip">
-            <strong>JOIN THE CASE</strong>
-            <span id="join-line"></span>
-          </div>
-          <p id="claim-count" class="claim-count"></p>
-        </section>
-
-        <section id="round-view" class="phase-view round-view" hidden>
-          <div class="timer-wrap">
-            <img src="/img/stopwatch.webp" alt="" class="board-stopwatch">
-            <time id="round-timer">3:00</time>
-            <span id="round-timer-hand" class="round-timer-hand" aria-hidden="true"></span>
-            <span class="round-timer-pivot" aria-hidden="true"></span>
-          </div>
-          <div class="hint-row">
-            <div id="category-hint" class="hint-card">
-              <div class="hint-inner"><span>CATEGORY</span><strong>?</strong></div>
-            </div>
-            <div id="letter-hint" class="hint-card">
-              <div class="hint-inner"><span>STARTS WITH</span><strong>?</strong></div>
-            </div>
-          </div>
-          <div id="round-players" class="round-players"></div>
-          <div id="round-overflow" class="roster-overflow round-overflow paper-slip" hidden></div>
-        </section>
-
-        <section id="vote-view" class="phase-view vote-view" hidden>
-          <div class="vote-heading">
-            <div class="paper-label">WHO IS SUS?</div>
-            <time id="vote-timer" class="paper-label">0:30</time>
-          </div>
-          <div id="vote-rows" class="vote-rows"></div>
-          <p id="vote-summary" class="vote-summary"></p>
-          <div class="vote-command paper-slip">Vote in chat: <strong>!vote name</strong></div>
-        </section>
+      <div id="idle-tag" class="paper">SUS WORD</div>
+      <section id="how-panel" class="how-panel paper" hidden>
+        <header><h1>HOW TO PLAY SUS WORD</h1><strong>3 min a round</strong></header>
+        <div class="how-steps">
+          <article><b>1</b><h2>Join</h2><p>Type <mark>!join</mark>, open the card link, enter your <strong>Twitch name</strong>, send <mark>!join CODE</mark>.</p></article>
+          <article><b>2</b><h2>Play your role</h2><p>Your card shows it. The <strong>Imposter</strong> hides a secret word in a normal sentence. <strong>Detectives</strong> chat and hunt for it.</p></article>
+          <article><b>3</b><h2>Vote</h2><p>When the timer ends, type your suspect's number in chat or tap them on your card. New roles every round.</p></article>
+        </div>
+        <p class="name-warning">⚠ The name on your card must be your exact Twitch name.</p>
+        <p class="example">Example: the Imposter's word is <strong>LEMON</strong>. They say “I take my tea with <mark>lemon</mark> and honey”. Spot it and vote for them.</p>
+        <footer><span id="how-ready"></span><span id="how-clock"></span></footer>
+      </section>
+      <header id="phase-strip" class="phase-strip" hidden><strong id="strip-title"></strong><span id="strip-rule"></span><time id="strip-timer"></time></header>
+      <header id="compact-lobby" class="compact-lobby paper" hidden></header>
+      <header id="vote-banner" class="vote-banner" hidden><strong>🗳️ VOTE NOW!</strong><time id="vote-time"></time><span>Type your suspect's number in chat,<br>or tap them on your card</span><b id="votes-locked">VOTES LOCKED</b></header>
+      <div id="camera-dim" hidden></div>
+      <aside id="board" class="board" hidden>
+        <header class="board-head paper"><strong id="board-title"></strong><span id="board-meta"></span></header>
+        <section id="hints" class="hints"><article class="hint paper"><small>WORD TOPIC</small><strong id="hint-category">🔒</strong></article><article class="hint paper"><small>FIRST LETTER</small><strong id="hint-letter">🔒</strong></article></section>
+        <section id="player-grid" class="player-grid"></section>
+        <section id="board-note" class="board-note paper"></section>
+        <section id="leaderboard" class="leaderboard"></section>
       </aside>
-
-      <section id="evidence-tray" class="evidence-tray" hidden aria-label="Latest chat messages"></section>
-      <section id="reveal-view" class="reveal-view" hidden></section>
+      <section id="evidence-tray" class="evidence-tray" hidden></section>
+      <section id="reveal-layer" class="reveal-layer" hidden></section>
+      <div id="new-roles" class="new-roles" hidden>🔔 NEW ROLES: CHECK YOUR CARD</div>
       <div id="connection-badge" class="connection-badge" hidden>RECONNECTING</div>
     </main>
     <script type="module" src="/overlay.js"></script>

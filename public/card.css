@@ -47,12 +47,12 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 4px s
 .folder-light { display: none; }
 
 .site-header {
-  position: absolute;
+  position: fixed;
   z-index: 50;
   top: 10px;
   left: 13px;
   right: 13px;
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -108,15 +108,16 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 4px s
 #toast.success { background: var(--green); }
 
 .card-topbar {
-  min-height: 92px;
-  padding: 56px 16px 10px;
+  min-height: 70px;
+  padding: 13px 12px 9px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   color: #f8e8ca;
 }
-.card-phase { font: 700 19px/1 "Oswald", sans-serif; letter-spacing: .02em; text-transform: uppercase; }
+.card-top-tools { flex: none; display: flex; align-items: center; gap: 7px; }
+.card-phase { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 19px/1 "Oswald", sans-serif; letter-spacing: .02em; text-transform: uppercase; }
 .card-timer {
   flex: none;
   padding: 8px 12px;
@@ -223,6 +224,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 4px s
   font-size: 14px;
 }
 .table-label strong { font-family: "Oswald", sans-serif; font-size: 17px; }
+.table-label strong, .table-label span { white-space: nowrap; }
+.table-label strong { flex: none; }
+.table-label span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .table-label.side-table { border-left: 5px solid var(--green); }
 .role-sheet { transform-style: preserve-3d; border-top: 7px solid #7b6957; }
 .role-sheet.imposter-sheet { border-top-color: var(--red); }
@@ -257,7 +261,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 4px s
 .tips-panel li { margin: 6px 0; font-size: 14px; }
 .role-example { margin: 10px 0 0; padding: 8px; background: #efddb7; font-size: 14px; }
 .delivery-chip {
-  margin: 0 12px 12px;
+  margin: 3px 0 12px;
   padding: 11px;
   color: var(--ink);
   background: var(--paper-light);
@@ -313,6 +317,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 4px s
 .vote-avatar { width: 55px; height: 55px; margin: 0 auto 5px; overflow: hidden; display: grid; place-items: center; border-radius: 50%; color: #fff; background: #6d5a79; font-weight: 700; }
 .vote-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
 .vote-marker { position: absolute; left: 50%; bottom: -8px; min-height: 18px; padding: 2px 6px; translate: -50% 0; color: #fff; background: var(--red); font: 700 14px/1 "Oswald", sans-serif; white-space: nowrap; }
+.vote-marker:empty { display: none; }
 .vote-footer { margin: 22px 16px; color: #f8e4c4; font-size: 15px; text-align: center; }
 
 .hold-sheet { margin-top: 150px; padding: 38px 20px; text-align: center; }
