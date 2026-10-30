@@ -1,6 +1,6 @@
 import "dotenv/config";
 
-import { randomBytes } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer as createHttpServer } from "node:http";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -66,16 +66,20 @@ function existingSessionId(request) {
   return /^[A-Za-z0-9_-]{24,64}$/.test(sid ?? "") ? sid : null;
 }
 
-function sessionId(request, response) {
-  const existing = existingSessionId(request);
-  if (existing) return existing;
-  const sid = randomBytes(24).toString("base64url");
+function setSessionCookie(response, sid) {
   response.cookie(SESSION_COOKIE, sid, {
     httpOnly: true,
     sameSite: "lax",
     maxAge: 30 * 24 * 60 * 60 * 1_000,
     path: "/",
   });
+}
+
+function sessionId(request, response) {
+  const existing = existingSessionId(request);
+  if (existing) return existing;
+  const sid = randomBytes(24).toString("base64url");
+  setSessionCookie(response, sid);
   return sid;
 }
 
@@ -100,6 +104,43 @@ export function isLocalHostOrigin(value) {
   }
 }
 
+export function isLocalHostHeader(value) {
+  try {
+    const { hostname } = new URL(`http://${String(value)}`);
+    return hostname === "localhost" || isLoopbackAddress(hostname);
+  } catch {
+    return false;
+  }
+}
+
+function suppliedHostSecret(request) {
+  const authorization = String(request.headers?.authorization ?? "");
+  const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
+  const header = request.headers?.["x-sus-word-host-secret"];
+  let query = null;
+  try {
+    query = new URL(request.url || "/", "http://localhost").searchParams.get("hostSecret");
+  } catch {
+    // A malformed URL is never a valid credential.
+  }
+  return String(header || bearer || query || "");
+}
+
+function secretMatches(supplied, expected) {
+  if (!expected || !supplied) return false;
+  const left = Buffer.from(String(supplied));
+  const right = Buffer.from(String(expected));
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+export function isAuthorizedHostRequest(request, hostSecret = "") {
+  const origin = request.headers?.origin;
+  const local = isLoopbackAddress(request.socket?.remoteAddress)
+    && isLocalHostHeader(request.headers?.host)
+    && (!origin || isLocalHostOrigin(origin));
+  return local || secretMatches(suppliedHostSecret(request), hostSecret);
+}
+
 export function createSusWordServer(options = {}) {
   const env = options.env ?? process.env;
   const logger = options.logger ?? console;
@@ -109,6 +150,7 @@ export function createSusWordServer(options = {}) {
   const browserSockets = new WebSocketServer({ noServer: true });
   const clients = new Set();
   const publicUrl = cleanPublicUrl(env.PUBLIC_URL);
+  const hostSecret = String(env.HOST_SECRET ?? "");
   const configuredPort = Number(options.port ?? env.PORT ?? 3000);
   let twitch = options.twitch ?? null;
   let started = false;
@@ -152,7 +194,12 @@ export function createSusWordServer(options = {}) {
     response.sendFile(resolve(PUBLIC_DIR, "host.html"));
   });
   app.get("/card", (request, response) => {
-    sessionId(request, response);
+    const demoNumber = Number.parseInt(request.query.demo, 10);
+    if (env.DEMO_MODE === "1" && Number.isInteger(demoNumber) && demoNumber >= 1 && demoNumber <= 200) {
+      setSessionCookie(response, `demo-player-session-${String(demoNumber).padStart(4, "0")}`);
+    } else {
+      sessionId(request, response);
+    }
     response.sendFile(resolve(PUBLIC_DIR, "card.html"));
   });
   app.use(express.static(PUBLIC_DIR));
@@ -183,17 +230,24 @@ export function createSusWordServer(options = {}) {
     response.status(result.ok ? 200 : 400).json({ ...result, seenInChat: nameCheck.seen, nameCheck });
   });
 
-  app.post("/api/host/feature/:tableId", (request, response) => {
+  const authorizeHostRequest = options.authorizeHostRequest
+    ?? ((request) => isAuthorizedHostRequest(request, hostSecret));
+  function requireHostAccess(request, response, next) {
+    if (authorizeHostRequest(request)) return next();
+    response.status(403).json({ ok: false, reason: "host_forbidden" });
+  }
+
+  app.post("/api/host/feature/:tableId", requireHostAccess, (request, response) => {
     const result = game.featureTable(request.params.tableId);
     response.status(result.ok ? 200 : 409).json(result);
   });
 
-  app.post("/api/host/host-plays", (request, response) => {
+  app.post("/api/host/host-plays", requireHostAccess, (request, response) => {
     const result = game.setHostPlays(request.body?.enabled !== false);
     response.json(result);
   });
 
-  app.post("/api/host/:action", async (request, response, next) => {
+  app.post("/api/host/:action", requireHostAccess, async (request, response, next) => {
     try {
       const result = await runHostAction(request.params.action);
       response.status(result.ok ? 200 : 409).json(result);
@@ -221,14 +275,18 @@ export function createSusWordServer(options = {}) {
       socket.destroy();
       return;
     }
+    if (view === "host" && !authorizeHostRequest(request)) {
+      socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+      socket.destroy();
+      return;
+    }
 
     browserSockets.handleUpgrade(request, socket, head, (webSocket) => {
       const client = {
         socket: webSocket,
         view,
         sessionId: sid,
-        isLocal: isLoopbackAddress(request.socket.remoteAddress)
-          && isLocalHostOrigin(request.headers.origin),
+        canHost: view === "host" && authorizeHostRequest(request),
       };
       clients.add(client);
       webSocket.on("close", () => clients.delete(client));
@@ -397,7 +455,7 @@ export function createSusWordServer(options = {}) {
     if (client.view === "host" && payload?.type === "voice") {
       sendJson(client.socket, {
         type: "voiceResult",
-        data: handleVoiceChunk(payload.text, client.isLocal),
+        data: handleVoiceChunk(payload.text, client.canHost),
       });
       return;
     }

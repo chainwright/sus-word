@@ -1,0 +1,11 @@
+Step 22b. Outside the sandbox, npm run test:browser fails. Exact output:
+
+✓ overlay lobby-first at 854x480
+✓ overlay lobby at 854x480
+✓ overlay round at 854x480
+✓ overlay round12 at 854x480
+✓ overlay vote at 854x480
+Error: overlay reveal at 854x480 failed
+  - reveal-caption-overflow on .reveal-caption · 1:48 into the round · 9 people read it · someone noticed · box {"left":371.8,"top":730.9,"width":546.6,"height":26.2,"clientWidth":590,"clientHeight":28,"scrollWidth":590,"scrollHeight":32}
+
+Fix the reveal caption so it fits its card at 854x480 (and 1920x1080) without loosening the check; then make the whole browser run pass. Keep npm test green. Copy this prompt as codex-log/step-22b.txt. Do not commit; one commit message for 22 and 22b.

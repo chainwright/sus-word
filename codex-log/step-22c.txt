@@ -1,0 +1,15 @@
+Step 22c. Your 22b change broke the browser runner itself. Outside the sandbox, npm run test:browser now crashes:
+✓ overlay lobby-first at 854x480
+✓ overlay lobby at 854x480
+✓ overlay round at 854x480
+✓ overlay round12 at 854x480
+✓ overlay vote at 854x480
+✓ overlay reveal at 854x480
+✓ overlay reveal2 at 854x480
+✓ overlay reveal-miss at 854x480
+✓ overlay champion at 854x480
+✓ overlay newround at 854x480
+ReferenceError: size is not defined
+    at main (file:///Users/mini/agents/sora/hackathons/codex_twitch_2026/sus-word/scripts/browser-test.js:331:44)
+
+Fix the runner (a variable 'size' used out of scope), keep the reveal-caption fix, and make the whole real-Chrome run pass at both sizes. Keep npm test green. Copy this prompt as codex-log/step-22c.txt. Do not commit; one commit message for 22–22c.

@@ -33,6 +33,13 @@ const actionButtons = [...document.querySelectorAll(".stamp-button[data-action]"
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const hostParams = new URLSearchParams(location.search);
 const mockMode = hostParams.get("mock") === "round";
+const hostSecret = hostParams.get("secret") || "";
+
+function hostHeaders(extra = {}) {
+  return hostSecret
+    ? { ...extra, "X-Sus-Word-Host-Secret": hostSecret }
+    : extra;
+}
 
 let state = null;
 let stateReceivedAt = Date.now();
@@ -307,7 +314,10 @@ async function runAction(action, label, button) {
   actionResult.textContent = "Working…";
   actionResult.classList.remove("error");
   try {
-    const response = await fetch(`/api/host/${action}`, { method: "POST" });
+    const response = await fetch(`/api/host/${action}`, {
+      method: "POST",
+      headers: hostHeaders(),
+    });
     const result = await response.json();
     actionResult.textContent = result.ok
       ? `${label} complete.`
@@ -327,7 +337,9 @@ async function runAction(action, label, button) {
 
 function connect() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  const socket = new WebSocket(`${protocol}//${location.host}/ws?view=host`);
+  const query = new URLSearchParams({ view: "host" });
+  if (hostSecret) query.set("hostSecret", hostSecret);
+  const socket = new WebSocket(`${protocol}//${location.host}/ws?${query}`);
   hostSocket = socket;
   socket.addEventListener("open", () => {
     reconnectDelay = 1_000;
@@ -596,7 +608,7 @@ hostPlays.addEventListener("change", async () => {
   try {
     const response = await fetch("/api/host/host-plays", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: hostHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ enabled: hostPlays.checked }),
     });
     const result = await response.json();

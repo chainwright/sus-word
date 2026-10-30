@@ -22,6 +22,7 @@ export const DEFAULT_DURATIONS = Object.freeze({
   reveal: 20_000,
   revealOne: 12_000,
   revealTwo: 20_000,
+  championHold: 10_000,
   cardResultDelay: 6_000,
 });
 
@@ -161,6 +162,7 @@ export class Game extends EventEmitter {
     this.players = new Map();
     this.profiles = new Map();
     this.scores = new Map();
+    this.playerStats = new Map();
     this.claims = new Map();
     this.sessions = new Map();
     this.tables = new Map();
@@ -240,6 +242,7 @@ export class Game extends EventEmitter {
     this.players.clear();
     this.profiles.clear();
     this.scores.clear();
+    this.playerStats.clear();
     this.claims.clear();
     this.sessions.clear();
     this.lastRoundSeating = [];
@@ -287,6 +290,7 @@ export class Game extends EventEmitter {
     this.players.set(id, player);
     this.profiles.set(id, { ...player });
     if (!this.scores.has(id)) this.scores.set(id, 0);
+    this.#statsFor(id);
     this.#publish("player", {
       action: existing ? "update" : "join",
       waitingForNextRound: ACTIVE_PHASES.has(this.state) && !this.playerTables.has(id),
@@ -398,14 +402,23 @@ export class Game extends EventEmitter {
     let finalists;
     if (this.lastRoundSeating.length > 12) {
       const eligible = new Set(this.lastRoundSeating.flatMap(({ playerIds }) => playerIds));
-      finalists = this.#leaderboard(Infinity)
-        .filter(({ player }) => eligible.has(player.id)).slice(0, 12)
-        .map(({ player }) => this.players.get(player.id)).filter(Boolean);
+      finalists = this.#rankPlayers([...eligible].map((id) => this.players.get(id)).filter(Boolean)).slice(0, 12);
     } else {
-      finalists = this.lastRoundSeating.map(({ playerIds }) => playerIds
-        .map((id) => this.players.get(id)).filter(Boolean)
-        .sort((left, right) => (this.scores.get(right.id) ?? 0) - (this.scores.get(left.id) ?? 0)
-          || left.login.localeCompare(right.login))[0]).filter(Boolean);
+      const rankedTables = this.lastRoundSeating.map(({ playerIds }) => (
+        this.#rankPlayers(playerIds.map((id) => this.players.get(id)).filter(Boolean))
+      )).filter(({ length }) => length);
+      const winners = rankedTables.map(([winner]) => winner);
+      const selectedIds = new Set(winners.map(({ id }) => id));
+      const runnersUp = this.#rankPlayers(rankedTables.flatMap((players) => players.slice(1)));
+      const targetSize = Math.min(12, Math.max(6, winners.length), winners.length + runnersUp.length);
+      finalists = [...winners];
+      for (const player of runnersUp) {
+        if (finalists.length >= targetSize) break;
+        if (!selectedIds.has(player.id)) {
+          selectedIds.add(player.id);
+          finalists.push(player);
+        }
+      }
     }
     finalists = finalists.filter((player) => !this.mutedPlayerIds.has(player.id));
     const streamer = this.#streamerPlayer();
@@ -562,6 +575,7 @@ export class Game extends EventEmitter {
     assignment.bustedAt = accusation.at;
     assignment.bustedBy = accuser.id;
     this.#addScore(accuser.id, 2, table);
+    this.#statsFor(accuser.id).catches += 1;
     const toast = `@${accuser.login} BUSTED @${target.login}: ${assignment.word.toUpperCase()}`;
     const payload = {
       tableId: table.id,
@@ -573,7 +587,26 @@ export class Game extends EventEmitter {
       toastKind: "busted",
     };
     this.#publish("busted", payload);
+    this.#finishIfEveryImpostorIsBusted();
     return { ok: true, correct: true, busted: true, tableId: table.id, toast, toastKind: "busted" };
+  }
+
+  #finishIfEveryImpostorIsBusted() {
+    if (this.state !== PHASES.ROUND || !this.tables.size) return false;
+    if (![...this.tables.values()].every((table) => (
+      table.impostors.length > 0 && table.impostors.every(({ busted }) => busted)
+    ))) return false;
+    const now = this.#now();
+    for (const table of this.tables.values()) {
+      table.endedAt = now;
+      table.endsAt = now;
+      table.voteEndsAt = now;
+      table.votes = new Map();
+      table.crowdVotes = new Map();
+    }
+    this.votes.clear();
+    this.#completeReveal();
+    return true;
   }
 
   beginVote() {
@@ -676,6 +709,10 @@ export class Game extends EventEmitter {
 
   finishVote() {
     if (this.state !== PHASES.VOTE || !this.tables.size) return { ok: false, reason: "invalid_state" };
+    return this.#completeReveal();
+  }
+
+  #completeReveal() {
     const now = this.#now();
     const revealDuration = this.#revealDuration();
     for (const table of this.tables.values()) {
@@ -683,11 +720,19 @@ export class Game extends EventEmitter {
       table.reveal = this.#buildTableReveal(table);
       table.phaseResult = this.#phaseResult(table.reveal.imposters);
     }
-    const finalLeaderboard = this.#leaderboard(5);
+    const rankedFinalists = this.isFinalRound
+      ? this.#rankPlayers(
+        [...this.playerTables.keys()].map((id) => this.players.get(id) ?? this.profiles.get(id)).filter(Boolean),
+      ) : [];
+    const finalLeaderboard = this.isFinalRound
+      ? rankedFinalists.slice(0, 5).map((player) => ({
+        player: this.#publicPlayer(player),
+        score: this.scores.get(player.id) ?? 0,
+      }))
+      : this.#leaderboard(5);
     for (const table of this.tables.values()) table.reveal.leaderboard = finalLeaderboard;
     if (this.isFinalRound) {
-      const champion = this.#leaderboard(Infinity)
-        .filter(({ player }) => this.playerTables.has(player.id))[0]?.player ?? null;
+      const champion = rankedFinalists[0] ?? null;
       this.lastChampion = champion;
       for (const table of this.tables.values()) table.reveal.champion = champion;
     }
@@ -806,6 +851,7 @@ export class Game extends EventEmitter {
     const tableView = {
       tableId: table.id,
       tableCount: this.tables.size,
+      impostorCount: table.impostors.length,
       featuredTableId: this.featuredTableId,
       onStream,
       chatLocked: onStream,
@@ -818,7 +864,6 @@ export class Game extends EventEmitter {
       earlyVoteTargetId: table.earlyVotes.get(player.id) ?? null,
       earlyVoteTargetNumber: table.roster.get(table.earlyVotes.get(player.id))?.number ?? null,
       voteTargetId: table.votes.get(player.id) ?? null,
-      impostorCount: table.impostors.length,
       canAccuse: this.state === PHASES.ROUND && !this.roundAccusations.has(player.id),
       canVote: this.state === PHASES.VOTE,
     };
@@ -886,6 +931,7 @@ export class Game extends EventEmitter {
       number: table.number,
       tableId: table.id,
       tableCount: this.tables.size,
+      impostorCount: table.impostors.length,
       totalPlayers: [...this.tables.values()].reduce((sum, entry) => sum + entry.roster.size, 0),
       startedAt: table.startedAt,
       remainingMs: this.state === PHASES.ROUND ? Math.max(0, table.endsAt - now) : 0,
@@ -1107,11 +1153,15 @@ export class Game extends EventEmitter {
 
   #showHint(kind) {
     if (this.state !== PHASES.ROUND || !this.tables.size) return;
-    for (const table of this.tables.values()) table.hints[kind] = true;
+    for (const table of this.tables.values()) {
+      if (table.impostors.some(({ busted }) => !busted)) table.hints[kind] = true;
+    }
     const table = this.tables.get(this.featuredTableId);
+    const activeImpostors = table.impostors.filter(({ busted }) => !busted);
+    if (!activeImpostors.length) return;
     const value = kind === "category"
-      ? [...new Set(table.impostors.map(({ category }) => category))].join(" · ")
-      : [...new Set(table.impostors.map(({ word }) => word[0]))].join(" · ");
+      ? [...new Set(activeImpostors.map(({ category }) => category))].join(" · ")
+      : [...new Set(activeImpostors.map(({ word }) => word[0]))].join(" · ");
     this.#publish("hint", {
       roundNumber: this.roundNumber,
       tableId: table.id,
@@ -1132,7 +1182,16 @@ export class Game extends EventEmitter {
       this.#addScore(assignment.playerId, delta, table);
     }
     for (const [voterId, targetId] of table.votes) {
-      if (table.impostors.find(({ playerId, caught }) => playerId === targetId && caught)) this.#addScore(voterId, 1, table);
+      if (table.impostors.find(({ playerId, caught }) => playerId === targetId && caught)) {
+        this.#addScore(voterId, 1, table);
+        this.#statsFor(voterId).catches += 1;
+      }
+    }
+    for (const player of table.roster.values()) {
+      const assignment = table.impostors.find(({ playerId }) => playerId === player.id);
+      if (!assignment || (!assignment.busted && !assignment.caught)) {
+        this.#statsFor(player.id).roundsSurvived += 1;
+      }
     }
     const results = table.impostors.map((assignment) => this.#assignmentReveal(table, assignment));
     const primary = results[0];
@@ -1250,9 +1309,12 @@ export class Game extends EventEmitter {
   }
 
   #publicHints(table) {
+    const active = table.impostors.filter(({ busted }) => !busted);
     return {
-      category: table.hints.category ? [...new Set(table.impostors.map(({ category }) => category))].join(" · ") : null,
-      letter: table.hints.letter ? [...new Set(table.impostors.map(({ word }) => word[0]))].join(" · ") : null,
+      category: table.hints.category && active.length
+        ? [...new Set(active.map(({ category }) => category))].join(" · ") : null,
+      letter: table.hints.letter && active.length
+        ? [...new Set(active.map(({ word }) => word[0]))].join(" · ") : null,
     };
   }
 
@@ -1285,6 +1347,25 @@ export class Game extends EventEmitter {
     })).filter(({ player }) => player)
       .sort((left, right) => right.score - left.score || left.player.login.localeCompare(right.player.login))
       .slice(0, limit);
+  }
+
+  #rankPlayers(players) {
+    return [...players].sort((left, right) => {
+      const leftStats = this.#statsFor(left.id);
+      const rightStats = this.#statsFor(right.id);
+      return (this.scores.get(right.id) ?? 0) - (this.scores.get(left.id) ?? 0)
+        || rightStats.catches - leftStats.catches
+        || rightStats.roundsSurvived - leftStats.roundsSurvived
+        || (left.number ?? Number.MAX_SAFE_INTEGER) - (right.number ?? Number.MAX_SAFE_INTEGER)
+        || (left.joinedAt ?? Number.MAX_SAFE_INTEGER) - (right.joinedAt ?? Number.MAX_SAFE_INTEGER);
+    });
+  }
+
+  #statsFor(playerId) {
+    if (!this.playerStats.has(playerId)) {
+      this.playerStats.set(playerId, { catches: 0, roundsSurvived: 0 });
+    }
+    return this.playerStats.get(playerId);
   }
 
   #addScore(playerId, delta, table) {
@@ -1426,6 +1507,7 @@ export class Game extends EventEmitter {
     };
     this.profiles.set(id, profile);
     if (!this.scores.has(id)) this.scores.set(id, 0);
+    this.#statsFor(id);
     return profile;
   }
 
@@ -1496,7 +1578,8 @@ export class Game extends EventEmitter {
 
   #revealDuration() {
     const impostorCount = Math.max(1, ...[...this.tables.values()].map((table) => table.impostors.length));
-    return impostorCount > 1 ? this.durations.revealTwo : this.durations.revealOne;
+    const reveal = impostorCount > 1 ? this.durations.revealTwo : this.durations.revealOne;
+    return reveal + (this.isFinalRound ? this.durations.championHold : 0);
   }
 
   #setTimer(name, delay, callback) {

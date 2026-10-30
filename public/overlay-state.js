@@ -29,6 +29,22 @@ export function shouldAnimateVoteBanner(plan = {}) {
   return plan.phase === "VOTE" && plan.phaseChanged === true;
 }
 
+export function orderAccusationToasts(accusations = []) {
+  return [...accusations].sort((left, right) => (
+    Number(Boolean(right.correct)) - Number(Boolean(left.correct))
+    || (Number(left.at) || 0) - (Number(right.at) || 0)
+  ));
+}
+
+export function accusationToastDuration(accusation = {}) {
+  return accusation.correct ? 3_000 : 1_800;
+}
+
+export function bustedRowLabel(busted = {}) {
+  const number = Number(busted.accuser?.number);
+  return Number.isInteger(number) && number > 0 ? `BUSTED · by #${number}` : "BUSTED";
+}
+
 export function formatOverlayClock(milliseconds) {
   const seconds = Math.max(0, Math.ceil((Number(milliseconds) || 0) / 1_000));
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;

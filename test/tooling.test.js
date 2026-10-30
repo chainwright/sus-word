@@ -21,4 +21,13 @@ test("browser checks and push CI stay wired independently of npm test", async ()
   assert.match(browserCheck, /player-name-vertical-clipped/);
   assert.match(browserCheck, /player-name-vote-overlap/);
   assert.match(browserCheck, /width: 1920, height: 1080/);
+  assert.match(browserCheck, /reveal-caption-card-overflow/);
+  assert.match(browserCheck, /mock=reveal&frame=payoff/);
+  assert.match(browserCheck, /player-name-busted-overlap/);
+  assert.match(browserCheck, /mock=round&frame=busted/);
+  const resolutionLoop = browserCheck.indexOf("for (const dimensions");
+  const sizeDeclaration = browserCheck.indexOf("const size =", resolutionLoop);
+  const mockLoop = browserCheck.indexOf("for (const mock of OVERLAY_MOCKS)", resolutionLoop);
+  assert.ok(resolutionLoop >= 0 && sizeDeclaration > resolutionLoop && sizeDeclaration < mockLoop,
+    "the resolution label must be in scope for standard and extra overlay checks");
 });

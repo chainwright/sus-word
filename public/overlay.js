@@ -4,6 +4,9 @@ import {
   championBoardModel,
   formatOverlayClock,
   missedWordCopy,
+  accusationToastDuration,
+  bustedRowLabel,
+  orderAccusationToasts,
   overlayRenderPlan,
   roundRule,
   shouldAnimateVoteBanner,
@@ -30,6 +33,8 @@ let lastVoteSecond = null;
 let audioContext = null;
 let seenAccusations = new Set();
 let accusationsInitialized = false;
+let accusationQueue = [];
+let accusationToastActive = false;
 let newRoundShown = null;
 let revealBoardMode = "votes";
 
@@ -126,7 +131,7 @@ function playerRow(player, options = {}) {
       row.append(chatBar, el("small", "chat-vote-label", String(options.chatVotes || 0)));
     }
   }
-  if (options.busted) row.append(el("span", "busted-mini", `BUSTED by @${options.busted.accuser?.login || "detective"}`));
+  if (options.busted) row.append(el("span", "busted-mini", bustedRowLabel(options.busted)));
   return row;
 }
 
@@ -180,31 +185,45 @@ function renderAccusations(round = {}) {
     seenAccusations = new Set(accusations.map((item) => `${item.at}:${item.accuser?.id || ""}`));
     return;
   }
+  const incoming = [];
   for (const accusation of accusations) {
     const key = `${accusation.at}:${accusation.accuser?.id || ""}`;
     if (seenAccusations.has(key)) continue;
     seenAccusations.add(key);
-    const toast = $("#accuse-toast");
-    toast.textContent = accusation.toast || (accusation.correct
-      ? `@${accusation.accuser?.login} BUSTED @${accusation.target?.login}: ${String(accusation.word || "").toUpperCase()}`
-      : `❌ @${accusation.accuser?.login} guessed wrong`);
-    toast.className = `accuse-toast ${accusation.correct ? "busted" : "miss"}`;
-    toast.hidden = false;
-    toast.getAnimations().forEach((animation) => animation.cancel());
-    if (!reduced.matches) toast.animate(
-      accusation.correct
-        ? [{ transform: "translate(-50%,-50%) rotate(-8deg) scale(2)", opacity: 0 }, { transform: "translate(-50%,-50%) rotate(-2deg) scale(1)", opacity: 1 }]
-        : [{ transform: "translate(-50%,12px)", opacity: 0 }, { transform: "translate(-50%,0)", opacity: 1 }],
-      { duration: accusation.correct ? 180 : 220, easing: "ease-out" },
-    );
-    if (accusation.correct) {
-      thud();
-      const row = document.querySelector(`.player-row[data-player-id='${CSS.escape(accusation.target?.id || "")}']`);
-      row?.classList.add("live-busted");
-      stage.animate([{ translate: "0" }, { translate: "3px -2px" }, { translate: "-3px 2px" }, { translate: "0" }], { duration: 120 });
-    }
-    setTimeout(() => { toast.hidden = true; }, accusation.correct ? 3_000 : 1_800);
+    incoming.push(accusation);
   }
+  accusationQueue = orderAccusationToasts([...accusationQueue, ...incoming]);
+  showNextAccusation();
+}
+
+function showNextAccusation() {
+  if (accusationToastActive || !accusationQueue.length) return;
+  accusationToastActive = true;
+  const accusation = accusationQueue.shift();
+  const toast = $("#accuse-toast");
+  toast.textContent = accusation.toast || (accusation.correct
+    ? `@${accusation.accuser?.login} BUSTED @${accusation.target?.login}: ${String(accusation.word || "").toUpperCase()}`
+    : `❌ @${accusation.accuser?.login} guessed wrong`);
+  toast.className = `accuse-toast ${accusation.correct ? "busted" : "miss"}`;
+  toast.hidden = false;
+  toast.getAnimations().forEach((animation) => animation.cancel());
+  if (!reduced.matches) toast.animate(
+    accusation.correct
+      ? [{ transform: "translate(-50%,-50%) rotate(-8deg) scale(2)", opacity: 0 }, { transform: "translate(-50%,-50%) rotate(-2deg) scale(1)", opacity: 1 }]
+      : [{ transform: "translate(-50%,12px)", opacity: 0 }, { transform: "translate(-50%,0)", opacity: 1 }],
+    { duration: accusation.correct ? 180 : 220, easing: "ease-out" },
+  );
+  if (accusation.correct) {
+    thud();
+    const row = document.querySelector(`.player-row[data-player-id='${CSS.escape(accusation.target?.id || "")}']`);
+    row?.classList.add("live-busted");
+    stage.animate([{ translate: "0" }, { translate: "3px -2px" }, { translate: "-3px 2px" }, { translate: "0" }], { duration: 120 });
+  }
+  setTimeout(() => {
+    toast.hidden = true;
+    accusationToastActive = false;
+    showNextAccusation();
+  }, accusationToastDuration(accusation));
 }
 
 function hideBase() {
@@ -611,6 +630,13 @@ function renderReveal(next) {
   const results = reveal?.imposters?.length ? reveal.imposters : [reveal].filter(Boolean);
   $("#board").hidden = false;
   renderRevealVotesBoard(next);
+  if (params.get("frame") === "payoff" && results[0]) {
+    const layer = $("#reveal-layer");
+    const card = finalCase(results[0]);
+    card.classList.add("lifted");
+    layer.replaceChildren(el("h1", "reveal-title", `ROUND ${next.roundNumber} · THE REVEAL`), card);
+    return;
+  }
   const play = params.get("play") === "1" || !params.has("mock");
   if (!play) {
     if (next.champion || reveal?.champion) showTopMoment(next, results);
@@ -623,8 +649,9 @@ function renderReveal(next) {
     animateOneResult(next, results[0], 0, () => {});
     animateOneResult(next, results[1], 1, finish);
   }
-  const revealDuration = results.length > 1 ? 20_000 : 12_000;
-  later(() => showTopMoment(next, results), revealDuration - 3_000);
+  const revealDuration = Number(next.phaseDurationMs) || (results.length > 1 ? 20_000 : 12_000);
+  const topMomentHold = (next.champion || reveal?.champion) ? 10_000 : 3_000;
+  later(() => showTopMoment(next, results), Math.max(0, revealDuration - topMomentHold));
   if (params.get("play") === "1") later(() => { clearReveal(); renderReveal(next); }, revealDuration);
 }
 
@@ -714,6 +741,9 @@ function mockState(kind) {
     chatVotes: [2, 7, 1, 4, 0, 1, 0, 0, 0, 0, 0, 0][index] || 0,
   }));
   base.round = { players, remainingMs: base.remainingMs, impostorCount: kind === "reveal2" ? 2 : 1, hints: { category: "FOOD · HOME", letter: kind === "vote" ? "L · B" : null }, messageCounts, latestMessages: messages.slice(0, 3), recentMessages: messages, tallies };
+  if (params.get("frame") === "busted") {
+    base.round.busted = [{ impostor: players[3], accuser: players[0] }];
+  }
   if (base.state === "REVEAL") {
     const first = { impostor: players[3], word: "lemon", evidence: kind === "reveal-miss" ? null : messages[3], messages, elapsed: "1:48", readerCount: 9, caught: true, verdict: kind === "reveal-miss" ? "WORD NEVER LANDED" : "CAUGHT", caption: kind === "reveal-miss" ? "THE WORD NEVER MADE IT OUT" : "1:48 into the round · 9 people read it · someone noticed" };
     const secondEvidence = { ...messages[1], index: 22, length: 7 };

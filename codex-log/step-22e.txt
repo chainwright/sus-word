@@ -1,0 +1,5 @@
+Step 22e. Close, but the real-Chrome run still fails on the BUSTED row at 854x480:
+  - vertical-overflow on .player-row.talking · box {"height":50,"clientHeight":54,"scrollHeight":65}
+In a screenshot, the cell for pixel_mara shows "BUSTED by" on one line and "@drovosek7777" on a second line that spills over the row below. The full accuser handle doesn't fit a board cell at 480p.
+
+Make the stamp one short line that always fits: "BUSTED" or "BUSTED · by #1" (the accuser's stable player number), and keep the full "@accuser" only in the big BUSTED announcement and the reveal, where there's room. The row must keep its normal height (no vertical overflow) and the caught player's name stays fully readable. Don't loosen any check. Make the whole browser run pass at both sizes. Keep npm test green. Copy this prompt as codex-log/step-22e.txt. Do not commit; one commit message for 22–22e.

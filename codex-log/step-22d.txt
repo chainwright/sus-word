@@ -1,0 +1,5 @@
+Step 22d. The runner works now, and the payoff passes. Outside the sandbox the real-Chrome run fails on the BUSTED row:
+Error: overlay BUSTED row at 854x480 failed
+  - player-name-busted-overlap on .player-name · pixel_mara overlaps BUSTED by @drovosek7777 · box {"left":1381,"top":376,"width":102.4,"height":25,"clientWidth":111,"clientHeight":27,"scrollWidth":111,"scrollHeight":27}
+
+The caught player's name must stay fully readable next to the BUSTED stamp at 854x480 and 1920x1080 (e.g. the stamp sits in its own band or beside the name, not over it). Don't loosen the check. Make the whole browser run pass. Keep npm test green. Copy this prompt as codex-log/step-22d.txt. Do not commit; one commit message for 22–22d.

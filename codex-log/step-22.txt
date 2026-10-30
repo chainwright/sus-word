@@ -1,0 +1,11 @@
+Step 22. A full end-to-end offline run (real timing, 8 players x 3 rounds, then 30 players on 3 tables with a FINAL) was judged; read playtest/E2E_JUDGE_2026-10-30.md in full (frames and logs are in playtest/e2e_2026-10-30/). Fix each with a test:
+
+1. SECURITY first: anyone with the public card/tunnel link can press the host controls (End, Reset, etc.). Host routes and their WebSocket actions must only work from the local machine (loopback) or with a host secret from .env; reject them from the public URL. Add tests that a non-local request without the secret is refused.
+2. When every Imposter at a table has been BUSTED mid-round, end that table's round right away and go to the reveal: no running timer, no first-letter hint, no vote that nobody can score in.
+3. The server never sends the Imposter count to the overlay, so 2-Imposter tables show "1 IMPOSTER" and "top vote accused". Send it in the state and use it everywhere (round strip, vote banner, board). The mocks set it themselves, which hid this: add a test on the real state path.
+4. The big BUSTED announcement never stays on screen: a wrong guess right after replaces it, and the board stamp covers the caught player's name. Queue announcements so each BUSTED shows its full time, and keep the caught player's name readable on the board.
+5. The "N people read it" payoff line overflows its card at 1080p and 480p: make it fit (wrap or scale) and add the overflow check to the browser test.
+6. FINAL: it seated only 3 players; seat the best player from EVERY table (as the README says). A player caught as the Imposter in the final shouldn't win a tie for champion on alphabetical order: break ties by catches/rounds survived, and never alphabetically. Hold the champion screen long enough to read (about 10 s).
+Also: let the demo's simulated players open their cards (the server rejects their session ids), so a rehearsal can show real cards.
+
+Check every overlay and card mock in a browser for console errors. Copy this prompt as codex-log/step-22.txt. Keep npm test and npm run test:browser green (Chrome works outside the sandbox; I'll run it). Do not commit; give me one commit message and the list of done items.

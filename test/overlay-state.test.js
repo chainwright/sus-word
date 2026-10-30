@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
 import {
+  accusationToastDuration,
+  bustedRowLabel,
   caseFileHeadline,
   championBoardModel,
   missedWordCopy,
@@ -11,6 +13,7 @@ import {
   syncBoardNoteVisibility,
   updateCompactLobbyClock,
   overlayRenderPlan,
+  orderAccusationToasts,
   voteInstruction,
   voteNameColumnBudget,
   votePlayerLayout,
@@ -36,6 +39,16 @@ test("a same-key reveal push keeps the active reveal layer", () => {
     resetBase: false,
     sameReveal: true,
   });
+});
+
+test("BUSTED toasts keep priority and their full display time", () => {
+  const miss = { at: 2, correct: false, toast: "wrong" };
+  const busted = { at: 3, correct: true, toast: "BUSTED" };
+  assert.deepEqual(orderAccusationToasts([miss, busted]), [busted, miss]);
+  assert.equal(accusationToastDuration(busted), 3_000);
+  assert.equal(accusationToastDuration(miss), 1_800);
+  assert.equal(bustedRowLabel({ accuser: { number: 12, login: "an_extremely_long_name" } }), "BUSTED · by #12");
+  assert.equal(bustedRowLabel({ accuser: { login: "missing_number" } }), "BUSTED");
 });
 
 test("crowd vote rows hide zero CHAT counts without taking name-line space", () => {

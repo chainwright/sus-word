@@ -122,3 +122,17 @@
 .vote-row .player-name{align-self:start;height:27px;padding:0;line-height:1.25;overflow:clip visible}
 .vote-row .vote-count{left:62px;bottom:0;max-width:70px;overflow:hidden;white-space:nowrap;line-height:1}
 .chat-vote-label{right:4px;bottom:0;max-width:58px;overflow:hidden;white-space:nowrap}
+
+/* A caught row keeps its identity line intact; the stamp gets a lower band. */
+.player-row:has(.busted-mini){height:44px;padding-top:2px;padding-bottom:2px}
+.player-row:has(.busted-mini) .player-number,.player-row:has(.busted-mini) .player-avatar{align-self:center}
+.player-row:has(.busted-mini) .player-name{position:absolute;left:62px;right:3px;top:0;height:27px;line-height:1.25;overflow:clip visible}
+.player-row .busted-mini{inset:29px 3px auto 62px;height:13px;width:auto;max-width:none;padding:0;border:0;overflow:hidden;white-space:nowrap;background:transparent;font:700 11px/13px "Oswald";text-align:left;transform:none}
+.live-busted .busted-mini{animation:live-busted-row-slam .2s ease-out both}
+@keyframes live-busted-row-slam{from{transform:rotate(-9deg) scale(2);opacity:0}to{transform:rotate(-2deg) scale(1);opacity:1}}
+
+/* Reveal payoff copy may wrap, but it must stay inside the evidence card. */
+.case-card .reveal-caption{max-width:590px;margin:8px 190px 0 0;padding:0 0 4px;font:700 24px/1.18 "Oswald";overflow-wrap:anywhere}
+.case-card.lifted .reveal-caption{max-width:390px;margin-top:6px;padding:0 0 4px;font-size:22px;line-height:1.18}
+.case-card.lifted .read-count{font-size:32px}
+.reveal-cases.two .reveal-caption{height:31px;margin:3px 155px 0 0;padding:0 0 4px;overflow:clip visible;white-space:nowrap;text-overflow:clip;font:700 20px/1.2 "Oswald"}

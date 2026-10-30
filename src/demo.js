@@ -23,7 +23,7 @@ const CORE_PROFILES = [
   login,
   displayName,
   avatar: avatarDataUri(color, initials),
-  sessionId: `demo-session-${index + 1}`,
+  sessionId: `demo-player-session-${String(index + 1).padStart(4, "0")}`,
 }));
 
 const AVATAR_COLORS = ["#51405f", "#7653a5", "#d56a3d", "#477b86", "#81613f", "#3f6881"];
@@ -66,7 +66,7 @@ export function demoProfiles(count = 4) {
       login: `viewer_${String(number).padStart(3, "0")}`,
       displayName: `Viewer ${number}`,
       avatar: avatarDataUri(AVATAR_COLORS[index % AVATAR_COLORS.length], `V${number}`),
-      sessionId: `demo-session-${number}`,
+      sessionId: `demo-player-session-${String(number).padStart(4, "0")}`,
     });
   }
   return profiles;
@@ -83,7 +83,8 @@ function claimCode(index) {
 }
 
 function demoSessionId(player) {
-  return player.sessionId || `demo-session-${String(player.id).replace(/^demo-/, "")}`;
+  return player.sessionId
+    || `demo-player-session-${String(player.id).replace(/^demo-/, "").padStart(4, "0")}`;
 }
 
 export function avatarDataUri(color, initials) {
@@ -281,7 +282,7 @@ export async function runDemo(options = {}) {
   const service = createSusWordServer({
     game,
     port,
-    env: { PORT: String(port), PUBLIC_URL: publicUrl, CHANNEL_LOGIN: "streamer" },
+    env: { PORT: String(port), PUBLIC_URL: publicUrl, CHANNEL_LOGIN: "streamer", DEMO_MODE: "1" },
   });
   let running = true;
   let voiceSocket = null;
@@ -302,6 +303,7 @@ export async function runDemo(options = {}) {
   console.log(`[demo] Open http://localhost:${address.port}/overlay in a 1920×1080 browser source.`);
   console.log(`[demo] ${fast ? "Fast rehearsal" : "Full timing"} mode. Press Ctrl+C to stop.`);
   console.log(`[demo] Simulating ${profiles.length} players.`);
+  console.log(`[demo] Open player 1's live card: http://localhost:${address.port}/card?demo=1`);
 
   game.start();
   await populateLobby(game, profiles, fast);

@@ -185,11 +185,32 @@ const OVERLAY_LAYOUT_CHECK = String.raw`(async () => {
           && nameRect.top < voteRect.bottom && nameRect.bottom > voteRect.top;
         if (overlaps) fail("player-name-vote-overlap", name, name.textContent + " overlaps " + voteLabel.textContent);
       }
+      const bustedLabel = name.closest(".player-row")?.querySelector(".busted-mini");
+      if (visible(bustedLabel)) {
+        const nameRect = name.getBoundingClientRect();
+        const bustedRect = bustedLabel.getBoundingClientRect();
+        const overlaps = nameRect.left < bustedRect.right && nameRect.right > bustedRect.left
+          && nameRect.top < bustedRect.bottom && nameRect.bottom > bustedRect.top;
+        if (overlaps) fail("player-name-busted-overlap", name, name.textContent + " overlaps " + bustedLabel.textContent);
+      }
     }
   }
   for (const stamp of document.querySelectorAll(".verdict.miss")) {
     if (getComputedStyle(stamp).whiteSpace !== "nowrap") fail("miss-stamp-wrap", stamp);
     if (stamp.scrollWidth > stamp.clientWidth + 1) fail("miss-stamp-clipped", stamp);
+  }
+  for (const caption of document.querySelectorAll(".reveal-caption")) {
+    if (!visible(caption)) continue;
+    const card = caption.closest(".case-card");
+    const captionRect = caption.getBoundingClientRect();
+    const cardRect = card?.getBoundingClientRect();
+    if (caption.scrollWidth > caption.clientWidth + 1 || caption.scrollHeight > caption.clientHeight + 1) {
+      fail("reveal-caption-overflow", caption, caption.textContent);
+    }
+    if (cardRect && (captionRect.left < cardRect.left - 1 || captionRect.right > cardRect.right + 1
+      || captionRect.top < cardRect.top - 1 || captionRect.bottom > cardRect.bottom + 1)) {
+      fail("reveal-caption-card-overflow", caption, caption.textContent);
+    }
   }
   return failures;
 })()`;
@@ -298,14 +319,24 @@ async function main() {
     ]);
     const origin = `http://127.0.0.1:${address.port}`;
     for (const dimensions of [{ width: 854, height: 480 }, { width: 1920, height: 1080 }]) {
+      const size = `${dimensions.width}x${dimensions.height}`;
       for (const mock of OVERLAY_MOCKS) {
-        const size = `${dimensions.width}x${dimensions.height}`;
         await loadRoute(devtools, sessionId, {
           label: `overlay ${mock} at ${size}`,
           url: `${origin}/overlay?mock=${mock}`,
         }, dimensions, true);
         console.log(`✓ overlay ${mock} at ${size}`);
       }
+      await loadRoute(devtools, sessionId, {
+        label: `overlay reveal payoff at ${size}`,
+        url: `${origin}/overlay?mock=reveal&frame=payoff`,
+      }, dimensions, true);
+      console.log(`✓ overlay reveal payoff at ${size}`);
+      await loadRoute(devtools, sessionId, {
+        label: `overlay BUSTED row at ${size}`,
+        url: `${origin}/overlay?mock=round&frame=busted`,
+      }, dimensions, true);
+      console.log(`✓ overlay BUSTED row at ${size}`);
     }
     for (const mock of CARD_MOCKS) {
       await loadRoute(devtools, sessionId, {

@@ -8,6 +8,8 @@ import {
   SESSION_COOKIE,
   containsUrl,
   createSusWordServer,
+  isAuthorizedHostRequest,
+  isLocalHostHeader,
   isLocalHostOrigin,
   isLoopbackAddress,
   splitChatMessage,
@@ -21,7 +23,16 @@ function firstSocketMessage(url, options) {
       payload: JSON.parse(data.toString()),
       socket,
     }));
-    socket.once("error", reject);
+    socket.once("error", (error) => {
+      socket.terminate();
+      reject(error);
+    });
+    socket.once("unexpected-response", (_request, response) => {
+      const error = new Error(`Unexpected server response: ${response.statusCode}`);
+      response.resume();
+      socket.terminate();
+      reject(error);
+    });
   });
 }
 
@@ -43,6 +54,26 @@ function socketMessageOfType(socket, type) {
   });
 }
 
+function refusedSocketStatus(url, options) {
+  const socket = new WebSocket(url, options);
+  return new Promise((resolve, reject) => {
+    socket.once("unexpected-response", (_request, response) => {
+      const status = response.statusCode;
+      response.resume();
+      socket.terminate();
+      resolve(status);
+    });
+    socket.once("open", () => {
+      socket.close();
+      reject(new Error("Host WebSocket unexpectedly opened"));
+    });
+    socket.once("error", (error) => {
+      if (socket.readyState === WebSocket.CLOSED) return;
+      reject(error);
+    });
+  });
+}
+
 test("voice input trusts loopback addresses only", () => {
   assert.equal(isLoopbackAddress("127.0.0.1"), true);
   assert.equal(isLoopbackAddress("::1"), true);
@@ -52,6 +83,73 @@ test("voice input trusts loopback addresses only", () => {
   assert.equal(isLocalHostOrigin("http://localhost:3000"), true);
   assert.equal(isLocalHostOrigin("http://127.0.0.1:3000"), true);
   assert.equal(isLocalHostOrigin("https://sus-word.example"), false);
+  assert.equal(isLocalHostHeader("localhost:3000"), true);
+  assert.equal(isLocalHostHeader("127.0.0.1:3000"), true);
+  assert.equal(isLocalHostHeader("sus-word.example"), false);
+});
+
+test("host controls require a local origin or the configured secret", async (context) => {
+  const remoteRequest = {
+    socket: { remoteAddress: "203.0.113.8" },
+    headers: { host: "cards.example", origin: "https://cards.example" },
+    url: "/api/host/start",
+  };
+  assert.equal(isAuthorizedHostRequest(remoteRequest, "correct horse"), false);
+  assert.equal(isAuthorizedHostRequest({
+    ...remoteRequest,
+    headers: { ...remoteRequest.headers, "x-sus-word-host-secret": "correct horse" },
+  }, "correct horse"), true);
+  assert.equal(isAuthorizedHostRequest({
+    socket: { remoteAddress: "127.0.0.1" },
+    headers: { host: "cards.example" },
+    url: "/api/host/reset",
+  }, "correct horse"), false);
+  assert.equal(isAuthorizedHostRequest({
+    ...remoteRequest,
+    url: "/ws?view=host&hostSecret=correct%20horse",
+  }, "correct horse"), true);
+
+  const game = new Game();
+  const service = createSusWordServer({
+    game,
+    port: 0,
+    env: { HOST_SECRET: "correct horse" },
+    logger: { log() {}, error() {} },
+  });
+  context.after(async () => {
+    game.reset();
+    await service.stop();
+  });
+  const address = await service.start();
+  const endpoint = `http://127.0.0.1:${address.port}/api/host/start`;
+  const refused = await fetch(endpoint, {
+    method: "POST",
+    headers: { Origin: "https://cards.example" },
+  });
+  assert.equal(refused.status, 403);
+  assert.equal((await refused.json()).reason, "host_forbidden");
+  assert.equal(game.phase, "IDLE");
+  assert.equal(await refusedSocketStatus(
+    `ws://127.0.0.1:${address.port}/ws?view=host`,
+    { origin: "https://cards.example" },
+  ), 403);
+  const authorizedSocket = await firstSocketMessage(
+    `ws://127.0.0.1:${address.port}/ws?view=host&hostSecret=correct%20horse`,
+    { origin: "https://cards.example" },
+  );
+  assert.equal(authorizedSocket.payload.type, "state");
+  authorizedSocket.socket.close();
+
+  const accepted = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Origin: "https://cards.example",
+      "X-Sus-Word-Host-Secret": "correct horse",
+    },
+  });
+  assert.equal(accepted.status, 200);
+  assert.equal(game.phase, "LOBBY");
+
 });
 
 test("a local host WebSocket records voice as the configured broadcaster", async (context) => {
@@ -161,6 +259,30 @@ test("the claim route binds a code and private card state to its session cookie"
   assert.equal("role" in publicView.payload.data, false);
   privateView.socket.close();
   publicView.socket.close();
+});
+
+test("offline demo card links attach to the simulated player's real session", async (context) => {
+  const game = new Game();
+  game.join({ id: "demo-1", login: "pixel_mara", simulated: true });
+  game.players.get("demo-1").claimed = true;
+  game.sessions.set("demo-player-session-0001", { userId: "demo-1", linkedAt: 0 });
+  const service = createSusWordServer({
+    game,
+    port: 0,
+    env: { DEMO_MODE: "1" },
+    logger: { log() {}, error() {} },
+  });
+  context.after(() => service.stop());
+  const address = await service.start();
+  const cardPage = await fetch(`http://127.0.0.1:${address.port}/card?demo=1`);
+  assert.equal(cardPage.status, 200);
+  const cookie = cardPage.headers.get("set-cookie").split(";", 1)[0];
+  assert.match(cookie, /sus_sid=demo-player-session-0001/);
+  const card = await fetch(`http://127.0.0.1:${address.port}/api/card`, {
+    headers: { Cookie: cookie },
+  }).then((response) => response.json());
+  assert.equal(card.linked, true);
+  assert.equal(card.player.login, "pixel_mara");
 });
 
 test("name checks use chat seen in the last 15 minutes", async (context) => {

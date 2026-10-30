@@ -79,6 +79,9 @@ describe("table seating and roles", () => {
         const owner = [...table.roster.values()][0];
         game.sessions.set(`copy-${count}-${table.id}`, { userId: owner.id, linkedAt: 0 });
         assert.equal(game.getCard(`copy-${count}-${table.id}`).impostorCount, table.impostors.length);
+        if (table.id === game.featuredTableId) {
+          assert.equal(game.getPublicState().round.impostorCount, table.impostors.length);
+        }
       }
       game.reset();
     }
@@ -245,7 +248,7 @@ describe("live accusations", () => {
     return { ...setup, table, impostor, detectives };
   }
 
-  test("busts only after a matching smuggle and spends the accuser's shot", () => {
+  test("a matching bust ends a resolved table without hints or a vote", () => {
     const { game, impostor, detectives } = accusationGame();
     let eventPayload = null;
     game.on("busted", (payload) => { eventPayload = payload; });
@@ -257,14 +260,28 @@ describe("live accusations", () => {
     assert.equal(eventPayload.toastKind, "busted");
     assert.equal(game.getPublicState().round.accusations[0].toast, busted.toast);
     assert.equal(game.scores.get(detectives[0].id), 2);
-    assert.deepEqual(game.accuse(detectives[0].id, impostor.login, "candle"), {
-      ok: false,
-      reason: "already_accused",
-    });
-    game.beginVote();
-    game.finishVote();
+    assert.equal(game.phase, PHASES.REVEAL);
+    assert.equal(game.beginVote().reason, "invalid_state");
+    assert.equal(game.timers.has("categoryHint"), false);
+    assert.equal(game.timers.has("letterHint"), false);
     assert.equal(game.lastReveal.verdict, "BUSTED");
     assert.equal(game.scores.get(impostor.id), 1);
+  });
+
+  test("a two-Imposter table reveals only after both have been busted", () => {
+    const { game } = startGame(12);
+    const table = game.currentRound;
+    const detectives = [...table.roster.values()].filter(({ id }) => (
+      !table.impostors.some(({ playerId }) => playerId === id)
+    ));
+    table.impostors.forEach((assignment) => {
+      game.recordMessage({ userId: assignment.playerId, text: `this ${assignment.word} fits naturally here` });
+    });
+    assert.equal(game.accuse(detectives[0].id, table.impostors[0].playerId, table.impostors[0].word).correct, true);
+    assert.equal(game.phase, PHASES.ROUND);
+    assert.equal(game.accuse(detectives[1].id, table.impostors[1].playerId, table.impostors[1].word).correct, true);
+    assert.equal(game.phase, PHASES.REVEAL);
+    assert.equal(game.lastReveal.imposters.every(({ verdict }) => verdict === "BUSTED"), true);
   });
 
   test("wrong word, wrong person, and an accusation before smuggle all miss", () => {
@@ -359,7 +376,7 @@ describe("multi-Imposter vote and scoring", () => {
 });
 
 describe("final table and performance", () => {
-  test("selects one table winner for a single final and then returns to normal", () => {
+  test("seats every table winner plus enough runners-up for a substantial final", () => {
     const { game } = startGame(30);
     const winners = [...game.tables.values()].map((table, index) => {
       const player = [...table.roster.values()][2];
@@ -373,14 +390,39 @@ describe("final table and performance", () => {
     assert.equal(result.ok, true);
     assert.equal(result.final, true);
     assert.equal(game.tables.size, 1);
-    assert.deepEqual(new Set(game.currentRound.roster.keys()), new Set(winners));
-    assert.equal(game.getPublicState().crowdCount, 27);
+    const finalists = new Set(game.currentRound.roster.keys());
+    assert.equal(finalists.size, 6);
+    assert.ok(winners.every((id) => finalists.has(id)));
+    assert.equal(game.getPublicState().crowdCount, 24);
     game.beginVote();
-    game.finishVote();
+    const reveal = game.finishVote();
+    assert.equal(reveal.revealDuration, 22_000);
     assert.equal(game.lastReveal.champion.id, winners[0]);
     game.nextRound();
     assert.equal(game.isFinalRound, false);
     assert.equal(game.go().tableCount, 3);
+  });
+
+  test("a detective catch breaks a final score tie ahead of a busted Imposter", () => {
+    const { game } = startGame(30);
+    game.beginVote();
+    game.finishVote();
+    game.nextRound();
+    assert.equal(game.final().ok, true);
+    const table = game.currentRound;
+    const assignment = table.impostors[0];
+    const impostor = table.roster.get(assignment.playerId);
+    const detective = [...table.roster.values()].find(({ id }) => id !== impostor.id);
+    for (const player of table.roster.values()) game.scores.set(player.id, 0);
+    game.scores.set(impostor.id, 5);
+    game.scores.set(detective.id, 4);
+    game.recordMessage({ userId: impostor.id, text: `this ${assignment.word} fits naturally here` });
+    game.accuse(detective.id, impostor.id, assignment.word);
+    assert.equal(game.phase, PHASES.REVEAL);
+    assert.equal(game.scores.get(impostor.id), 6);
+    assert.equal(game.scores.get(detective.id), 6);
+    assert.equal(game.lastChampion.id, detective.id);
+    assert.equal(game.lastReveal.leaderboard[0].player.id, detective.id);
   });
 
   test("uses the top 12 overall when the previous round had more than 12 tables", () => {
