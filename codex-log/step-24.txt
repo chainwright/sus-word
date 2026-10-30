@@ -1,0 +1,20 @@
+Step 24. An end-to-end judge played the demo (8, 10 and 30 players, real Chrome cards) on b7a3f79 and found a showstopper plus smaller issues. Fix all of them, in this order.
+
+1. SHOWSTOPPER. An Imposter who hasn't been busted never sees their word: the phone card is blank or frozen for the whole round. Cause: cardRenderSignature in public/card-view.js does mate(state.bustedBy) with a default param `player = {}`, but the server sends bustedBy: null for every un-busted Imposter (game.js ~904), so it throws "Cannot read properties of null (reading 'id')" on every render (card.js render() calls it first). Reproduce: cardRenderSignature({role:'IMPOSTER', bustedBy:null}) throws.
+   Fix it AND guard the class: audit card-view.js / card.js / overlay-state.js / overlay.js for every other `x = {}` default or property read that receives null from the server (bustedBy, accuser, featured, champion, leaders, delivered, etc.) and make them null-safe.
+   Tests: (a) unit tests with bustedBy:null and other nulls exactly as the server sends them; (b) a test that builds card states from the REAL server/game state for every role in a live round (Imposter un-busted, Imposter busted, detective, spectator, lobby) instead of hand mocks, and renders them; (c) in the real-Chrome browser runner, start the demo server, open /card?demo=N for the current Imposter mid-round, assert the secret word is visible and the page console has zero errors; do the same for a detective card. Keep it fast enough for CI (use --fast).
+2. 2-Imposter table after one is busted: the vote banner still says "top 2 accused" and chat can still vote for the busted player (the demo's votes all went to them). Make the vote say one Imposter is still hidden (e.g. "1 Imposter still hidden · top vote accused"), only accuse 1, and ignore votes for an already-busted player (don't count them; in the demo, viewer bots shouldn't vote for busted players).
+3. Voice smuggle (word said out loud by the streamer): the reveal says "0:33 into the round · 0 people read it". Say "said out loud on stream" (or similar) instead of a read count.
+4. Copy polish:
+   - Lobby "8 players ready · 3 needed to start" when enough are in → just "8 players ready".
+   - Hide the all-zero leaderboard in round 1 (show it once someone has points).
+   - Keep "8 people read it" from breaking with an orphan "it" on its own line (non-breaking space or similar).
+   - The "GOT AWAY +3" stamp overlaps the end of the payoff line ("8 people read", "Nobody noticed.") at 854x480. Keep it clear of the caption.
+   - When the vote closes early, the banner stamp says "VOTES LOCKED" while the board says "ALL VOTES IN". Make the banner match ("ALL VOTES IN").
+   - Card headers truncated ("ROUND 1 · THE RE…") on a 390px phone. Make them fit (shorter text or wrap), no ellipsis.
+   - In offline demo mode, don't print or show the stale PUBLIC_URL tunnel link (demo log + host card link); use the local URL.
+   - Demo chat grammar: "I keep a notes near my desk" and earlier "a apple". Fix the template so articles/plurals are right for every word in the list (a/an, no article before plurals), and add a test that runs every word through every template.
+   - A busted Imposter's card still shows the "How to win" tips under "BUSTED". Hide them once busted.
+5. Champion moment: make the champion card bigger (full width of the lower area at both sizes) and hold it about 10 s, then show a short "Session over" state if no next round starts.
+
+Don't loosen any existing check. Keep npm test green and add the tests above. The real-Chrome run can't start inside your sandbox; I'll run it outside, so make sure it's ready. Copy this prompt as codex-log/step-24.txt and update the README test counts. Do not commit; give me one commit message.

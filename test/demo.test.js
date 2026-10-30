@@ -3,7 +3,16 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
 import Game, { PHASES } from "../src/game.js";
-import { demoRoundOutcomes, demoWordPicker, driveDemoRound, seededRandom } from "../src/demo.js";
+import {
+  demoRoundOutcomes,
+  demoPublicUrl,
+  demoWordLines,
+  demoWordPicker,
+  driveDemoRound,
+  seededRandom,
+  selectDemoVoteTarget,
+} from "../src/demo.js";
+import { WORDS, findWord } from "../src/words.js";
 
 test("an early-busted demo round is followed by a normal round with chat", async () => {
   const game = new Game({
@@ -85,4 +94,39 @@ test("the demo lets the game choose a fresh catalog word each round", async () =
   assert.match(source, /game\.go\(\);/);
   assert.doesNotMatch(source, /game\.go\(\{\s*word:/);
   assert.match(source, /wordPicker: demoWordPicker\(gameRandom\)/);
+});
+
+test("every demo word is grammatical in every category-aware chat template", () => {
+  for (const entry of WORDS) {
+    const lines = demoWordLines(entry);
+    for (const line of Object.values(lines)) {
+      assert.equal(findWord(line, entry.word).hit, true, `${entry.word}: ${line}`);
+    }
+    const plurals = ["pants", "socks", "shoes", "boots", "shorts", "glasses", "scissors", "notes"];
+    if (plurals.includes(entry.word)) {
+      assert.doesNotMatch(lines.decoy, new RegExp(`\\b(?:a|an)\\s+${entry.word}\\b`, "i"));
+    } else if (!["feelings", "colors", "actions"].includes(entry.category)) {
+      const article = entry.word === "uniform" ? "a" : /^[aeiou]/.test(entry.word) ? "an" : "a";
+      assert.match(lines.decoy, new RegExp(`\\b${article} ${entry.word}\\b`, "i"), lines.decoy);
+    }
+  }
+});
+
+test("demo voters never target an already-busted Imposter", () => {
+  const roster = new Map([
+    ["busted", { id: "busted", login: "busted" }],
+    ["hidden", { id: "hidden", login: "hidden" }],
+    ["detective", { id: "detective", login: "detective" }],
+  ]);
+  const table = {
+    roster,
+    impostors: [{ playerId: "busted", busted: true }, { playerId: "hidden", busted: false }],
+  };
+  const target = selectDemoVoteTarget(table, roster.get("detective"), new Map([["hidden", { catchByVote: true }]]));
+  assert.equal(target.id, "hidden");
+});
+
+test("offline demo links stay local even when a stale tunnel is in the environment", () => {
+  assert.equal(demoPublicUrl(3000), "http://localhost:3000");
+  assert.equal(demoPublicUrl(4123), "http://localhost:4123");
 });

@@ -117,7 +117,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 4px s
   color: #f8e8ca;
 }
 .card-top-tools { flex: none; display: flex; align-items: center; gap: 7px; }
-.card-phase { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 19px/1 "Oswald", sans-serif; letter-spacing: .02em; text-transform: uppercase; }
+.card-phase { min-width: 0; overflow: visible; white-space: normal; font: 700 18px/1.08 "Oswald", sans-serif; letter-spacing: .015em; text-transform: uppercase; }
 .card-timer {
   flex: none;
   padding: 8px 12px;
@@ -314,6 +314,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 4px s
 }
 .vote-player.selected { outline: 5px solid var(--red); outline-offset: -2px; }
 .vote-player.own { opacity: .42; cursor: not-allowed; }
+.vote-player.busted { opacity: .56; cursor: not-allowed; filter: grayscale(.65); }
 .vote-number { position: absolute; top: 5px; left: 7px; color: var(--red); font: 700 22px/1 "Oswald", sans-serif; }
 .vote-avatar { width: 55px; height: 55px; margin: 0 auto 5px; overflow: hidden; display: grid; place-items: center; border-radius: 50%; color: #fff; background: #6d5a79; font-weight: 700; }
 .vote-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
@@ -340,6 +341,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 4px s
 .champion-name { margin: 10px 0; font: 700 34px/1 "Oswald", sans-serif; }
 .champion-stamp { display: table; margin: 16px auto; padding: 8px 15px; border: 7px solid var(--red); color: var(--red); font: 700 43px/1 "Oswald", sans-serif; transform: rotate(-5deg); }
 .champion-copy { margin: 22px 0 0; font-size: 17px; font-weight: 700; }
+.session-over-sheet { margin-top: 150px; border-top: 7px solid var(--red); }
 
 .sealed-cover {
   position: fixed;

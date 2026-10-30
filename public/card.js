@@ -1,4 +1,12 @@
-import { cardRenderSignature, cardScreen, impostorStatus, vibrateIfActivated, voteProgress } from "./card-view.js";
+import {
+  cardRenderSignature,
+  cardScreen,
+  hiddenImpostorCount,
+  impostorStatus,
+  showRoleTips,
+  vibrateIfActivated,
+  voteProgress,
+} from "./card-view.js";
 
 const root = document.querySelector("#card-root");
 const connection = document.querySelector("#connection");
@@ -105,6 +113,7 @@ function actionError(reason) {
     featured_table_locked: "Talk in Twitch chat while your table is on stream.",
     rate_limited: "Slow down—try again in a moment.",
     vote_closed: "Voting is closed.",
+    already_busted: "That player is already BUSTED. Vote for someone still hidden.",
     invalid_state: "That action is not open right now.",
     accusation_used: "Your one accusation is already used.",
   };
@@ -204,6 +213,7 @@ function renderLogin(options = {}) {
 }
 
 function renderClaim(claim) {
+  claim = claim ?? {};
   const page = node("div", "join-page claim-page");
   page.append(topBar("SUS WORD · JOIN", "lobby"));
   const sheet = paperSheet("join-sheet");
@@ -280,7 +290,7 @@ function appendRoundTools(page) {
   details.addEventListener("toggle", () => { detailsOpen = details.open; });
   details.append(node("summary", "", `Table ${state.tableId} players and accusation`));
   const mates = node("div", "mini-mates");
-  for (const mate of state.tableMates || []) {
+  for (const mate of (state.tableMates || []).filter(Boolean)) {
     const item = node("div", "mini-mate");
     item.append(playerPhoto(mate, "mini-mate-photo"), node("span", "", `${mate.number || "?"} · ${mate.login}`));
     mates.append(item);
@@ -294,7 +304,7 @@ function sideTableChat() {
   const panel = node("section", "side-chat");
   panel.append(node("h2", "", "TABLE CHAT"));
   const log = node("div", "side-chat-log");
-  for (const message of (state.messages || []).slice(-20)) {
+  for (const message of (state.messages || []).filter(Boolean).slice(-20)) {
     const line = node("p", message.source === "voice" ? "voice-line" : "");
     line.append(node("strong", "", `@${message.player?.login || "unknown"}: `), document.createTextNode(`${message.source === "voice" ? "🎙 " : ""}${message.text}`));
     log.append(line);
@@ -329,7 +339,7 @@ function accusePanel() {
   form.append(node("h3", "", "OPTIONAL PRO MOVE · ONE ACCUSATION"));
   const select = node("select");
   select.append(node("option", "", "Pick a suspect"));
-  for (const mate of state.tableMates || []) {
+  for (const mate of (state.tableMates || []).filter(Boolean)) {
     if (mate.id === state.player?.id) continue;
     const option = node("option", "", `${mate.number || "?"} · @${mate.login}`);
     option.value = mate.login;
@@ -381,7 +391,7 @@ function renderRole(role, signal) {
       : "Someone in chat is hiding a word. Watch closely."));
     if (state.impostorCount > 1) sheet.append(node("p", "two-imposters", "2 Imposters this round: catch both."));
   }
-  sheet.append(roleTips(role));
+  if (showRoleTips(state, role)) sheet.append(roleTips(role));
   page.append(sheet);
   appendRoundTools(page);
   root.replaceChildren(page);
@@ -399,20 +409,25 @@ function renderVote() {
   const progress = node("div", "vote-progress");
   progress.append(node("i"));
   banner.append(timer, progress);
-  page.append(banner, node("p", "vote-instruction", (state.impostorCount || 1) > 1
-    ? "Vote your top suspect · top 2 are accused"
-    : "Vote your top suspect · the top vote is accused"));
+  const hiddenCount = hiddenImpostorCount(state);
+  page.append(banner, node("p", "vote-instruction", hiddenCount > 1
+    ? `${hiddenCount} Imposters still hidden · top ${hiddenCount} are accused`
+    : "1 Imposter still hidden · top vote accused"));
   const grid = node("section", "vote-grid");
-  const mates = [...(state.tableMates || [])].sort((left, right) => (left.number || 0) - (right.number || 0));
+  const bustedIds = new Set(state.bustedImpostorIds || []);
+  const mates = [...(state.tableMates || [])].filter(Boolean)
+    .sort((left, right) => (left.number || 0) - (right.number || 0));
   for (const mate of mates) {
     const own = mate.id === state.player?.id;
+    const busted = bustedIds.has(mate.id);
     const selected = mate.id === state.voteTargetId;
-    const button = node("button", `vote-player${own ? " own" : ""}${selected ? " selected" : ""}`);
+    const button = node("button", `vote-player${own ? " own" : ""}${busted ? " busted" : ""}${selected ? " selected" : ""}`);
     button.type = "button";
-    button.disabled = own;
+    button.disabled = own || busted;
     button.dataset.playerId = mate.id;
     button.append(node("span", "vote-number", String(mate.number || "?")), playerPhoto(mate, "vote-avatar"), node("strong", "vote-name", mate.login));
     if (own) button.append(node("span", "vote-you", "YOU"));
+    if (busted) button.append(node("span", "vote-you", "BUSTED"));
     button.append(node("span", "vote-marker", selected ? "✓ YOUR VOTE" : ""));
     button.addEventListener("click", () => {
       if (!sendCardAction({ type: "vote", number: mate.number })) return;
@@ -436,7 +451,7 @@ function renderVote() {
 
 function renderRevealHold() {
   const page = node("div", "hold-page");
-  page.append(topBar(`ROUND ${state.roundNumber} · THE REVEAL`, "hold"));
+  page.append(topBar(`ROUND ${state.roundNumber} · REVEAL`, "hold"));
   const sheet = paperSheet("hold-sheet");
   sheet.setAttribute("aria-live", "polite");
   sheet.append(node("div", "watch-eye", "👀"), node("h1", "", "Watch the stream"), node("p", "", "The reveal is on. Your result will appear here after it plays."));
@@ -447,11 +462,12 @@ function renderRevealHold() {
 
 function renderResult() {
   const page = node("div", "result-page");
-  page.append(topBar(`SUS WORD · ROUND ${state.roundNumber} RESULT`, "lobby"));
+  page.append(topBar(`ROUND ${state.roundNumber} · RESULT`, "lobby"));
   const sheet = paperSheet("result-sheet");
   sheet.setAttribute("aria-live", "polite");
   sheet.append(node("p", "step-label", `YOU WERE ${state.role === "IMPOSTER" ? "AN IMPOSTER" : "A DETECTIVE"}`));
-  const mine = state.result?.imposters?.find(({ impostor }) => impostor.id === state.player?.id);
+  const resultImposters = (state.result?.imposters || []).filter(Boolean);
+  const mine = resultImposters.find(({ impostor }) => impostor?.id === state.player?.id);
   const headline = mine
     ? (mine.verdict === "GOT AWAY" ? "YOU GOT AWAY!" : mine.verdict === "WORD NEVER LANDED" ? "WORD NEVER LANDED" : "YOU WERE CAUGHT")
     : state.voteWasRight ? "YOU CAUGHT ONE!" : "CASE CLOSED";
@@ -461,7 +477,7 @@ function renderResult() {
     ? `#${state.voteTarget.number || "?"} @${state.voteTarget.login} ${state.voteWasRight ? "✓ Imposter" : "✕ Detective"}`
     : "No vote";
   resultRow(rows, "Your vote", voteText);
-  for (const imposter of state.result?.imposters || []) resultRow(rows, `@${imposter.impostor.login}`, `${imposter.word.toUpperCase()} · ${imposter.verdict}`);
+  for (const imposter of resultImposters) resultRow(rows, `@${imposter.impostor?.login || "imposter"}`, `${String(imposter.word || "word").toUpperCase()} · ${imposter.verdict || "CASE CLOSED"}`);
   resultRow(rows, "Points this round", `${state.roundPoints >= 0 ? "+" : ""}${state.roundPoints}`, "score");
   resultRow(rows, "Total · rank", `${state.totalScore} pts · #${state.rank || "–"} of ${state.playerCount || "–"}`);
   sheet.append(rows, node("p", "next-round-note", "Next round deals new roles. Keep this page open; it updates on its own."));
@@ -474,7 +490,7 @@ function renderChampion() {
   const champion = state.result?.champion || state.champion;
   const isChampion = champion?.id === state.player?.id;
   const page = node("div", "champion-page");
-  page.append(topBar("SUS WORD · FINAL TABLE", "lobby"));
+  page.append(topBar("FINAL TABLE", "lobby"));
   const sheet = paperSheet("champion-sheet");
   sheet.setAttribute("aria-live", "polite");
   sheet.append(node("p", "step-label", "THE CASE IS CLOSED"), playerPhoto(champion, "champion-photo"));
@@ -488,6 +504,16 @@ function renderChampion() {
   updateTimers();
 }
 
+function renderSessionOver() {
+  const page = node("div", "waiting-page session-over-page");
+  page.append(topBar("SESSION OVER", "lobby"));
+  const sheet = paperSheet("waiting-sheet session-over-sheet");
+  sheet.append(node("p", "step-label", "THE CASE IS CLOSED"), node("h1", "join-title", "Session over"));
+  sheet.append(node("p", "waiting-copy", "Thanks for playing. Keep this card link for the next case."));
+  page.append(sheet);
+  root.replaceChildren(page);
+}
+
 function resultRow(container, label, value, valueClass = "") {
   const row = node("div", "result-row");
   row.append(node("span", "", label), node("strong", valueClass, value));
@@ -495,6 +521,7 @@ function resultRow(container, label, value, valueClass = "") {
 }
 
 function render(nextState) {
+  nextState = nextState ?? { linked: false, role: null };
   const nextSignature = cardRenderSignature(nextState);
   const nextRound = nextState.roundNumber ?? null;
   if (interactiveRound !== null && nextRound !== interactiveRound) {
@@ -520,6 +547,7 @@ function render(nextState) {
   else if (screen === "reveal-hold") renderRevealHold();
   else if (screen === "result" && (state.result?.champion || state.champion)) renderChampion();
   else if (screen === "result") renderResult();
+  else if (screen === "session-over") renderSessionOver();
   else renderWaiting();
 }
 
@@ -668,6 +696,7 @@ function mockCard(kind) {
     tableId: 1, tableCount: 1, featuredTableId: 1, onStream: true, tableMates,
     hints: { category: "food", letter: null }, messages: [], canAccuse: true, accusationUsed: false,
     impostorCount: ["imposter-2", "detective", "vote"].includes(kind) ? 2 : 1,
+    remainingImpostorCount: ["imposter-2", "detective", "vote"].includes(kind) ? 2 : 1,
   };
   if (["imposter", "imposter-2", "delivered", "busted", "side"].includes(kind)) Object.assign(base, {
     role: "IMPOSTER", word: "lemon", delivered: kind === "delivered", deliveredAt: kind === "delivered" ? "0:47" : null,

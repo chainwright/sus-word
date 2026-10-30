@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
+import Game from "../src/game.js";
+
 import {
   cardRenderSignature,
   cardScreen,
+  hiddenImpostorCount,
   impostorStatus,
+  showRoleTips,
   vibrateIfActivated,
   voteProgress,
 } from "../public/card-view.js";
@@ -80,5 +84,77 @@ describe("card screen selection", () => {
       status: "BUSTED · caught by @quietfox",
       job: "You were caught. Watch the rest of the round and see how the case closes.",
     });
+  });
+
+  test("explicit null server fields never break the card render signature", () => {
+    const serverShape = {
+      linked: true,
+      role: "IMPOSTER",
+      bustedBy: null,
+      player: null,
+      tableMates: [null],
+      messages: [null],
+      champion: null,
+      result: null,
+      delivered: false,
+    };
+    assert.doesNotThrow(() => cardRenderSignature(serverShape));
+    assert.equal(cardScreen(null), "join-name");
+    assert.equal(impostorStatus(null).status, "Word not sent yet");
+    assert.equal(hiddenImpostorCount(null), 0);
+    assert.equal(showRoleTips({ busted: true }, "IMPOSTER"), false);
+    assert.equal(showRoleTips({ busted: false }, "IMPOSTER"), true);
+  });
+
+  test("real game cards render every live role and lobby state", () => {
+    const codes = ["A2B3", "C4D5", "E6F7", "G8H9", "J2K3", "L4M5", "N6P7", "Q8R9", "S2T3", "U4V5", "W6X7"];
+    const game = new Game({
+      clock: { now: () => 0, setTimeout: () => Symbol("timer"), clearTimeout() {} },
+      random: () => 0,
+      codeGenerator: () => codes.shift(),
+      words: [{ word: "candle", category: "home" }, { word: "rocket", category: "space" }],
+    });
+    const sessions = [];
+    for (let index = 0; index < 10; index += 1) {
+      const login = `card_player_${index}`;
+      const sessionId = `card-session-${index}`;
+      const claim = game.createClaim({ sessionId, login });
+      assert.equal(game.claim({ code: claim.code, login, userId: `card-player-${index}` }).ok, true);
+      sessions.push(sessionId);
+    }
+    game.start();
+    const lobby = game.getCard(sessions[0]);
+    assert.equal(cardScreen(lobby), "waiting");
+    assert.doesNotThrow(() => cardRenderSignature(lobby));
+
+    game.go();
+    const table = game.currentRound;
+    const [caughtAssignment, hiddenAssignment] = table.impostors;
+    const caughtSession = sessions[Number(caughtAssignment.playerId.split("-").at(-1))];
+    const hiddenSession = sessions[Number(hiddenAssignment.playerId.split("-").at(-1))];
+    const detective = [...table.roster.values()].find(({ id }) => !table.impostors.some(({ playerId }) => playerId === id));
+    const detectiveSession = sessions[Number(detective.id.split("-").at(-1))];
+    const hiddenCard = game.getCard(hiddenSession);
+    const detectiveCard = game.getCard(detectiveSession);
+    assert.equal(cardScreen(hiddenCard), "imposter");
+    assert.equal(hiddenCard.bustedBy, null);
+    assert.equal(cardScreen(detectiveCard), "detective");
+
+    game.recordMessage({ userId: caughtAssignment.playerId, text: `this ${caughtAssignment.word} fits naturally here` });
+    game.accuse(detective.id, caughtAssignment.playerId, caughtAssignment.word);
+    const bustedCard = game.getCard(caughtSession);
+    assert.equal(cardScreen(bustedCard), "imposter");
+    assert.equal(bustedCard.busted, true);
+    assert.doesNotThrow(() => impostorStatus(bustedCard));
+
+    const spectatorClaim = game.createClaim({ sessionId: "spectator-session", login: "spectator" });
+    game.claim({ code: spectatorClaim.code, login: "spectator", userId: "spectator-id" });
+    const spectator = game.getCard("spectator-session");
+    assert.equal(spectator.role, null);
+    assert.equal(cardScreen(spectator), "waiting");
+
+    for (const card of [lobby, hiddenCard, bustedCard, detectiveCard, spectator]) {
+      assert.doesNotThrow(() => cardRenderSignature(card));
+    }
   });
 });

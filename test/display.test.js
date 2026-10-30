@@ -3,15 +3,18 @@ import { describe, test } from "node:test";
 
 import {
   readerCountLabel,
+  revealPayoffLabel,
   selectLobbyPlayers,
   selectRoundPlayers,
   selectVoteSuspects,
 } from "../public/display.js";
 
 test("reveal reader counts use the singular only for one person", () => {
-  assert.equal(readerCountLabel(0), "0 people read it");
-  assert.equal(readerCountLabel(1), "1 person read it");
-  assert.equal(readerCountLabel(2), "2 people read it");
+  assert.equal(readerCountLabel(0), "0 people read\u00a0it");
+  assert.equal(readerCountLabel(1), "1 person read\u00a0it");
+  assert.equal(readerCountLabel(2), "2 people read\u00a0it");
+  assert.equal(revealPayoffLabel({ evidence: { source: "voice" }, readerCount: 0 }), "Said out loud on stream");
+  assert.equal(revealPayoffLabel({ evidence: { source: "chat" }, readerCount: 8 }), "8 people read\u00a0it");
 });
 
 const players = Array.from({ length: 12 }, (_, index) => ({

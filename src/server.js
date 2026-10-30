@@ -750,6 +750,7 @@ export function createSusWordServer(options = {}) {
       case "not_a_player": announce(`@${login} you're not seated this round.`, { priority: "low" }); break;
       case "invalid_state":
       case "vote_closed": announce(`@${login} voting is closed.`, { priority: "low" }); break;
+      case "already_busted": announce(`@${login} that player is already busted. Vote for someone still hidden.`, { priority: "low" }); break;
       default: announce(`@${login} that vote couldn't be counted.`, { priority: "low" });
     }
   }

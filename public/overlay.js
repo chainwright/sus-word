@@ -1,19 +1,22 @@
-import { readerCountLabel } from "/display.js";
+import { readerCountLabel, revealPayoffLabel } from "/display.js";
 import {
   caseFileHeadline,
   championBoardModel,
   formatOverlayClock,
+  hasLeaderboardScore,
   missedWordCopy,
   accusationToastDuration,
   bustedRowLabel,
   orderAccusationToasts,
   overlayRenderPlan,
   roundRule,
+  readyPlayersCopy,
   shouldAnimateVoteBanner,
   streamTableLabel,
   syncBoardNoteVisibility,
   updateCompactLobbyClock,
   voteInstruction,
+  voteLockLabel,
   votePlayerLayout,
 } from "/overlay-state.js";
 
@@ -104,7 +107,8 @@ function avatar(player) {
 }
 
 function stablePlayers(source = []) {
-  return [...source].sort((a, b) => (a.number || 999) - (b.number || 999) || String(a.login).localeCompare(String(b.login))).slice(0, 12);
+  return [...(source || [])].filter(Boolean)
+    .sort((a, b) => (a.number || 999) - (b.number || 999) || String(a.login).localeCompare(String(b.login))).slice(0, 12);
 }
 
 function voteLike(message) {
@@ -112,6 +116,8 @@ function voteLike(message) {
 }
 
 function playerRow(player, options = {}) {
+  player = player ?? {};
+  options = options ?? {};
   const row = el("article", `player-row${options.vote ? " vote-row" : ""}${options.talking ? " talking" : ""}`);
   row.dataset.playerId = player.id;
   const number = el("b", "player-number", String(player.number || "?"));
@@ -144,6 +150,8 @@ function renderTablePlate(round = {}) {
 }
 
 function messageSlip(message, index = 0, options = {}) {
+  message = message ?? {};
+  options = options ?? {};
   const slip = el("article", "message-slip");
   slip.dataset.messageId = message.id || `${message.player?.id || "player"}:${message.elapsedMs || index}`;
   slip.style.setProperty("--tilt", `${[-1.1, .7, -.4][index % 3]}deg`);
@@ -157,7 +165,7 @@ function messageSlip(message, index = 0, options = {}) {
 
 function renderMessages(messages = []) {
   const tray = $("#evidence-tray");
-  const safe = messages.filter((message) => !voteLike(message)).slice(-3);
+  const safe = (messages || []).filter((message) => message && !voteLike(message)).slice(-3);
   const wanted = new Set(safe.map((message, index) => message.id || `${message.player?.id || "player"}:${message.elapsedMs || index}`));
   for (const old of [...tray.children]) {
     if (wanted.has(old.dataset.messageId)) continue;
@@ -187,7 +195,7 @@ function renderMessages(messages = []) {
 }
 
 function renderAccusations(round = {}) {
-  const accusations = round.accusations || [];
+  const accusations = (round?.accusations || []).filter(Boolean);
   if (!accusationsInitialized) {
     accusationsInitialized = true;
     seenAccusations = new Set(accusations.map((item) => `${item.at}:${item.accuser?.id || ""}`));
@@ -239,6 +247,7 @@ function hideBase() {
 }
 
 function renderHints(hints = {}) {
+  hints = hints ?? {};
   for (const [key, selector] of [["category", "#hint-category"], ["letter", "#hint-letter"]]) {
     const target = $(selector);
     const next = hints[key] ? String(hints[key]).toUpperCase() : "🔒";
@@ -254,12 +263,15 @@ function renderHints(hints = {}) {
 }
 
 function renderLeaderboard(entries = [], prior = [], options = {}) {
+  entries = (entries || []).filter(Boolean);
+  prior = (prior || []).filter(Boolean);
+  options = options ?? {};
   const panel = $("#leaderboard");
   panel.className = `leaderboard${options.final ? " final-standings" : ""}`;
   panel.replaceChildren(el("h3", "", options.title || "LEADERBOARD"));
   entries.slice(0, options.limit || 3).forEach((entry, index) => {
-    const player = entry.player || entry;
-    const old = prior.findIndex((item) => (item.player || item).id === player.id);
+    const player = entry?.player || entry || {};
+    const old = prior.findIndex((item) => (item?.player || item)?.id === player.id);
     const row = el("div", "leader-row");
     const label = el("span", "", player.login || "player");
     if (old >= 0 && old !== index) label.append(el("i", "rank-arrow", ` ${old > index ? "▲" : "▼"}`));
@@ -273,6 +285,8 @@ function renderLeaderboard(entries = [], prior = [], options = {}) {
 }
 
 function renderBoardRoster(players, counts = {}, busted = []) {
+  counts = counts ?? {};
+  busted = (busted || []).filter(Boolean);
   const grid = $("#player-grid");
   grid.classList.remove("vote-grid");
   const rows = stablePlayers(players).map((player, index) => {
@@ -286,6 +300,7 @@ function renderBoardRoster(players, counts = {}, busted = []) {
 }
 
 function lobbyIsFull(next) {
+  next = next ?? {};
   if (params.get("mock") === "lobby-first") return true;
   if (params.get("mock") === "lobby") return false;
   const ids = new Set((next.players || []).map(({ id }) => id));
@@ -296,20 +311,32 @@ function lobbyIsFull(next) {
 }
 
 function renderLobby(next) {
+  next = next ?? {};
   const full = lobbyIsFull(next);
   $("#how-panel").hidden = true;
   $("#compact-lobby").hidden = true;
   $("#board").hidden = false;
-  $("#board-title").textContent = "PLAYERS";
+  $("#board-title").textContent = next.sessionOver ? "SESSION OVER" : "PLAYERS";
   $("#board-meta").textContent = "12 max";
   $("#hints").hidden = true;
   $("#leaderboard").hidden = true;
   renderTablePlate();
   renderBoardRoster(next.players || [], {});
-  setBoardNote(el("strong", "", "JOINING NOW?"), document.createTextNode("Type !join in chat, then open the card link it replies with. Takes 20 seconds."));
+  setBoardNote(
+    el("strong", "", next.sessionOver ? "THE CASE IS CLOSED" : "JOINING NOW?"),
+    document.createTextNode(next.sessionOver
+      ? "Thanks for playing. The next case begins when the host starts another round."
+      : "Type !join in chat, then open the card link it replies with. Takes 20 seconds."),
+  );
+  if (next.sessionOver) {
+    const compact = $("#compact-lobby");
+    compact.hidden = false;
+    compact.textContent = "SESSION OVER · THANKS FOR PLAYING";
+    return;
+  }
   if (full) {
     $("#how-panel").hidden = false;
-    $("#how-ready").textContent = `${next.claimedCount || 0} players ready · 3 needed to start`;
+    $("#how-ready").textContent = readyPlayersCopy(next.claimedCount, 3);
     $("#how-clock").textContent = `Starting in ${clock(remaining())}`;
   } else {
     const compact = $("#compact-lobby");
@@ -321,6 +348,7 @@ function renderLobby(next) {
 }
 
 function renderRound(next, newRound = false) {
+  next = next ?? {};
   const round = next.round || {};
   const impostorCount = round.impostorCount || next.impostorCount || 1;
   $("#phase-strip").hidden = false;
@@ -334,21 +362,25 @@ function renderRound(next, newRound = false) {
   renderHints(round.hints || {});
   renderBoardRoster(round.players || next.players || [], round.messageCounts || {}, round.busted || []);
   setBoardNote(el("strong", "", "HOW TO VOTE (at 0:00)"), document.createTextNode("Type a player's number in chat, like 2, or tap them on your card. Glowing = talking now."));
-  $("#leaderboard").hidden = false;
-  renderLeaderboard(next.leaderboard || next.scores || []);
+  const leaders = next.leaderboard || next.scores || [];
+  $("#leaderboard").hidden = !hasLeaderboardScore(leaders);
+  if (hasLeaderboardScore(leaders)) renderLeaderboard(leaders);
   renderMessages(round.latestMessages || round.recentMessages || round.messages || []);
   renderAccusations(round);
   if (newRound) animateNewRound();
 }
 
 function renderVote(next, entering = false) {
+  next = next ?? {};
   const round = next.round || {};
   const players = stablePlayers(round.players || next.players || []);
   const tallies = new Map((round.tallies || []).map((entry) => [entry.player?.id || entry.playerId, entry]));
   const max = Math.max(1, ...[...tallies.values()].map(({ votes = 0 }) => votes));
   const chatMax = Math.max(1, ...[...tallies.values()].map(({ chatVotes = 0 }) => chatVotes));
   const showChat = [...tallies.values()].some(({ chatVotes = 0 }) => chatVotes > 0);
-  const instruction = voteInstruction(round.impostorCount || next.impostorCount || 1);
+  const hiddenCount = round.remainingImpostorCount ?? next.remainingImpostorCount
+    ?? round.impostorCount ?? next.impostorCount ?? 1;
+  const instruction = voteInstruction(hiddenCount);
   $("#vote-banner").hidden = false;
   $("#vote-instruction").replaceChildren(
     document.createTextNode(instruction.bannerLines[0]),
@@ -369,7 +401,7 @@ function renderVote(next, entering = false) {
   }));
   const note = setBoardNote(el("strong", "", "VOTES ARE LIVE"), document.createTextNode(instruction.howTo));
   if (showChat) note.append(el("small", "chat-legend", "CHAT · tie-break only"));
-  $("#votes-locked").textContent = round.allVotesIn ? "ALL VOTES IN" : "VOTES LOCKED";
+  $("#votes-locked").textContent = voteLockLabel(round.allVotesIn);
   $("#leaderboard").hidden = true;
   renderMessages(round.latestMessages || round.recentMessages || []);
   if (entering && !reduced.matches) $("#vote-banner").animate([{ transform: "translateY(-100%)" }, { transform: "translateY(7px)" }, { transform: "translateY(0)" }], { duration: 350, easing: "cubic-bezier(.2,.8,.2,1)" });
@@ -387,6 +419,7 @@ function later(fn, ms) {
 }
 
 function highlightedEvidence(result) {
+  result = result ?? {};
   const line = el("div", "evidence-line");
   const evidence = result.evidence;
   if (!evidence) return { line: null, mark: null };
@@ -400,6 +433,7 @@ function highlightedEvidence(result) {
 }
 
 function finalCase(result) {
+  result = result ?? {};
   const card = el("article", "case-card");
   const head = el("header", "case-head");
   head.append(avatar(result.impostor), el("strong", "", `@${result.impostor?.login || "imposter"}`));
@@ -408,7 +442,7 @@ function finalCase(result) {
   head.append(word);
   const { line } = highlightedEvidence(result);
   card.append(head);
-  if (result.evidence) card.append(line, el("p", "reveal-caption", result.caption || "Hidden in plain sight."));
+  if (result.evidence) card.append(line, el("p", "reveal-caption", String(result.caption || "Hidden in plain sight.").replaceAll("read it", "read\u00a0it")));
   const verdict = result.verdict || (result.evidence ? "GOT AWAY" : "WORD NEVER LANDED");
   let displayVerdict = verdict === "CAUGHT" ? "BUSTED" : verdict;
   if (!result.evidence) {
@@ -421,8 +455,9 @@ function finalCase(result) {
 }
 
 function revealTallies(next) {
-  const reveal = next.round?.reveal || {};
-  return new Map((next.round?.tallies || reveal.tallies || []).map((entry) => [entry.player?.id || entry.playerId, entry]));
+  const reveal = next?.round?.reveal || {};
+  return new Map((next?.round?.tallies || reveal.tallies || []).filter(Boolean)
+    .map((entry) => [entry.player?.id || entry.playerId, entry]));
 }
 
 function renderRevealVoteRows(next) {
@@ -599,13 +634,19 @@ function animateOneResult(next, result, index, done) {
       stamp.style.opacity = "0";
       caption.style.opacity = "0";
       const readerCount = result.readerCount ?? 0;
-      caption.replaceChildren(document.createTextNode(`${result.elapsed || result.evidence.elapsed || "1:12"} into the round · `), el("strong", "read-count", readerCountLabel(0)), document.createTextNode(result.caught || result.busted ? " · someone noticed" : " · nobody noticed"));
+      const voice = result.evidence?.source === "voice";
+      caption.replaceChildren(
+        document.createTextNode(`${result.elapsed || result.evidence.elapsed || "1:12"} into the round · `),
+        el("strong", `read-count${voice ? " voice-payoff" : ""}`, voice ? revealPayoffLabel(result) : readerCountLabel(0)),
+        document.createTextNode(result.caught || result.busted ? " · someone noticed" : " · nobody noticed"),
+      );
       layer.append(card);
       card.animate([{ transform: "scale(1)", boxShadow: "none" }, { transform: "scale(1.35)", boxShadow: "0 24px 38px #000b" }], { duration: 400, fill: "both" });
       later(() => card.querySelector(".evidence-line mark")?.animate([{ backgroundSize: "0 70%" }, { backgroundSize: "100% 70%" }], { duration: 500, fill: "both" }), 500);
       later(() => {
         const count = card.querySelector(".read-count");
         caption.style.opacity = "1";
+        if (voice) return;
         const started = performance.now();
         const roll = (now) => {
           const progress = Math.min(1, (now - started) / 600);
@@ -692,6 +733,7 @@ function animateNewRound() {
 }
 
 function render(next) {
+  next = next ?? { state: "IDLE", phase: "IDLE" };
   const previous = state;
   const plan = overlayRenderPlan(previous, next);
   state = next;
@@ -764,6 +806,8 @@ function mockState(kind) {
   const tableCount = Math.max(1, Number(params.get("tables")) || 1);
   base.round = { players, remainingMs: base.remainingMs, tableId: tableCount > 1 ? 2 : 1, tableCount, impostorCount: kind === "reveal2" ? 2 : 1, hints: { category: "FOOD · HOME", letter: kind === "vote" ? "L · B" : null }, messageCounts, latestMessages: messages.slice(0, 3), recentMessages: messages, tallies };
   if (params.get("frame") === "busted") {
+    base.round.impostorCount = 2;
+    base.round.remainingImpostorCount = 1;
     base.round.busted = [{ impostor: players[3], accuser: players[0] }];
   }
   if (base.state === "REVEAL") {

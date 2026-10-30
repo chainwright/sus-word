@@ -32,6 +32,11 @@ test("browser checks and push CI stay wired independently of npm test", async ()
   assert.match(browserCheck, /busted-state-missing/);
   assert.match(browserCheck, /busted-label-overflow/);
   assert.match(browserCheck, /mock=round&tables=3/);
+  assert.match(browserCheck, /\[\["IMPOSTER", liveCards\.impostor\], \["DETECTIVE", liveCards\.detective\]\]/);
+  assert.match(browserCheck, /\/card\?demo=\$\{number\}/);
+  assert.match(browserCheck, /real demo Imposter card did not show secret word/);
+  assert.match(browserCheck, /reveal-caption-verdict-overlap/);
+  assert.match(browserCheck, /champion-moment-too-narrow/);
   const resolutionLoop = browserCheck.indexOf("for (const dimensions");
   const sizeDeclaration = browserCheck.indexOf("const size =", resolutionLoop);
   const mockLoop = browserCheck.indexOf("for (const mock of OVERLAY_MOCKS)", resolutionLoop);

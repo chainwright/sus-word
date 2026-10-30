@@ -7,8 +7,10 @@ import {
   bustedRowLabel,
   caseFileHeadline,
   championBoardModel,
+  hasLeaderboardScore,
   missedWordCopy,
   roundRule,
+  readyPlayersCopy,
   shouldAnimateVoteBanner,
   streamTableLabel,
   syncBoardNoteVisibility,
@@ -16,6 +18,7 @@ import {
   overlayRenderPlan,
   orderAccusationToasts,
   voteInstruction,
+  voteLockLabel,
   voteNameColumnBudget,
   votePlayerLayout,
   voteRowOptions,
@@ -128,12 +131,19 @@ test("the reveal payoff is at least as large as board player names", async () =>
 test("the reveal board promotes the case-file summary to its headline", () => {
   assert.equal(caseFileHeadline({
     caseFileMessage: "Round 3: LEMON slipped in at 1:48 · 9 read it · nobody noticed",
-  }), "LEMON slipped in at 1:48 · 9 read it · nobody noticed");
+  }), "LEMON slipped in at 1:48 · 9 read\u00a0it · nobody noticed");
   assert.equal(caseFileHeadline({
     word: "lemon",
     impostor: { login: "pixel_mara" },
     evidence: null,
   }), "LEMON never landed · @pixel_mara never found an opening");
+  assert.equal(caseFileHeadline({
+    word: "lemon",
+    elapsed: "0:33",
+    verdict: "GOT AWAY",
+    evidence: { source: "voice" },
+    readerCount: 0,
+  }), "LEMON was said out loud at 0:33 · nobody noticed");
 });
 
 test("a missed word has one-line stamp copy plus the real case details", async () => {
@@ -172,13 +182,33 @@ test("the Champion board replaces vote tallies with five final standings", () =>
 test("vote instructions follow the table's Imposter count", () => {
   assert.deepEqual(voteInstruction(1), {
     boardTitle: "WHO HID IT?",
-    boardMeta: "TOP VOTE ACCUSED",
+    boardMeta: "1 STILL HIDDEN",
     outcome: "top vote is accused",
     howTo: "Type a player's number in chat, or tap them on your card · top vote is accused",
-    bannerLines: ["Type a player's number in chat", "or tap your card · top vote accused"],
+    bannerLines: ["1 Imposter still hidden · top vote accused", "Type a number in chat or tap your card"],
   });
   assert.equal(voteInstruction(2).outcome, "top 2 are accused");
   assert.equal(voteInstruction(2).bannerLines.length, 2);
+});
+
+test("lobby, leaderboard, and vote-lock copy reflect live state", () => {
+  assert.equal(readyPlayersCopy(2), "2 players ready · 3 needed to start");
+  assert.equal(readyPlayersCopy(8), "8 players ready");
+  assert.equal(hasLeaderboardScore([{ score: 0 }, { player: { score: 0 } }]), false);
+  assert.equal(hasLeaderboardScore([{ score: 1 }]), true);
+  assert.equal(voteLockLabel(false), "VOTES LOCKED");
+  assert.equal(voteLockLabel(true), "ALL VOTES IN");
+});
+
+test("overlay state helpers accept the server's explicit null values", () => {
+  assert.equal(accusationToastDuration(null), 1_800);
+  assert.equal(streamTableLabel(null), "");
+  assert.equal(missedWordCopy(null).detail, "@imposter never found an opening · 0 people saw it");
+  assert.equal(championBoardModel({ champion: null, round: { reveal: null }, leaders: null }).champion, null);
+  assert.equal(hasLeaderboardScore(null), false);
+  assert.equal(votePlayerLayout(null, null).playerName, "player");
+  assert.equal(shouldAnimateVoteBanner(null), false);
+  assert.equal(overlayRenderPlan(null, { state: "LOBBY", featuredTableId: null, round: null }).resetBase, true);
 });
 
 test("the VOTE banner animates only when entering VOTE", async () => {

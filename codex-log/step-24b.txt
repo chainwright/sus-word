@@ -1,0 +1,3 @@
+Step 24b. npm test 128/128. Outside the sandbox the real-Chrome run fails only on your new live check:
+  live demo imposter card failed · real demo Imposter card did not show secret word CANDLE
+I dumped the page: the card is correct. .role-stamp = "🤫 IMPOSTER", the card visibly shows "CANDLE", but .secret-word textContent is "candle" (uppercase comes from CSS). The check compares textContent to the uppercased word. Make the check compare what the player actually sees (innerText, or a case-insensitive compare). Don't loosen anything else; the Imposter word must still be required. Copy this prompt as codex-log/step-24b.txt. Keep npm test green. Do not commit; one commit message for 24–24b.

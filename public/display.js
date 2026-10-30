@@ -44,5 +44,12 @@ export function selectVoteSuspects(tallies, limit = 5) {
 
 export function readerCountLabel(count) {
   const value = Math.max(0, Number(count) || 0);
-  return `${value} ${value === 1 ? "person" : "people"} read it`;
+  return `${value} ${value === 1 ? "person" : "people"} read\u00a0it`;
+}
+
+export function revealPayoffLabel(result) {
+  const safeResult = result ?? {};
+  return safeResult.evidence?.source === "voice"
+    ? "Said out loud on stream"
+    : readerCountLabel(safeResult.readerCount);
 }

@@ -261,6 +261,24 @@ describe("state machine and role selection", () => {
     game.go();
     for (const player of game.getPublicState().players) assert.equal(player.number, firstRound.get(player.id));
   });
+
+  test("a final champion holds for ten seconds before the card shows session over", () => {
+    const { clock, game } = createGame();
+    const players = startRound(game);
+    game.isFinalRound = true;
+    game.beginVote();
+    const finished = game.finishVote();
+    assert.equal(finished.revealDuration, DEFAULT_DURATIONS.revealOne + DEFAULT_DURATIONS.championHold);
+    clock.tick(finished.revealDuration);
+    assert.equal(game.getPublicState().sessionOver, true);
+    clock.tick(DEFAULT_DURATIONS.cardResultDelay);
+    assert.equal(game.getCard(players[0].sessionId).showResult, true);
+    assert.ok(game.getCard(players[0].sessionId).result.champion);
+    clock.tick(DEFAULT_DURATIONS.championHold);
+    assert.equal(game.getCard(players[0].sessionId).sessionOver, true);
+    clock.tick(DEFAULT_DURATIONS.lobby);
+    assert.equal(game.state, PHASES.LOBBY, "a finished final must not auto-deal another round");
+  });
 });
 
 describe("round messages and reveal payload", () => {

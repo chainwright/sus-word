@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import WebSocket from "ws";
 
+import Game from "../src/game.js";
 import { createSusWordServer } from "../src/server.js";
 
 const OVERLAY_MOCKS = [
@@ -211,6 +212,21 @@ const OVERLAY_LAYOUT_CHECK = String.raw`(async () => {
       || captionRect.top < cardRect.top - 1 || captionRect.bottom > cardRect.bottom + 1)) {
       fail("reveal-caption-card-overflow", caption, caption.textContent);
     }
+    const verdict = card?.querySelector(".verdict");
+    if (visible(verdict)) {
+      const verdictRect = verdict.getBoundingClientRect();
+      const overlaps = captionRect.left < verdictRect.right && captionRect.right > verdictRect.left
+        && captionRect.top < verdictRect.bottom && captionRect.bottom > verdictRect.top;
+      if (overlaps) fail("reveal-caption-verdict-overlap", caption, caption.textContent);
+    }
+  }
+  if (new URLSearchParams(location.search).get("mock") === "champion") {
+    const panel = document.querySelector(".champion-moment");
+    const revealArea = document.querySelector("#camera-dim");
+    if (!visible(panel)) failures.push({ check: "champion-moment-missing", element: ".champion-moment" });
+    else if (visible(revealArea) && panel.getBoundingClientRect().width < revealArea.getBoundingClientRect().width * .9) {
+      fail("champion-moment-too-narrow", panel, "champion card must fill the lower camera area");
+    }
   }
   const query = new URLSearchParams(location.search);
   if (query.get("frame") === "preleaders") {
@@ -259,6 +275,52 @@ const SETTLE_PAGE = String.raw`(async () => {
   return true;
 })()`;
 
+const CARD_LAYOUT_CHECK = String.raw`(async () => {
+  await document.fonts.ready;
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  const failures = [];
+  for (const title of document.querySelectorAll(".card-phase")) {
+    if (getComputedStyle(title).textOverflow === "ellipsis" || title.scrollWidth > title.clientWidth + 1) {
+      failures.push({ check: "card-header-clipped", element: ".card-phase", detail: title.textContent });
+    }
+  }
+  if (document.documentElement.scrollWidth > document.documentElement.clientWidth + 1) {
+    failures.push({ check: "card-horizontal-overflow", element: "html" });
+  }
+  if (new URLSearchParams(location.search).get("mock") === "busted"
+    && document.querySelector(".imposter-tips")) {
+    failures.push({ check: "busted-card-tips-visible", element: ".imposter-tips" });
+  }
+  return failures;
+})()`;
+
+function liveCardCheck(role, word = "") {
+  return `(async () => {
+    const deadline = Date.now() + 4000;
+    const expectedRole = ${JSON.stringify(role)};
+    const expectedWord = ${JSON.stringify(word.toUpperCase())};
+    while (Date.now() < deadline) {
+      const stamp = document.querySelector(".role-stamp");
+      const secret = document.querySelector(".secret-word");
+      if (stamp && stamp.textContent.includes(expectedRole)
+        && (expectedRole !== "IMPOSTER" || secret?.textContent.trim().toUpperCase() === expectedWord)) {
+        const title = document.querySelector(".card-phase");
+        return title && (getComputedStyle(title).textOverflow === "ellipsis" || title.scrollWidth > title.clientWidth + 1)
+          ? [{ check: "card-header-clipped", element: ".card-phase", detail: title.textContent }]
+          : [];
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return [{
+      check: "live-card-role",
+      element: "#card-root",
+      detail: expectedRole === "IMPOSTER"
+        ? "real demo Imposter card did not show secret word " + expectedWord
+        : "real demo Detective card did not render",
+    }];
+  })()`;
+}
+
 function formatFailure(failure) {
   if (typeof failure === "string") return failure;
   const geometry = failure.box ? ` · box ${JSON.stringify(failure.box)}` : "";
@@ -294,9 +356,26 @@ async function loadRoute(devtools, sessionId, route, dimensions, checkLayout) {
   const layoutFailures = checkLayout
     ? await evaluate(devtools, sessionId, OVERLAY_LAYOUT_CHECK)
     : (await evaluate(devtools, sessionId, SETTLE_PAGE), []);
-  if (errors.length || layoutFailures.length) {
-    throw new Error(`${label} failed\n${[...errors, ...layoutFailures].map((failure) => `  - ${formatFailure(failure)}`).join("\n")}`);
+  const routeFailures = route.verifyExpression
+    ? await evaluate(devtools, sessionId, route.verifyExpression) : [];
+  if (errors.length || layoutFailures.length || routeFailures.length) {
+    throw new Error(`${label} failed\n${[...errors, ...layoutFailures, ...routeFailures].map((failure) => `  - ${formatFailure(failure)}`).join("\n")}`);
   }
+}
+
+function prepareLiveDemoCards(game, count = 4) {
+  for (let index = 1; index <= count; index += 1) {
+    const login = `demo_card_${index}`;
+    const sessionId = `demo-player-session-${String(index).padStart(4, "0")}`;
+    const claim = game.createClaim({ sessionId, login });
+    game.claim({ code: claim.code, login, userId: `demo-${index}`, simulated: true });
+  }
+  game.start();
+  game.go({ word: "candle", category: "home" });
+  const assignment = game.currentRound.impostors[0];
+  const impostor = Number(assignment.playerId.replace("demo-", ""));
+  const detectivePlayer = [...game.currentRound.roster.values()].find(({ id }) => id !== assignment.playerId);
+  return { impostor, detective: Number(detectivePlayer.id.replace("demo-", "")), word: assignment.word };
 }
 
 function waitForExit(child, timeoutMs) {
@@ -335,9 +414,17 @@ async function closeChrome(devtools, child) {
 }
 
 async function main() {
+  const demoCodes = ["A2B3", "C4D5", "E6F7", "G8H9"];
+  const game = new Game({
+    random: () => 0,
+    codeGenerator: () => demoCodes.shift(),
+    durations: { round: 60_000, categoryHint: 30_000, letterHint: 50_000, vote: 15_000 },
+    words: [{ word: "candle", category: "home" }],
+  });
   const service = createSusWordServer({
+    game,
     port: 0,
-    env: {},
+    env: { DEMO_MODE: "1" },
     logger: { log() {}, error() {} },
   });
   const profile = await mkdtemp(join(tmpdir(), "sus-word-browser-"));
@@ -356,6 +443,15 @@ async function main() {
       devtools.send("Log.enable", {}, sessionId),
     ]);
     const origin = `http://127.0.0.1:${address.port}`;
+    const liveCards = prepareLiveDemoCards(game);
+    for (const [role, number] of [["IMPOSTER", liveCards.impostor], ["DETECTIVE", liveCards.detective]]) {
+      await loadRoute(devtools, sessionId, {
+        label: `live demo ${role.toLowerCase()} card`,
+        url: `${origin}/card?demo=${number}`,
+        verifyExpression: liveCardCheck(role, liveCards.word),
+      }, { width: 390, height: 844, mobile: true }, false);
+      console.log(`✓ live demo ${role.toLowerCase()} card`);
+    }
     for (const dimensions of [{ width: 854, height: 480 }, { width: 1920, height: 1080 }]) {
       const size = `${dimensions.width}x${dimensions.height}`;
       for (const mock of OVERLAY_MOCKS) {
@@ -392,6 +488,7 @@ async function main() {
       await loadRoute(devtools, sessionId, {
         label: `card ${mock}`,
         url: `${origin}/card?mock=${mock}`,
+        verifyExpression: CARD_LAYOUT_CHECK,
       }, { width: 390, height: 844, mobile: true }, false);
       console.log(`✓ card ${mock}`);
     }
@@ -404,6 +501,7 @@ async function main() {
       cleanupWarnings.push(`Chrome cleanup: ${error.message}`);
     }
     try {
+      service.game.reset();
       await service.stop();
     } catch (error) {
       cleanupWarnings.push(`server cleanup: ${error.message}`);

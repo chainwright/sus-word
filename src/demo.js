@@ -43,6 +43,46 @@ const CHAT_LINES = [
   "the room got very quiet all of a sudden",
 ];
 
+const PLURAL_WORDS = new Set(["pants", "socks", "shoes", "boots", "shorts", "glasses", "scissors", "notes"]);
+
+function articleFor(word) {
+  if (word === "uniform") return "a";
+  return /^[aeiou]/i.test(word) ? "an" : "a";
+}
+
+export function demoWordLines(entry) {
+  const word = String(entry?.word ?? entry ?? "word").toLowerCase();
+  const category = String(entry?.category ?? "");
+  if (category === "feelings") return {
+    decoy: `I feel ${word} when the rain starts at night`,
+    smuggle: `the weather turned and I felt ${word} beside the window`,
+  };
+  if (category === "colors") return {
+    decoy: `that desk lamp looks ${word} when I dim it`,
+    smuggle: `the whole room looked ${word} when the weather turned`,
+  };
+  if (category === "actions") return {
+    decoy: `I always ${word} when thunder catches me off guard`,
+    smuggle: `the weather got dramatic enough to make me ${word}`,
+  };
+  const noun = PLURAL_WORDS.has(word) ? word : `${articleFor(word)} ${word}`;
+  return {
+    decoy: `I keep ${noun} near my desk for stormy nights`,
+    smuggle: `the weather turned so I moved my ${word} beside the monitor`,
+  };
+}
+
+export function selectDemoVoteTarget(table, player, outcomes) {
+  if (!table || !player) return null;
+  const hidden = table.impostors.filter(({ busted }) => !busted);
+  const hiddenIds = new Set(hidden.map(({ playerId }) => playerId));
+  const preferredImpostor = hidden.find(({ playerId }) => outcomes.get(playerId)?.catchByVote);
+  const detectives = [...table.roster.values()].filter(({ id }) => id !== player.id && !hiddenIds.has(id));
+  const hiddenTargets = hidden.map(({ playerId }) => table.roster.get(playerId)).filter((target) => target && target.id !== player.id);
+  const preferred = preferredImpostor ? table.roster.get(preferredImpostor.playerId) : detectives[0];
+  return preferred?.id === player.id ? hiddenTargets[0] ?? detectives[0] : preferred ?? hiddenTargets[0] ?? null;
+}
+
 function sleep(milliseconds) {
   return new Promise((resolveSleep) => setTimeout(resolveSleep, milliseconds));
 }
@@ -78,6 +118,10 @@ export function seededRandom(seed = "sus-word-demo") {
     mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
     return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+export function demoPublicUrl(port = 3000) {
+  return `http://localhost:${Number(port) || 3000}`;
 }
 
 export function demoRoundOutcomes(game, random, missOffset = 0) {
@@ -234,7 +278,7 @@ async function playRoundChat(game, service, profiles, fast, voiceSocket, outcome
       for (const { table, assignment } of assignments) {
         const decoy = [...table.roster.values()].find(({ id }) => id !== assignment.playerId);
         sequence += 1;
-        await postMessage(game, service, decoy, `I keep a ${assignment.word} near my desk for stormy nights`, sequence, voiceSocket, fast);
+        await postMessage(game, service, decoy, demoWordLines(assignment).decoy, sequence, voiceSocket, fast);
       }
       decoySent = true;
       continue;
@@ -243,7 +287,7 @@ async function playRoundChat(game, service, profiles, fast, voiceSocket, outcome
       for (const { assignment } of assignments) {
         const impostor = profiles.find(({ id }) => id === assignment.playerId);
         sequence += 1;
-        await postMessage(game, service, impostor, `the weather turned so I moved my ${assignment.word} beside the monitor`, sequence, voiceSocket, fast);
+        await postMessage(game, service, impostor, demoWordLines(assignment).smuggle, sequence, voiceSocket, fast);
       }
       smuggleSent = true;
       continue;
@@ -299,18 +343,12 @@ async function castVotes(game, service, fast, outcomes) {
   const seated = [...game.tables.values()].reduce((sum, table) => sum + table.roster.size, 0);
   const pause = seated > 12 ? (fast ? 35 : 75) : fast ? 2_500 : 4_000;
   for (const table of game.tables.values()) {
-    const impostorId = table.impostorId;
-    const fallback = [...table.roster.values()].find(({ id }) => id !== impostorId);
-    const outcome = outcomes.get(impostorId);
     for (const player of table.roster.values()) {
       if (game.phase !== PHASES.VOTE) return;
       await sleep(pause);
       if (game.phase !== PHASES.VOTE) return;
-      const preferred = outcome?.catchByVote ? impostorId : fallback.id;
-      const alternate = [...table.roster.values()].find(({ id }) => (
-        id !== player.id && (outcome?.catchByVote || id !== impostorId)
-      )) ?? [...table.roster.values()].find(({ id }) => id !== player.id);
-      const target = table.roster.get(player.id === preferred ? alternate.id : preferred);
+      const target = selectDemoVoteTarget(table, player, outcomes);
+      if (!target) continue;
       if (table.id === game.featuredTableId) {
         await service.handleChatMessage({
           userId: player.id,
@@ -338,7 +376,7 @@ export async function runDemo(options = {}) {
   const playerCount = Number(options.players ?? requestedPlayerCount());
   const profiles = demoProfiles(playerCount);
   const port = Number(options.port ?? process.env.PORT ?? 3000);
-  const publicUrl = process.env.PUBLIC_URL || `http://localhost:${port}`;
+  const publicUrl = demoPublicUrl(port);
   const seed = String(options.seed ?? requestedSeed());
   const gameRandom = seededRandom(`${seed}:game`);
   const behaviorRandom = seededRandom(`${seed}:behavior`);

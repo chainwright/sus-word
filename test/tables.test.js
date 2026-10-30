@@ -300,6 +300,33 @@ describe("live accusations", () => {
     assert.equal(game.lastReveal.imposters.every(({ verdict }) => verdict === "BUSTED"), true);
   });
 
+  test("after one of two Imposters is busted only the hidden one can receive votes", () => {
+    const { game } = startGame(10);
+    const table = game.currentRound;
+    const [bustedAssignment, hiddenAssignment] = table.impostors;
+    const detective = [...table.roster.values()].find(({ id }) => !table.impostors.some(({ playerId }) => playerId === id));
+    game.sessions.set("hidden-card", { userId: hiddenAssignment.playerId, linkedAt: 0 });
+    game.recordMessage({ userId: bustedAssignment.playerId, text: `this ${bustedAssignment.word} fits naturally here` });
+    assert.equal(game.accuse(detective.id, bustedAssignment.playerId, bustedAssignment.word).correct, true);
+
+    const publicState = game.getPublicState();
+    assert.equal(publicState.round.impostorCount, 2);
+    assert.equal(publicState.round.remainingImpostorCount, 1);
+    assert.equal(game.getCard("hidden-card").remainingImpostorCount, 1);
+    assert.equal(game.vote(detective.id, bustedAssignment.playerId).reason, "already_busted");
+
+    assert.equal(game.beginVote().ok, true);
+    assert.equal(game.vote(detective.id, bustedAssignment.playerId).reason, "already_busted");
+    for (const player of table.roster.values()) {
+      if (player.id === detective.id) continue;
+      const target = player.id === hiddenAssignment.playerId ? detective.id : hiddenAssignment.playerId;
+      table.votes.set(player.id, target);
+    }
+    table.votes.set(detective.id, hiddenAssignment.playerId);
+    const reveal = game.finishVote().reveal;
+    assert.deepEqual(reveal.accusedIds, [hiddenAssignment.playerId]);
+  });
+
   test("wrong word, wrong person, and an accusation before smuggle all miss", () => {
     for (const kind of ["word", "person", "early"]) {
       const { game, impostor, detectives } = accusationGame();
