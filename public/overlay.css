@@ -149,3 +149,8 @@
 .case-card.lifted .verdict{right:10px;max-width:205px}
 .champion-moment{left:24px;bottom:10px;width:820px;min-height:280px;padding:24px 34px;grid-template-columns:110px minmax(0,1fr) 220px}
 .champion-moment .player-avatar{width:100px;height:100px}.champion-moment h1{font-size:44px}.champion-moment>b{font-size:39px}
+
+/* Long two-word topics wrap as evidence copy instead of truncating. */
+.hint.multi-value{height:56px}
+.hint.multi-value small{font-size:14px;line-height:14px}
+.hint strong.multi-value{width:100%;max-width:130px;min-height:32px;white-space:normal;overflow:visible;text-overflow:clip;font-size:13px;line-height:16px}

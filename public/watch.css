@@ -64,3 +64,28 @@ button,a{font:inherit}
   .card-column{width:min(250px,74vw);margin:13px auto 0;padding:9px}.card-heading strong{font-size:18px}.card-heading>span{font-size:8px}.role-note{font-size:10px}
 }
 @media (prefers-reduced-motion:reduce){.live-pill i{animation:none}}
+
+/* The hosted page is a compact pitch first and a stream layout second. */
+.watch-header{display:grid;grid-template-columns:minmax(330px,.9fr) minmax(520px,1.35fr);grid-template-areas:"copy legend" "meta legend";min-height:0;padding:0 4px 10px;align-items:center}
+.hero-copy{grid-area:copy;display:flex;align-items:baseline;gap:14px;min-width:0}
+.hero-copy h1{flex:none;margin:0;color:#f2d38f;font:700 clamp(30px,3.1vw,54px)/.92 "Oswald";letter-spacing:.025em;text-shadow:0 3px 16px #000}
+.hero-copy p{margin:0;color:#f2e4ca;font:700 clamp(12px,.9vw,16px)/1.22 "Courier Prime"}
+.how-legend{grid-area:legend;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0;padding:0;list-style:none}
+.how-legend li{min-width:0;display:flex;align-items:center;gap:7px;padding:7px 8px;color:#d9c6ac;background:#211713;border:1px solid #8a603e66;font-size:clamp(10px,.72vw,13px);line-height:1.15}
+.how-legend b{flex:none;width:22px;height:22px;display:grid;place-items:center;border-radius:50%;color:#211713;background:#e2b660;font:700 14px/1 "Oswald"}.how-legend strong{color:#fff}
+.watch-meta{grid-area:meta;display:flex;align-items:center;gap:10px;color:#9f8878;font-size:11px}.watch-meta a{color:#d9ad65;font:600 11px/1 "Oswald";text-decoration:none;text-transform:uppercase;letter-spacing:.05em}.watch-meta a:hover{text-decoration:underline}
+.watch-layout{grid-template-columns:minmax(0,1fr) clamp(230px,18vw,330px);padding-top:10px}
+.stream-presentation{display:grid;grid-template-columns:minmax(0,1fr) clamp(155px,13vw,215px);gap:10px;align-items:stretch}
+.stream-chat{position:relative;inset:auto;z-index:auto;width:auto;min-width:0;max-height:none;padding:10px;background:#130f10e8}
+.stream-chat header{font-size:clamp(9px,.7vw,13px)}
+.stream-frame{min-width:0}
+.frame-placeholder{position:absolute;z-index:5;display:flex;align-items:center;justify-content:center;gap:8px;transition:opacity .2s;color:#f3e4c2;text-align:center;pointer-events:none}
+.frame-placeholder.is-ready{opacity:0;visibility:hidden}
+.stream-placeholder{inset:0;background:radial-gradient(circle at 30% 42%,#bd8b4855,transparent 28%),linear-gradient(#1c1719b8,#0d0908c9);font:700 clamp(15px,1.5vw,25px)/1.2 "Courier Prime";text-shadow:0 2px 4px #000}
+.phone-placeholder{inset:0;flex-direction:column;background:linear-gradient(150deg,#60452d,#231711 62%);font:700 14px/1.2 "Courier Prime"}.phone-placeholder b{font:700 24px/1 "Oswald";color:#edc374}.phone-placeholder span{color:#d9c8ac}
+.card-viewport{z-index:3}
+
+@media (max-width:700px){
+  .watch-header{display:block;padding:0 2px 7px}.hero-copy{display:block}.hero-copy h1{font-size:31px}.hero-copy p{margin-top:3px;font-size:11px;line-height:1.18}.how-legend{margin-top:6px;gap:3px}.how-legend li{display:block;padding:4px;font-size:8px;line-height:1.12}.how-legend b{float:left;width:15px;height:15px;margin:0 4px 2px 0;font-size:10px}.watch-meta{margin-top:5px;font-size:9px}.watch-meta a{font-size:9px}
+  .watch-layout{display:flex;flex-direction:column;padding-top:6px}.card-column{order:-1;width:min(205px,60vw);margin:0 auto 10px;padding:7px}.stream-column{order:2}.stream-presentation{display:block}.stream-chat{display:none}.stream-caption{margin-top:5px}.role-note{display:none}
+}

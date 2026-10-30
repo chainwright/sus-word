@@ -9,6 +9,7 @@ const switcher = document.querySelector("#player-switcher");
 const followLabel = document.querySelector("#follow-label");
 const phaseLabel = document.querySelector("#phase-label");
 const connectionLabel = document.querySelector("#connection-label");
+const holdPlaceholders = new URLSearchParams(location.search).get("holdPlaceholders") === "1";
 let activePlayer = 1;
 let socket = null;
 let reconnectDelay = 1_000;
@@ -29,6 +30,27 @@ function fitFrames() {
 new ResizeObserver(fitFrames).observe(streamFrame);
 new ResizeObserver(fitFrames).observe(phoneShell);
 addEventListener("load", fitFrames);
+
+function markFrameReady(frame, placeholder) {
+  if (holdPlaceholders) return;
+  placeholder?.classList.add("is-ready");
+  frame?.classList.add("is-ready");
+}
+
+function waitForFramePaint(frame, placeholder, selector) {
+  if (holdPlaceholders) return;
+  const check = () => {
+    if (frame.contentDocument?.querySelector(selector)) {
+      markFrameReady(frame, placeholder);
+      return;
+    }
+    setTimeout(check, 50);
+  };
+  check();
+}
+
+overlayFrame.addEventListener("load", () => waitForFramePaint(overlayFrame, document.querySelector("#stream-placeholder"), "#stage > :not([hidden])"));
+cardFrame.addEventListener("load", () => waitForFramePaint(cardFrame, document.querySelector("#phone-placeholder"), "#card-root > *"));
 
 function voteLike(message) {
   return message?.isVote || message?.voteMessage || /^\s*(?:!vote\s+|[!#]?\d+\s*$)/i.test(message?.text || "");
@@ -128,6 +150,9 @@ switcher.addEventListener("click", (event) => {
     candidate.setAttribute("aria-pressed", String(candidate === button));
   }
   followLabel.textContent = `Follow player ${activePlayer}`;
+  document.querySelector("#phone-placeholder")?.classList.remove("is-ready");
+  const phoneStatus = document.querySelector("#phone-placeholder span");
+  if (phoneStatus) phoneStatus.textContent = `Connecting to player ${activePlayer}…`;
   cardFrame.src = `/card?demo=${activePlayer}`;
 });
 

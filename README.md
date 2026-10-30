@@ -28,7 +28,9 @@ The v3 screens are built for a real stream: the first lobby teaches the rules, t
 
 ## Hosted demo
 
-Run `npm run demo` on a Node 24 host with its assigned `PORT` and set `PUBLIC_URL` to the public HTTPS origin, such as `https://sus-word.onrender.com`. Use `/healthz` for a keep-warm health check. Send visitors to `/watch`: it combines the live overlay, simulated chat, and switchable read-only player cards into one browser page. `/overlay` remains the transparent OBS source, and `/card?demo=1` opens player 1 directly. Every player and chat line is generated locally rather than posted to Twitch. The showcase plays three rounds, a FINAL, a clear next-session countdown, then starts a fresh bounded session.
+Run `npm run demo` on a Node 24 host with its assigned `PORT`. Set `DEMO_PUBLIC_URL` to its public HTTPS origin (for example `https://sus-word.onrender.com`), `DEMO_PLAYERS=10` for a two-table showcase, and optionally `DEMO_SEED=rehearsal-1` for a repeatable run. The demo deliberately ignores the regular streamer's `PUBLIC_URL`, so a stale tunnel can never leak into local rehearsal links. Use `/healthz` for a keep-warm health check.
+
+Send visitors to `/watch`: its short explainer sits above the live overlay, simulated chat, and switchable read-only player cards. `/overlay` remains the transparent OBS source, and `/card?demo=1` opens player 1 directly. Every player and chat line is generated locally rather than posted to Twitch. The showcase plays three rounds, skips a redundant FINAL when there was only one table, otherwise crowns the player who wins the FINAL rather than a busted Imposter carrying an older score, holds the result, and starts a fresh bounded session. The Champion card also shows the final-round result and total points.
 
 ## Mixed rehearsal on your real channel
 
@@ -43,11 +45,11 @@ One table is the whole game for a small stream. When more people claim cards, Su
 - `!accuse name word` is a live accusation: one shot per round, valid only after the word was smuggled. Right answer: that Imposter is busted on the spot.
 - Viewers without a card are the crowd: they can accuse and vote on the featured table. Crowd votes appear as a separate CHAT bar and only break a tie between seated votes; they cannot choose a suspect by themselves.
 - The streamer always sits at the featured table, so their voice only counts where everyone can hear it. Turn off **Host plays** to just host.
-- The featured table rotates every round, and the host can pick any table. **FINAL** guarantees the top scorer from every table a seat, then adds the strongest runners-up for a final of at least six when enough players are available.
+- The featured table rotates every round, and the host can pick any table. **FINAL** guarantees the top scorer from every table a seat, then adds the strongest runners-up for a final of at least six when enough players are available. A player busted as the Imposter in the FINAL ranks behind a player who survived that final case; final-round points, total points, catches, and survival then break the remaining ties.
 
 Tested in rehearsal with up to 200 virtual players; a 200-player round resolves in a few milliseconds.
 
-`npm test` runs the fast, browser-free logic suite. `npm run test:browser` launches local Chrome and loads every overlay mock at 854×480, 1280×720, and 1920×1080, checking real computed layout for board-cell overflow, clipped fixture names, name/VOTE overlap, chat and voice reveal captions, stamps, the champion panel, the pre-leader reveal card, BUSTED rows in every phase, and console errors. It opens every card mock at 390×844, then opens real demo-mode Imposter and Detective cards and verifies the live secret role payloads render without console errors. It also checks `/watch` at both desktop sizes and 390×844 for overflow, its non-white stream backdrop, live chat, embedded frames, and reveal-only role marker. Set `CHROME_PATH` if Chrome is not in a standard location.
+`npm test` runs the fast, browser-free logic suite. `npm run test:browser` launches local Chrome and loads every overlay mock at 854×480, 1280×720, and 1920×1080, checking real computed layout for board-cell overflow, clipped fixture names, name/VOTE overlap, chat and voice reveal captions, stamps, the champion panel, the pre-leader reveal card, BUSTED rows in every phase, long two-Imposter topics, and console errors. It opens every card mock at 390×844, then opens real demo-mode Imposter and Detective cards and verifies the live secret role payloads render without console errors. It also checks `/watch` at both desktop sizes and 390×844 for its above-the-fold pitch and frames, first-paint placeholders, separate simulated chat, mobile card order, demo badge clearance, role privacy, and `/host` redirect. Set `CHROME_PATH` if Chrome is not in a standard location.
 
 ## Streamer voice
 
@@ -77,7 +79,7 @@ The card page first checks that the Twitch name spoke in chat recently, then giv
 
 ## Built with Codex
 
-Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first rehearsal simulator was drafted outside Codex and later rewritten in Codex (step 15). The current game is covered by 139 browser-free automated tests, plus the real-Chrome mock and live-card check:
+Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first rehearsal simulator was drafted outside Codex and later rewritten in Codex (step 15). The current game is covered by 143 browser-free automated tests, plus the real-Chrome mock and live-card check:
 
 1. Pure game logic, word detection, scoring, and tests.
 2. Twitch OAuth, EventSub chat, server routes, and live state.
@@ -106,3 +108,4 @@ Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first reh
 25. Voice-caption and vote-copy fixes, natural demo chat, tied ranks, and clear session loops.
 26. A bounded, read-only hosted demo with public links, health checks, and locked host controls.
 27. The responsive watch-a-round page with a stream backdrop, live chat, and switchable player cards.
+28. A faster hosted-demo pitch, honest session timing, safer voting, meaningful finals, and cold-visitor browser coverage.

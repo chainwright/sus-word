@@ -5,31 +5,49 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Watch Sus Word</title>
     <link rel="icon" href="data:,">
+    <link rel="preload" href="/fonts/Oswald-Variable.ttf" as="font" type="font/ttf" crossorigin>
+    <link rel="preload" href="/fonts/CourierPrime-Bold.ttf" as="font" type="font/ttf" crossorigin>
+    <link rel="preload" href="/img/cork.jpg" as="image">
+    <link rel="preload" href="/img/stopwatch.webp" as="image">
     <link rel="stylesheet" href="/watch.css">
   </head>
   <body>
     <main class="watch-page">
       <header class="watch-header">
-        <p>Simulated players · a round takes about 3 minutes · one of them is hiding a secret word in chat</p>
-        <a href="https://github.com/chainwright/sus-word" target="_blank" rel="noreferrer">View the project on GitHub ↗</a>
+        <div class="hero-copy">
+          <h1>SUS WORD</h1>
+          <p>A Twitch chat game: one viewer hides a secret word in plain sight, everyone else hunts it</p>
+        </div>
+        <ol class="how-legend" aria-label="How Sus Word works">
+          <li><b>1</b><span><strong>Hide</strong> the word in a normal sentence</span></li>
+          <li><b>2</b><span><strong>Hunt</strong>: hints unlock, chat accuses or votes</span></li>
+          <li><b>3</b><span><strong>Rewind</strong>: the stream replays chat and highlights the line</span></li>
+        </ol>
+        <div class="watch-meta">
+          <span>Simulated players · about 3 minutes per round</span>
+          <a href="https://github.com/chainwright/sus-word" target="_blank" rel="noreferrer">GitHub ↗</a>
+        </div>
       </header>
 
       <div class="watch-layout">
         <section class="stream-column" aria-label="Simulated Sus Word stream">
-          <div id="stream-frame" class="stream-frame">
-            <div class="room-backdrop" aria-hidden="true">
-              <div class="window"><i></i><i></i><i></i><i></i></div>
-              <div class="lamp"><i></i></div>
-              <div class="room-shelf"><i></i><i></i><i></i></div>
-              <div class="desk-edge"></div>
+          <div class="stream-presentation">
+            <div id="stream-frame" class="stream-frame">
+              <div class="room-backdrop" aria-hidden="true">
+                <div class="window"><i></i><i></i><i></i><i></i></div>
+                <div class="lamp"><i></i></div>
+                <div class="room-shelf"><i></i><i></i><i></i></div>
+                <div class="desk-edge"></div>
+              </div>
+              <div id="stream-placeholder" class="frame-placeholder stream-placeholder" role="status">Connecting to the live round…</div>
+              <div id="overlay-viewport" class="scaled-viewport overlay-viewport">
+                <iframe id="overlay-frame" title="Live Sus Word game overlay" src="/overlay" width="1280" height="720" loading="lazy"></iframe>
+              </div>
             </div>
             <aside id="stream-chat" class="stream-chat" aria-label="Simulated live chat">
               <header><span></span> SIMULATED CHAT</header>
               <div id="chat-lines" aria-live="polite"></div>
             </aside>
-            <div id="overlay-viewport" class="scaled-viewport overlay-viewport">
-              <iframe id="overlay-frame" title="Live Sus Word game overlay" src="/overlay" width="1280" height="720"></iframe>
-            </div>
           </div>
           <p class="stream-caption">
             <span class="caption-status"><span class="live-pill"><i></i> LIVE DEMO</span><strong id="phase-label">Phase: Connecting</strong></span>
@@ -49,8 +67,9 @@
             <button type="button" data-player="4" aria-pressed="false">4</button>
           </nav>
           <div id="phone-shell" class="phone-shell">
+            <div id="phone-placeholder" class="frame-placeholder phone-placeholder" role="status"><b>PRIVATE CASE FILE</b><span>Connecting to player 1…</span></div>
             <div id="card-viewport" class="scaled-viewport card-viewport">
-              <iframe id="card-frame" title="Live simulated player card" src="/card?demo=1" width="390" height="844"></iframe>
+              <iframe id="card-frame" title="Live simulated player card" src="/card?demo=1" width="390" height="844" loading="eager"></iframe>
             </div>
           </div>
           <p class="role-note">Switch cards any time. The 🤫 marker appears only after the reveal.</p>

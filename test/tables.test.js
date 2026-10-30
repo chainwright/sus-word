@@ -68,6 +68,7 @@ describe("table seating and roles", () => {
       assert.deepEqual(sizes, expected);
       assert.ok(sizes.every((size) => size >= 3 && size <= 12));
     }
+    assert.deepEqual(seatPlayers(Array.from({ length: 10 }, (_, id) => ({ id })), () => 0, 6).map(({ length }) => length), [5, 5]);
   });
 
   test("deals one or two Imposters with distinct categories per table", () => {
@@ -313,17 +314,22 @@ describe("live accusations", () => {
     assert.equal(publicState.round.impostorCount, 2);
     assert.equal(publicState.round.remainingImpostorCount, 1);
     assert.equal(game.getCard("hidden-card").remainingImpostorCount, 1);
-    assert.equal(game.vote(detective.id, bustedAssignment.playerId).reason, "already_busted");
+    const earlyRejected = game.vote(detective.id, bustedAssignment.playerId);
+    assert.equal(earlyRejected.reason, "already_busted");
+    assert.equal(earlyRejected.message, `@${table.roster.get(bustedAssignment.playerId).login} is already busted · vote for someone else`);
 
     assert.equal(game.beginVote().ok, true);
     assert.equal(game.vote(detective.id, bustedAssignment.playerId).reason, "already_busted");
     for (const player of table.roster.values()) {
       if (player.id === detective.id) continue;
       const target = player.id === hiddenAssignment.playerId ? detective.id : hiddenAssignment.playerId;
-      table.votes.set(player.id, target);
+      assert.equal(game.vote(player.id, target).ok, true);
     }
-    table.votes.set(detective.id, hiddenAssignment.playerId);
-    const reveal = game.finishVote().reveal;
+    assert.equal(game.phase, PHASES.VOTE, "the rejected voter is still outstanding");
+    const lastVote = game.vote(detective.id, hiddenAssignment.playerId);
+    assert.equal(lastVote.allVotesIn, true);
+    assert.equal(game.phase, PHASES.REVEAL, "a later valid vote still closes the vote early");
+    const reveal = game.lastReveal;
     assert.deepEqual(reveal.accusedIds, [hiddenAssignment.playerId]);
   });
 
@@ -446,7 +452,7 @@ describe("final table and performance", () => {
     assert.equal(game.go().tableCount, 3);
   });
 
-  test("a detective catch breaks a final score tie ahead of a busted Imposter", () => {
+  test("winning the final outranks a busted Imposter's larger carried score", () => {
     const { game } = startGame(30);
     game.beginVote();
     game.finishVote();
@@ -457,12 +463,12 @@ describe("final table and performance", () => {
     const impostor = table.roster.get(assignment.playerId);
     const detective = [...table.roster.values()].find(({ id }) => id !== impostor.id);
     for (const player of table.roster.values()) game.scores.set(player.id, 0);
-    game.scores.set(impostor.id, 5);
+    game.scores.set(impostor.id, 50);
     game.scores.set(detective.id, 4);
     game.recordMessage({ userId: impostor.id, text: `this ${assignment.word} fits naturally here` });
     game.accuse(detective.id, impostor.id, assignment.word);
     assert.equal(game.phase, PHASES.REVEAL);
-    assert.equal(game.scores.get(impostor.id), 6);
+    assert.equal(game.scores.get(impostor.id), 51);
     assert.equal(game.scores.get(detective.id), 6);
     assert.equal(game.lastChampion.id, detective.id);
     assert.equal(game.lastReveal.leaderboard[0].player.id, detective.id);

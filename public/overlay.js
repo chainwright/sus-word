@@ -252,6 +252,8 @@ function renderHints(hints = {}) {
     const target = $(selector);
     const next = hints[key] ? String(hints[key]).toUpperCase() : "🔒";
     target.textContent = next;
+    target.classList.toggle("multi-value", key === "category" && next.includes(" · "));
+    target.closest(".hint")?.classList.toggle("multi-value", key === "category" && next.includes(" · "));
     if (previousHint[key] && previousHint[key] !== next && next !== "🔒" && !reduced.matches) {
       const card = target.closest(".hint");
       card.animate([{ transform: "rotateY(180deg)" }, { transform: "rotateY(0)" }], { duration: 400, easing: "ease-out" });
@@ -354,7 +356,7 @@ function renderLobby(next) {
     compact.hidden = false;
     const compactClock = el("time", "", clock(remaining()));
     compactClock.id = "compact-lobby-clock";
-    compact.replaceChildren(document.createTextNode("Next round in "), compactClock, document.createTextNode(" · "), el("strong", "", `${next.claimedCount || 0} players ready`), document.createTextNode(" · new? type !join"));
+    compact.replaceChildren(document.createTextNode("Next round in "), compactClock, document.createTextNode(" · "), el("strong", "", readyPlayersCopy(next.claimedCount || 0, 3).split(" · ")[0]), document.createTextNode(" · new? type !join"));
   }
 }
 
@@ -771,6 +773,9 @@ function render(next) {
   }
   else if (phase === "VOTE") renderVote(next, shouldAnimateVoteBanner(plan));
   else if (phase === "REVEAL") {
+    $("#accuse-toast").hidden = true;
+    accusationQueue = [];
+    accusationToastActive = false;
     if (plan.sameReveal) updateRevealBoard(next);
     else if (plan.revealKey !== revealKey) {
       revealKey = plan.revealKey;
@@ -827,7 +832,7 @@ function mockState(kind) {
     chatVotes: [2, 7, 1, 4, 0, 1, 0, 0, 0, 0, 0, 0][index] || 0,
   }));
   const tableCount = Math.max(1, Number(params.get("tables")) || 1);
-  base.round = { players, remainingMs: base.remainingMs, tableId: tableCount > 1 ? 2 : 1, tableCount, impostorCount: kind === "reveal2" ? 2 : 1, hints: { category: "FOOD · HOME", letter: kind === "vote" ? "L · B" : null }, messageCounts, latestMessages: messages.slice(0, 3), recentMessages: messages, tallies };
+  base.round = { players, remainingMs: base.remainingMs, tableId: tableCount > 1 ? 2 : 1, tableCount, impostorCount: kind === "reveal2" || kind === "round12" ? 2 : 1, hints: { category: kind === "round12" ? "FANTASY · CLOTHING" : "FOOD · HOME", letter: kind === "vote" ? "L · B" : null }, messageCounts, latestMessages: messages.slice(0, 3), recentMessages: messages, tallies };
   if (params.get("frame") === "busted") {
     base.round.impostorCount = 2;
     base.round.remainingImpostorCount = 1;

@@ -77,25 +77,32 @@ export function demoWordLines(entry) {
   return { decoy: templates[0], smuggle: templates[1] };
 }
 
+export function demoLobbyDuration(fast) {
+  return fast ? 2_000 : 10_000;
+}
+
 export function demoIntermissionPlan(fast, sessionOver = false) {
   if (fast) return sessionOver
     ? { sessionOverMs: 50, nextSessionMs: 100, lobbyMs: 0 }
-    : { sessionOverMs: 0, nextSessionMs: 0, lobbyMs: 2_000 };
+    : { sessionOverMs: 0, nextSessionMs: 0, lobbyMs: demoLobbyDuration(true) };
   return sessionOver
     ? { sessionOverMs: 2_000, nextSessionMs: 8_000, lobbyMs: 0 }
-    : { sessionOverMs: 0, nextSessionMs: 0, lobbyMs: 10_000 };
+    : { sessionOverMs: 0, nextSessionMs: 0, lobbyMs: demoLobbyDuration(false) };
 }
 
 export function shouldStartDemoFinal(roundsPlayed, seating = []) {
-  return Number(roundsPlayed) >= 3 && (seating || []).length > 0;
+  return Number(roundsPlayed) >= 3 && (seating || []).length > 1;
 }
 
 export function selectDemoVoteTarget(table, player, outcomes) {
   if (!table || !player) return null;
   const hidden = table.impostors.filter(({ busted }) => !busted);
-  const hiddenIds = new Set(hidden.map(({ playerId }) => playerId));
+  const impostorIds = new Set(table.impostors.map(({ playerId }) => playerId));
+  const bustedIds = new Set(table.impostors.filter(({ busted }) => busted).map(({ playerId }) => playerId));
   const preferredImpostor = hidden.find(({ playerId }) => outcomes.get(playerId)?.catchByVote);
-  const detectives = [...table.roster.values()].filter(({ id }) => id !== player.id && !hiddenIds.has(id));
+  const detectives = [...table.roster.values()].filter(({ id }) => (
+    id !== player.id && !impostorIds.has(id) && !bustedIds.has(id)
+  ));
   const hiddenTargets = hidden.map(({ playerId }) => table.roster.get(playerId)).filter((target) => target && target.id !== player.id);
   const preferred = preferredImpostor ? table.roster.get(preferredImpostor.playerId) : detectives[0];
   return preferred?.id === player.id ? hiddenTargets[0] ?? detectives[0] : preferred ?? hiddenTargets[0] ?? null;
@@ -105,21 +112,25 @@ function sleep(milliseconds) {
   return new Promise((resolveSleep) => setTimeout(resolveSleep, milliseconds));
 }
 
-function requestedPlayerCount(argv = process.argv) {
+export function requestedPlayerCount(argv = process.argv, configured = process.env.DEMO_PLAYERS) {
   const argument = argv.find((value) => value.startsWith("--players="));
   const separateIndex = argv.indexOf("--players");
+  const configuredValue = String(configured ?? "").trim() || null;
   const value = argument?.split("=", 2)[1]
     ?? (separateIndex >= 0 ? argv[separateIndex + 1] : null)
+    ?? configuredValue
     ?? 4;
   const count = Number.parseInt(value, 10);
   return Number.isFinite(count) ? Math.max(3, Math.min(200, count)) : 4;
 }
 
-function requestedSeed(argv = process.argv) {
+export function requestedSeed(argv = process.argv, configured = process.env.DEMO_SEED) {
   const argument = argv.find((value) => value.startsWith("--seed="));
   const separateIndex = argv.indexOf("--seed");
+  const configuredValue = String(configured ?? "").trim() || null;
   return String(argument?.split("=", 2)[1]
     ?? (separateIndex >= 0 ? argv[separateIndex + 1] : null)
+    ?? configuredValue
     ?? "sus-word-demo");
 }
 
@@ -141,6 +152,10 @@ export function seededRandom(seed = "sus-word-demo") {
 export function demoPublicUrl(port = 3000, configured = "") {
   const publicUrl = String(configured || "").trim().replace(/\/+$/, "");
   return publicUrl || `http://localhost:${Number(port) || 3000}`;
+}
+
+export function demoTableCapacity(playerCount, publicUrl = "") {
+  return publicUrl && Number(playerCount) >= 7 ? 6 : 12;
 }
 
 export function demoRoundOutcomes(game, random, missOffset = 0) {
@@ -211,8 +226,8 @@ function linkDemoProfile(game, profile) {
 
 export function resetDemoSession(game, profiles) {
   game.reset();
-  game.start();
   for (const profile of profiles) linkDemoProfile(game, profile);
+  game.start();
   return {
     players: game.players.size,
     profiles: game.profiles.size,
@@ -414,17 +429,20 @@ export async function runDemo(options = {}) {
   const playerCount = Number(options.players ?? requestedPlayerCount());
   const profiles = demoProfiles(playerCount);
   const port = Number(options.port ?? process.env.PORT ?? 3000);
-  const publicUrl = demoPublicUrl(port, options.publicUrl ?? process.env.PUBLIC_URL);
+  const publicUrlSetting = options.publicUrl ?? process.env.DEMO_PUBLIC_URL;
+  const publicUrl = demoPublicUrl(port, publicUrlSetting);
   const seed = String(options.seed ?? requestedSeed());
   const gameRandom = seededRandom(`${seed}:game`);
   const behaviorRandom = seededRandom(`${seed}:behavior`);
   const missOffset = Math.floor(behaviorRandom() * 3);
   let claimIndex = 0;
   const game = new Game({
-    durations: fast ? FAST_DURATIONS : undefined,
+    durations: fast ? { ...FAST_DURATIONS, lobby: demoLobbyDuration(true) } : { lobby: demoLobbyDuration(false) },
     codeGenerator: () => claimCode(claimIndex++),
     random: gameRandom,
     wordPicker: demoWordPicker(gameRandom),
+    // Hosted showcases use two readable tables at ten players; normal rehearsals keep the 12-player rules cap.
+    maxTableSize: options.maxTableSize ?? demoTableCapacity(playerCount, publicUrlSetting),
   });
   const service = createSusWordServer({
     game,
@@ -452,8 +470,8 @@ export async function runDemo(options = {}) {
   console.log(`[demo] Simulating ${profiles.length} players with seed "${seed}".`);
   console.log(`[demo] Follow player 1's card: ${publicUrl}/card?demo=1`);
 
-  game.start();
   await populateLobby(game, profiles, fast);
+  game.start();
   let round = 0;
   let sessionRounds = 0;
 
@@ -488,6 +506,9 @@ export async function runDemo(options = {}) {
     console.log(`[demo] ${game.lastReveal.botMessage}`);
     if (!finalRound) sessionRounds += 1;
     await waitForPhase(game, PHASES.LOBBY);
+    if (!finalRound && sessionRounds >= 3 && game.lastRoundSeating.length === 1) {
+      game.completeSession();
+    }
   }
 }
 

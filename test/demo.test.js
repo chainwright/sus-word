@@ -6,12 +6,16 @@ import Game, { PHASES } from "../src/game.js";
 import {
   demoRoundOutcomes,
   demoIntermissionPlan,
+  demoLobbyDuration,
   demoProfiles,
   demoPublicUrl,
+  demoTableCapacity,
   demoWordLines,
   demoWordPicker,
   driveDemoRound,
   resetDemoSession,
+  requestedPlayerCount,
+  requestedSeed,
   seededRandom,
   selectDemoVoteTarget,
   shouldStartDemoFinal,
@@ -119,6 +123,8 @@ test("every demo word is grammatical in both category-aware chat templates", () 
 });
 
 test("full demo intermissions show card results and clearly restart after a final", () => {
+  assert.equal(demoLobbyDuration(false), 10_000);
+  assert.equal(demoLobbyDuration(true), 2_000);
   assert.deepEqual(demoIntermissionPlan(false, false), {
     sessionOverMs: 0,
     nextSessionMs: 0,
@@ -132,7 +138,8 @@ test("full demo intermissions show card results and clearly restart after a fina
   assert.equal(demoIntermissionPlan(true, false).lobbyMs, 2_000);
   assert.ok(demoIntermissionPlan(true, true).nextSessionMs < 1_000, "--fast must stay fast");
   assert.equal(shouldStartDemoFinal(2, [{ id: 1 }]), false);
-  assert.equal(shouldStartDemoFinal(3, [{ id: 1 }]), true);
+  assert.equal(shouldStartDemoFinal(3, [{ id: 1 }]), false, "a one-table session does not replay the same group as a FINAL");
+  assert.equal(shouldStartDemoFinal(3, [{ id: 1 }, { id: 2 }]), true);
   assert.equal(shouldStartDemoFinal(30, []), false);
 });
 
@@ -148,12 +155,31 @@ test("demo voters never target an already-busted Imposter", () => {
   };
   const target = selectDemoVoteTarget(table, roster.get("detective"), new Map([["hidden", { catchByVote: true }]]));
   assert.equal(target.id, "hidden");
+
+  const missedTarget = selectDemoVoteTarget(table, roster.get("hidden"), new Map());
+  assert.equal(missedTarget.id, "detective", "even a miss path must exclude the busted Imposter");
+});
+
+test("hosted demo options use DEMO env values while CLI flags win", () => {
+  assert.equal(requestedPlayerCount(["node", "demo.js"], "10"), 10);
+  assert.equal(requestedPlayerCount(["node", "demo.js", "--players", "30"], "10"), 30);
+  assert.equal(requestedSeed(["node", "demo.js"], "hosted-seed"), "hosted-seed");
+  assert.equal(requestedSeed(["node", "demo.js", "--seed=cli-seed"], "hosted-seed"), "cli-seed");
+  assert.equal(requestedSeed(["node", "demo.js"], ""), "sus-word-demo");
+  assert.equal(demoTableCapacity(10, "https://demo.example"), 6, "the hosted ten-player showcase has two tables");
+  assert.equal(demoTableCapacity(10), 12, "a local rehearsal keeps the normal table cap");
 });
 
 test("offline demo links stay local even when a stale tunnel is in the environment", () => {
   assert.equal(demoPublicUrl(3000), "http://localhost:3000");
   assert.equal(demoPublicUrl(4123), "http://localhost:4123");
   assert.equal(demoPublicUrl(3000, "https://sus-demo.example/"), "https://sus-demo.example");
+});
+
+test("the demo runtime never falls back to the streamer's PUBLIC_URL", async () => {
+  const source = await readFile(new URL("../src/demo.js", import.meta.url), "utf8");
+  assert.match(source, /process\.env\.DEMO_PUBLIC_URL/);
+  assert.doesNotMatch(source, /options\.publicUrl\s*\?\?\s*process\.env\.PUBLIC_URL/);
 });
 
 test("many demo sessions reset all growing game collections", () => {

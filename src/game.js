@@ -85,10 +85,11 @@ function stableShuffle(items, random) {
     .map(({ item }) => item);
 }
 
-export function seatPlayers(players, random = Math.random) {
+export function seatPlayers(players, random = Math.random, maxTableSize = 12) {
   const shuffled = stableShuffle([...players], random);
   if (shuffled.length < 3) return [];
-  const tableCount = Math.ceil(shuffled.length / 12);
+  const capacity = Math.max(3, Math.min(12, Number(maxTableSize) || 12));
+  const tableCount = Math.ceil(shuffled.length / capacity);
   const baseSize = Math.floor(shuffled.length / tableCount);
   const largerTables = shuffled.length % tableCount;
   const tables = [];
@@ -148,6 +149,7 @@ export class Game extends EventEmitter {
     };
     this.random = options.random ?? Math.random;
     this.wordPicker = options.wordPicker ?? null;
+    this.maxTableSize = Math.max(3, Math.min(12, Number(options.maxTableSize) || 12));
     this.codeGenerator = options.codeGenerator ?? null;
     this.words = options.words ?? WORDS;
     this.durations = { ...DEFAULT_DURATIONS, ...options.durations };
@@ -667,7 +669,12 @@ export class Game extends EventEmitter {
     const target = this.#resolveVoteTarget(targetReference, table);
     if (!target) return { ok: false, reason: "unknown_target" };
     if (table.impostors.some(({ playerId, busted }) => busted && playerId === target.id)) {
-      return { ok: false, reason: "already_busted" };
+      return {
+        ok: false,
+        reason: "already_busted",
+        target: this.#publicPlayer(target),
+        message: `@${target.login} is already busted · vote for someone else`,
+      };
     }
     if (voter.id === target.id) return { ok: false, reason: "self_vote" };
     if (crowd) {
@@ -751,24 +758,30 @@ export class Game extends EventEmitter {
       table.reveal = this.#buildTableReveal(table);
       table.phaseResult = this.#phaseResult(table.reveal.imposters);
     }
+    const finalTable = this.isFinalRound ? this.tables.values().next().value : null;
     const rankedFinalists = this.isFinalRound
-      ? this.#rankPlayers(
+      ? this.#rankFinalPlayers(
         [...this.playerTables.keys()].map((id) => this.players.get(id) ?? this.profiles.get(id)).filter(Boolean),
+        finalTable,
       ) : [];
-    const finalLeaderboard = this.isFinalRound
-      ? rankedFinalists.slice(0, 5).map((player, index, ranked) => ({
+    const finalStandings = this.isFinalRound
+      ? rankedFinalists.map((player, index, ranked) => ({
         player: this.#publicPlayer(player),
         score: this.scores.get(player.id) ?? 0,
         rank: ranked.findIndex((candidate) => (
           (this.scores.get(candidate.id) ?? 0) === (this.scores.get(player.id) ?? 0)
         )) + 1,
-      }))
-      : this.#leaderboard(5);
+      })) : [];
+    const finalLeaderboard = this.isFinalRound ? finalStandings.slice(0, 5) : this.#leaderboard(5);
     for (const table of this.tables.values()) table.reveal.leaderboard = finalLeaderboard;
     if (this.isFinalRound) {
       const champion = rankedFinalists[0] ?? null;
       this.lastChampion = champion;
-      for (const table of this.tables.values()) table.reveal.champion = champion;
+      for (const table of this.tables.values()) {
+        table.reveal.champion = champion;
+        table.reveal.championRoundPoints = champion ? table.scoreChanges.get(champion.id) ?? 0 : 0;
+        table.reveal.championTotalScore = champion ? this.scores.get(champion.id) ?? 0 : 0;
+      }
     }
     const fullLeaderboard = this.#leaderboard(Infinity);
     this.cardResults.clear();
@@ -778,7 +791,8 @@ export class Game extends EventEmitter {
         const voteTargetId = table.votes.get(player.id) ?? null;
         const voteTarget = voteTargetId ? table.roster.get(voteTargetId) : null;
         const voteWasRight = Boolean(table.impostors.some(({ playerId }) => playerId === voteTargetId));
-        const standing = fullLeaderboard.find(({ player: ranked }) => ranked.id === player.id);
+        const standingSource = this.isFinalRound ? finalStandings : fullLeaderboard;
+        const standing = standingSource.find(({ player: ranked }) => ranked.id === player.id);
         const availableAt = table.revealEndsAt + this.durations.cardResultDelay;
         this.cardResults.set(player.id, {
           availableAt,
@@ -792,7 +806,7 @@ export class Game extends EventEmitter {
           roundPoints: table.scoreChanges.get(player.id) ?? 0,
           totalScore: this.scores.get(player.id) ?? 0,
           rank: standing?.rank ?? null,
-          playerCount: fullLeaderboard.length,
+          playerCount: this.isFinalRound ? rankedFinalists.length : fullLeaderboard.length,
         });
       }
     }
@@ -839,6 +853,16 @@ export class Game extends EventEmitter {
     this.nextSessionStartsAt = this.#now() + delay;
     this.#publish("nextSession", { startsAt: this.nextSessionStartsAt, delayMs: delay });
     return { ok: true, startsAt: this.nextSessionStartsAt, delayMs: delay };
+  }
+
+  completeSession() {
+    if (this.state !== PHASES.LOBBY || this.sessionOver) return { ok: false, reason: "invalid_state" };
+    this.#clearTimers();
+    this.sessionOver = true;
+    this.nextSessionStartsAt = null;
+    this.#publish("sessionOver", { champion: this.#publicPlayer(this.lastChampion) });
+    this.#armCardResultTimer();
+    return { ok: true, state: this.state };
   }
 
   getTallies(tableId = this.featuredTableId) {
@@ -1048,7 +1072,7 @@ export class Game extends EventEmitter {
       ? [stableShuffle(regularPlayers, this.random)]
       : regularPlayers.length < 3
         ? [stableShuffle(regularPlayers, this.random)]
-        : seatPlayers(regularPlayers, this.random);
+        : seatPlayers(regularPlayers, this.random, this.maxTableSize);
     const tableCount = seatedGroups.length;
     const nextFeaturedId = finalRound ? 1 : (this.lastFeaturedTableId % tableCount) + 1;
     if (!finalRound && tableCount > 1 && this.lastFeaturedPlayerIds.size) {
@@ -1433,6 +1457,24 @@ export class Game extends EventEmitter {
         || rightStats.roundsSurvived - leftStats.roundsSurvived
         || (left.number ?? Number.MAX_SAFE_INTEGER) - (right.number ?? Number.MAX_SAFE_INTEGER)
         || (left.joinedAt ?? Number.MAX_SAFE_INTEGER) - (right.joinedAt ?? Number.MAX_SAFE_INTEGER);
+    });
+  }
+
+  // The final is its own case: winning it outranks carrying a larger score into it.
+  #rankFinalPlayers(players, table) {
+    return [...players].sort((left, right) => {
+      const leftAssignment = table?.impostors.find(({ playerId }) => playerId === left.id);
+      const rightAssignment = table?.impostors.find(({ playerId }) => playerId === right.id);
+      const leftLostFinal = Number(Boolean(leftAssignment?.busted || leftAssignment?.caught));
+      const rightLostFinal = Number(Boolean(rightAssignment?.busted || rightAssignment?.caught));
+      const leftStats = this.#statsFor(left.id);
+      const rightStats = this.#statsFor(right.id);
+      return leftLostFinal - rightLostFinal
+        || (table?.scoreChanges.get(right.id) ?? 0) - (table?.scoreChanges.get(left.id) ?? 0)
+        || (this.scores.get(right.id) ?? 0) - (this.scores.get(left.id) ?? 0)
+        || rightStats.catches - leftStats.catches
+        || rightStats.roundsSurvived - leftStats.roundsSurvived
+        || (left.number ?? Number.MAX_SAFE_INTEGER) - (right.number ?? Number.MAX_SAFE_INTEGER);
     });
   }
 

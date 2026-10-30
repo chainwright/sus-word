@@ -500,8 +500,10 @@ function renderChampion() {
   sheet.append(node("p", "step-label", "THE CASE IS CLOSED"), playerPhoto(champion, "champion-photo"));
   sheet.append(node("h1", "champion-name", `@${champion?.login || "champion"}`));
   sheet.append(node("div", "champion-stamp", "CHAMPION"));
+  const roundPoints = Number(state.result?.championRoundPoints) || 0;
+  const totalPoints = Number(state.result?.championTotalScore ?? state.totalScore ?? champion?.score) || 0;
   sheet.append(node("p", "champion-copy", isChampion
-    ? `You won with ${state.totalScore || champion?.score || 0} points.`
+    ? `You won the FINAL with ${roundPoints >= 0 ? "+" : ""}${roundPoints} · ${totalPoints} points total.`
     : `Final standing: #${state.rank || "–"} of ${state.playerCount || "–"} · ${state.totalScore || 0} points.`));
   page.append(sheet);
   root.replaceChildren(page);
@@ -553,7 +555,12 @@ function render(nextState) {
   else if (screen === "result") renderResult();
   else if (screen === "session-over") renderSessionOver();
   else renderWaiting();
-  if (state.demoReadOnly) root.append(node("div", "demo-watch-note", "DEMO CARD · WATCHING ONLY"));
+  if (state.demoReadOnly) {
+    const note = node("div", "demo-watch-note", "DEMO CARD · WATCHING ONLY");
+    const topbar = root.querySelector(".card-topbar");
+    if (topbar) topbar.after(note);
+    else root.prepend(note);
+  }
 }
 
 async function unlockAudio() {
@@ -651,7 +658,7 @@ function connect() {
     if (payload.type === "card") render(payload.data);
     if (payload.type === "actionResult") {
       if (payload.data?.ok) showToast(payload.action === "accuse" && payload.data.correct ? "BUSTED ✓" : "Saved ✓", false);
-      else showToast(actionError(payload.data?.reason));
+      else showToast(payload.data?.message || actionError(payload.data?.reason));
     }
   });
   socket.addEventListener("close", () => {

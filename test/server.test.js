@@ -213,7 +213,7 @@ test("health checks are side-effect free", async (context) => {
   }, before);
 });
 
-test("the hosted demo opens on watch while the normal server keeps the OBS overlay root", async () => {
+test("the hosted demo opens on watch and redirects its host desk while the normal server stays unchanged", async () => {
   for (const [env, destination] of [
     [{}, "/overlay"],
     [{ DEMO_MODE: "1", PUBLIC_URL: "https://sus-demo.example" }, "/watch"],
@@ -228,12 +228,60 @@ test("the hosted demo opens on watch while the normal server keeps the OBS overl
       assert.equal(root.headers.get("location"), destination);
       const watch = await fetch(`${origin}/watch`);
       assert.equal(watch.status, 200);
-      assert.match(await watch.text(), /Simulated players · a round takes about 3 minutes/);
+      assert.match(await watch.text(), /A Twitch chat game: one viewer hides a secret word in plain sight/);
+      const host = await fetch(`${origin}/host`, { redirect: "manual" });
+      if (env.DEMO_MODE) {
+        assert.equal(host.status, 302);
+        assert.equal(host.headers.get("location"), "/watch");
+      } else {
+        assert.equal(host.status, 200);
+      }
     } finally {
       game.reset();
       await service.stop();
     }
   }
+});
+
+test("busted vote targets get a useful chat and card reply", async () => {
+  const messages = [];
+  const game = new Game({ random: () => 0, words: [
+    { word: "candle", category: "home" },
+    { word: "rocket", category: "space" },
+  ] });
+  for (let index = 0; index < 10; index += 1) {
+    const player = { id: `reply-${index}`, login: `reply_${index}` };
+    game.join(player);
+    game.players.get(player.id).claimed = true;
+  }
+  const service = createSusWordServer({
+    game,
+    env: {},
+    logger: { log(message) { messages.push(message.replace(/^\[offline\] /, "")); }, error() {} },
+  });
+  game.start();
+  game.go();
+  const table = game.currentRound;
+  const [busted] = table.impostors;
+  const detectives = [...table.roster.values()].filter(({ id }) => !table.impostors.some(({ playerId }) => playerId === id));
+  game.recordMessage({ userId: busted.playerId, text: `this ${busted.word} belongs in the room` });
+  game.accuse(detectives[0].id, busted.playerId, busted.word);
+  game.beginVote();
+
+  const bustedPlayer = table.roster.get(busted.playerId);
+  await service.handleChatMessage({
+    id: "busted-vote-chat",
+    userId: detectives[1].id,
+    login: detectives[1].login,
+    text: String(bustedPlayer.number),
+  });
+  assert.equal(messages.at(-1), `@${bustedPlayer.login} is already busted · vote for someone else`);
+
+  game.sessions.set("busted-vote-card", { userId: detectives[2].id, linkedAt: 0 });
+  const cardResult = service.handleCardAction("busted-vote-card", { type: "vote", number: bustedPlayer.number });
+  assert.equal(cardResult.reason, "already_busted");
+  assert.equal(cardResult.message, `@${bustedPlayer.login} is already busted · vote for someone else`);
+  game.reset();
 });
 
 test("a local host WebSocket records voice as the configured broadcaster", async (context) => {

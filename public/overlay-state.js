@@ -113,7 +113,7 @@ export function championBoardModel(state = {}) {
     meta: "FINAL SCORE",
     champion,
     standings: standings.slice(0, 5),
-    headline: `@${champion?.login || "winner"} · ${score} points`,
+    headline: `@${champion?.login || "winner"} · won the FINAL · ${score} points total`,
   };
 }
 
@@ -155,7 +155,8 @@ export function votePlayerLayout(player = {}, tally = {}, leader = 1, chatLeader
 
 export function readyPlayersCopy(count, needed = 3) {
   const ready = Math.max(0, Number(count) || 0);
-  return ready >= needed ? `${ready} players ready` : `${ready} players ready · ${needed} needed to start`;
+  const noun = ready === 1 ? "player" : "players";
+  return ready >= needed ? `${ready} ${noun} ready` : `${ready} ${noun} ready · ${needed} needed to start`;
 }
 
 export function hasLeaderboardScore(entries) {

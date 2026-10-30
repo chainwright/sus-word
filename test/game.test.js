@@ -295,6 +295,18 @@ describe("state machine and role selection", () => {
     assert.equal(game.getPublicState().nextSessionStartsAt, null);
   });
 
+  test("a one-table showcase can end after its normal rounds without replaying a final", () => {
+    const { game } = createGame();
+    startRound(game);
+    game.beginVote();
+    game.finishVote();
+    game.nextRound();
+    assert.equal(game.completeSession().ok, true);
+    assert.equal(game.state, PHASES.LOBBY);
+    assert.equal(game.sessionOver, true);
+    assert.equal(game.prepareNextSession(8_000).ok, true);
+  });
+
   test("equal leaderboard scores share equal competition ranks", () => {
     const { game } = createGame();
     const players = claimPlayers(game, ["alpha", "bravo", "charlie", "delta"]);

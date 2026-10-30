@@ -175,7 +175,7 @@ test("the Champion board replaces vote tallies with five final standings", () =>
   const leaderboard = players.map((player, index) => ({ player, score: 12 - index }));
   const model = championBoardModel({ champion: players[0], leaderboard });
   assert.equal(model.title, "FINAL STANDINGS");
-  assert.equal(model.headline, "@player0 · 12 points");
+  assert.equal(model.headline, "@player0 · won the FINAL · 12 points total");
   assert.equal(model.standings.length, 5);
 });
 
@@ -195,6 +195,7 @@ test("vote instructions follow the table's Imposter count", () => {
 });
 
 test("lobby, leaderboard, and vote-lock copy reflect live state", () => {
+  assert.equal(readyPlayersCopy(1), "1 player ready · 3 needed to start");
   assert.equal(readyPlayersCopy(2), "2 players ready · 3 needed to start");
   assert.equal(readyPlayersCopy(8), "8 players ready");
   assert.equal(hasLeaderboardScore([{ score: 0 }, { player: { score: 0 } }]), false);

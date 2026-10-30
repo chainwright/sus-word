@@ -195,6 +195,11 @@ const OVERLAY_LAYOUT_CHECK = String.raw`(async () => {
         if (overlaps) fail("player-name-busted-overlap", name, name.textContent + " overlaps " + bustedLabel.textContent);
       }
     }
+    const topic = board.querySelector("#hint-category");
+    if (topic && topic.textContent.includes("FANTASY")
+      && (topic.scrollWidth > topic.clientWidth + 1 || topic.scrollHeight > topic.clientHeight + 1)) {
+      fail("word-topic-clipped", topic, topic.textContent);
+    }
   }
   for (const stamp of document.querySelectorAll(".verdict.miss")) {
     if (getComputedStyle(stamp).whiteSpace !== "nowrap") fail("miss-stamp-wrap", stamp);
@@ -297,6 +302,7 @@ const CARD_LAYOUT_CHECK = String.raw`(async () => {
 const WATCH_LAYOUT_CHECK = String.raw`(async () => {
   await document.fonts.ready;
   const expectReveal = new URLSearchParams(location.search).get("expect") === "reveal";
+  const mobileCardFirst = innerWidth <= 700;
   const deadline = Date.now() + 4000;
   while (Date.now() < deadline) {
     const overlayDocument = document.querySelector("#overlay-frame")?.contentDocument;
@@ -307,7 +313,8 @@ const WATCH_LAYOUT_CHECK = String.raw`(async () => {
     const phaseBanner = overlayDocument?.querySelector("#phase-strip");
     const phaseDisplay = phaseBanner && phaseBanner.ownerDocument.defaultView.getComputedStyle(phaseBanner).display;
     const hasPhaseBanner = phaseBanner && !phaseBanner.hidden && phaseDisplay !== "none";
-    if (overlayReady && cardReady && hasChat && (expectReveal ? hasReveal : hasPhaseBanner)) break;
+    if ((mobileCardFirst || overlayReady) && cardReady && hasChat
+      && (mobileCardFirst || (expectReveal ? hasReveal : hasPhaseBanner))) break;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -318,6 +325,15 @@ const WATCH_LAYOUT_CHECK = String.raw`(async () => {
   };
   if (document.documentElement.scrollWidth > document.documentElement.clientWidth + 1) {
     failures.push({ check: "watch-horizontal-overflow", element: "html" });
+  }
+  const hero = document.querySelector(".hero-copy h1");
+  const tagline = document.querySelector(".hero-copy p");
+  const legend = document.querySelectorAll(".how-legend li");
+  if (!hero || hero.textContent.trim() !== "SUS WORD" || hero.getBoundingClientRect().top >= innerHeight) {
+    failures.push({ check: "watch-hero-missing", element: ".hero-copy h1" });
+  }
+  if (!tagline?.textContent.includes("one viewer hides a secret word") || legend.length !== 3) {
+    failures.push({ check: "watch-pitch-incomplete", element: ".watch-header" });
   }
   for (const element of document.querySelectorAll(".watch-header,.watch-layout,.stream-frame,.card-column")) {
     const rect = box(element);
@@ -332,6 +348,9 @@ const WATCH_LAYOUT_CHECK = String.raw`(async () => {
   }
   const stream = document.querySelector("#stream-frame");
   const streamRect = box(stream);
+  if (innerWidth >= 1000 && (streamRect.top >= innerHeight || streamRect.height < 300)) {
+    failures.push({ check: "watch-stream-not-above-fold", element: "#stream-frame", box: streamRect });
+  }
   if (Math.abs(streamRect.width / streamRect.height - (16 / 9)) > .03) {
     failures.push({ check: "watch-stream-ratio", element: "#stream-frame", box: streamRect });
   }
@@ -342,14 +361,14 @@ const WATCH_LAYOUT_CHECK = String.raw`(async () => {
     || [roomStyle.backgroundColor, streamStyle.backgroundColor].some((color) => color === "rgb(255, 255, 255)")) {
     failures.push({ check: "watch-stream-blank-white", element: ".room-backdrop" });
   }
-  if (!document.querySelector("#overlay-frame")?.contentDocument?.querySelector("#stage")) {
+  if (!mobileCardFirst && !document.querySelector("#overlay-frame")?.contentDocument?.querySelector("#stage")) {
     failures.push({ check: "watch-overlay-missing", element: "#overlay-frame" });
   }
   const overlayFrame = document.querySelector("#overlay-frame");
   const phaseBanner = overlayFrame?.contentDocument?.querySelector("#phase-strip");
   const badge = document.querySelector(".live-pill");
   const phaseDisplay = phaseBanner && phaseBanner.ownerDocument.defaultView.getComputedStyle(phaseBanner).display;
-  if (!expectReveal && (!phaseBanner || phaseBanner.hidden || phaseDisplay === "none")) {
+  if (!mobileCardFirst && !expectReveal && (!phaseBanner || phaseBanner.hidden || phaseDisplay === "none")) {
     failures.push({ check: "watch-phase-banner-missing", element: "#overlay-frame #phase-strip" });
   } else if (phaseBanner && !phaseBanner.hidden && phaseDisplay !== "none") {
     const iframeRect = box(overlayFrame);
@@ -380,9 +399,53 @@ const WATCH_LAYOUT_CHECK = String.raw`(async () => {
   if (!document.querySelector(".chat-line")) {
     failures.push({ check: "watch-chat-missing", element: "#chat-lines" });
   }
+  const chat = document.querySelector("#stream-chat");
+  if (getComputedStyle(chat).display !== "none") {
+    const chatRect = box(chat);
+    const overlapsStream = chatRect.left < streamRect.right && chatRect.right > streamRect.left
+      && chatRect.top < streamRect.bottom && chatRect.bottom > streamRect.top;
+    if (overlapsStream) failures.push({ check: "watch-chat-overlays-stream", element: "#stream-chat", box: chatRect });
+  }
+  if (innerWidth <= 700 && document.querySelector("#phone-shell").getBoundingClientRect().top >= innerHeight) {
+    failures.push({ check: "watch-card-below-fold", element: "#phone-shell", box: box(document.querySelector("#phone-shell")) });
+  }
+  const cardDocument = document.querySelector("#card-frame")?.contentDocument;
+  const demoBadge = cardDocument?.querySelector(".demo-watch-note");
+  if (demoBadge) {
+    const badgeRect = demoBadge.getBoundingClientRect();
+    for (const hint of cardDocument.querySelectorAll(".hint-card,.role-hints,.hints")) {
+      const hintRect = hint.getBoundingClientRect();
+      const overlaps = badgeRect.left < hintRect.right && badgeRect.right > hintRect.left
+        && badgeRect.top < hintRect.bottom && badgeRect.bottom > hintRect.top;
+      if (overlaps) failures.push({ check: "watch-demo-badge-hint-overlap", element: ".demo-watch-note" });
+    }
+  }
+  if (expectReveal) {
+    const toast = document.querySelector("#overlay-frame")?.contentDocument?.querySelector("#accuse-toast");
+    if (toast && !toast.hidden && toast.ownerDocument.defaultView.getComputedStyle(toast).display !== "none") {
+      failures.push({ check: "watch-busted-toast-covers-reveal", element: "#overlay-frame #accuse-toast" });
+    }
+  }
   const revealed = document.querySelectorAll(".revealed-impostor").length;
   if (!expectReveal && revealed) failures.push({ check: "watch-role-leak", element: "#player-switcher" });
   if (expectReveal && !revealed) failures.push({ check: "watch-reveal-marker-missing", element: "#player-switcher" });
+  return failures;
+})()`;
+
+const WATCH_PLACEHOLDER_CHECK = String.raw`(() => {
+  const failures = [];
+  for (const [selector, copy] of [["#stream-placeholder", "Connecting to the live round"], ["#phone-placeholder", "Connecting to player 1"]]) {
+    const element = document.querySelector(selector);
+    const style = element && getComputedStyle(element);
+    if (!element || style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) {
+      failures.push({ check: "watch-placeholder-missing", element: selector });
+    } else if (!element.textContent.includes(copy)) {
+      failures.push({ check: "watch-placeholder-copy", element: selector, detail: element.textContent });
+    }
+  }
+  if (document.querySelectorAll('link[rel="preload"]').length < 4) {
+    failures.push({ check: "watch-preloads-missing", element: "head" });
+  }
   return failures;
 })()`;
 
@@ -568,7 +631,19 @@ async function main() {
         verifyExpression: WATCH_LAYOUT_CHECK,
       }, dimensions, false);
       console.log(`✓ watch round at ${size}`);
+      await loadRoute(devtools, sessionId, {
+        label: `watch first-paint placeholders at ${size}`,
+        url: `${origin}/watch?holdPlaceholders=1`,
+        verifyExpression: WATCH_PLACEHOLDER_CHECK,
+      }, dimensions, false);
+      console.log(`✓ watch first-paint placeholders at ${size}`);
     }
+    await loadRoute(devtools, sessionId, {
+      label: "hosted demo host redirect",
+      url: `${origin}/host`,
+      verifyExpression: `(() => location.pathname === "/watch" ? [] : [{ check: "demo-host-not-redirected", element: "page", detail: location.pathname }])()`,
+    }, { width: 1280, height: 720 }, false);
+    console.log("✓ hosted demo host redirect");
     game.beginVote();
     game.finishVote();
     await loadRoute(devtools, sessionId, {

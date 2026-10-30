@@ -196,6 +196,10 @@ export function createSusWordServer(options = {}) {
     response.sendFile(resolve(PUBLIC_DIR, "overlay.html"));
   });
   app.get("/host", (_request, response) => {
+    if (demoMode) {
+      response.redirect("/watch");
+      return;
+    }
     response.sendFile(resolve(PUBLIC_DIR, "host.html"));
   });
   app.get("/card", (request, response) => {
@@ -766,7 +770,7 @@ export function createSusWordServer(options = {}) {
       case "not_a_player": announce(`@${login} you're not seated this round.`, { priority: "low" }); break;
       case "invalid_state":
       case "vote_closed": announce(`@${login} voting is closed.`, { priority: "low" }); break;
-      case "already_busted": announce(`@${login} that player is already busted. Vote for someone still hidden.`, { priority: "low" }); break;
+      case "already_busted": announce(result.message || `@${result.target?.login || "that player"} is already busted · vote for someone else`, { priority: "low" }); break;
       default: announce(`@${login} that vote couldn't be counted.`, { priority: "low" });
     }
   }

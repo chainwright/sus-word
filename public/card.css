@@ -107,13 +107,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 4px s
 #toast.show { opacity: 1; translate: -50% 0; }
 #toast.success { background: var(--green); }
 .demo-watch-note {
-  position: fixed;
-  z-index: 75;
-  left: 50%;
-  bottom: 8px;
+  position: relative;
+  z-index: 10;
+  width: fit-content;
+  max-width: calc(100% - 28px);
+  margin: 0 auto 8px;
   min-height: 30px;
   padding: 6px 12px;
-  translate: -50% 0;
   border: 2px solid #d9b26a;
   color: #f8e8ca;
   background: #2b201bed;
