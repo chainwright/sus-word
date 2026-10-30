@@ -1,0 +1,7 @@
+Step 30. We ran a live test on Twitch with `npm run sim -- --players 3` (2 real players + 3 SIM). Everything worked (3 rounds, hints, number votes, reveal, card points), but the SIM players' chat looks broken on the overlay: all three sims post the same line over and over within a round (round 2: "the bus home was unusually quiet tonight" ~10 times from sim_mara, sim_tomtom and sim_fox; round 3: "I found my missing sock behind the desk" and "this sweater is doing all the work tonight" alternating ~20 times). Step 29 fixed this class only in src/demo.js; src/sim.js still uses its own small per-topic pool.
+
+Do this:
+1. In src/sim.js, reuse (or mirror) the demo's no-repeat line plan: a large pool of normal chat lines, no line repeated within a session across all sims, each sim with its own pace, fewer messages per round (a sim should post roughly every 20–40 s, not every few seconds), and topic-flavoured lines mixed in only occasionally so the hunt stays fair. The Imposter sim's smuggle line and timing stay seeded and varied (like step 29).
+2. Sims may occasionally react to real players' messages with a short generic reply ("ha, same", "wait what") but never quote the secret word.
+3. Tests: a sim session of 3 rounds with 3 sims produces no repeated normal line, and per-sim message count per round stays within a sane bound; seeded runs are deterministic.
+Keep npm test and test:browser green; don't loosen checks. Copy this prompt as codex-log/step-30.txt; update README test count and the step list. Do not commit; give one commit message.

@@ -28,7 +28,7 @@ const CORE_PROFILES = [
 
 const AVATAR_COLORS = ["#51405f", "#7653a5", "#d56a3d", "#477b86", "#81613f", "#3f6881"];
 
-const CHAT_BASE_LINES = [
+export const CHAT_BASE_LINES = [
   "did anyone else hear that thunder just now",
   "my stream lights flickered twice a minute ago",
   "I finally remembered to eat before going live",

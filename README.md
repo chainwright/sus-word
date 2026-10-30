@@ -34,7 +34,7 @@ Send visitors to `/watch`: its short explainer sits above the live overlay, simu
 
 ## Mixed rehearsal on your real channel
 
-Testing alone? `npm run sim` connects to your real Twitch channel like `npm start` and seats three clearly labelled simulated players. Their names start with "Sim", their lines appear on the overlay and in the reveal, and they never post in Twitch chat. Join normally, then start rounds with `!sus go`: they chat, hide a word when dealt Imposter, and vote by number. Use `--players 5`, `--rounds 3`, `--fast`, or `--seed rehearsal-1` for repeatable rehearsals. The lobby waits for `!sus go`.
+Testing alone? `npm run sim` connects to your real Twitch channel like `npm start` and seats three clearly labelled simulated players. Their names start with "Sim", their lines appear on the overlay and in the reveal, and they never post in Twitch chat. Join normally, then start rounds with `!sus go`: each Sim chats at its own 20–40 second pace without repeating lines, may occasionally react to a real player, hides a word when dealt Imposter, and votes by number. Use `--players 5`, `--rounds 3`, `--fast`, or `--seed rehearsal-1` for repeatable rehearsals. The lobby waits for `!sus go`.
 
 ## Big chats: tables
 
@@ -79,7 +79,7 @@ The card page first checks that the Twitch name spoke in chat recently, then giv
 
 ## Built with Codex
 
-Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first rehearsal simulator was drafted outside Codex and later rewritten in Codex (step 15). The current game is covered by 146 browser-free automated tests, plus the real-Chrome mock and live-card check:
+Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first rehearsal simulator was drafted outside Codex and later rewritten in Codex (step 15). The current game is covered by 148 browser-free automated tests, plus the real-Chrome mock and live-card check:
 
 1. Pure game logic, word detection, scoring, and tests.
 2. Twitch OAuth, EventSub chat, server routes, and live state.
@@ -110,3 +110,4 @@ Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first reh
 27. The responsive watch-a-round page with a stream backdrop, live chat, and switchable player cards.
 28. A faster hosted-demo pitch, honest session timing, safer voting, meaningful finals, and cold-visitor browser coverage.
 29. Multi-table demo sessions that end in a FINAL and reset, socket reconnects, varied demo chat and slip timing, WOFF2 fonts, and a shared phase deadline.
+30. Session-wide no-repeat SIM chat, human pacing, and secret-safe reactions to real players.
