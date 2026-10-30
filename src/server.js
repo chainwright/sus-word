@@ -187,8 +187,11 @@ export function createSusWordServer(options = {}) {
 
   app.use(express.json({ limit: "16kb" }));
 
-  app.get("/", (_request, response) => response.redirect("/overlay"));
+  app.get("/", (_request, response) => response.redirect(demoMode ? "/watch" : "/overlay"));
   app.get("/healthz", (_request, response) => response.json({ ok: true }));
+  app.get("/watch", (_request, response) => {
+    response.sendFile(resolve(PUBLIC_DIR, "watch.html"));
+  });
   app.get("/overlay", (_request, response) => {
     response.sendFile(resolve(PUBLIC_DIR, "overlay.html"));
   });

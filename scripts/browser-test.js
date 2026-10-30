@@ -294,6 +294,98 @@ const CARD_LAYOUT_CHECK = String.raw`(async () => {
   return failures;
 })()`;
 
+const WATCH_LAYOUT_CHECK = String.raw`(async () => {
+  await document.fonts.ready;
+  const expectReveal = new URLSearchParams(location.search).get("expect") === "reveal";
+  const deadline = Date.now() + 4000;
+  while (Date.now() < deadline) {
+    const overlayDocument = document.querySelector("#overlay-frame")?.contentDocument;
+    const overlayReady = overlayDocument?.readyState === "complete";
+    const cardReady = document.querySelector("#card-frame")?.contentDocument?.readyState === "complete";
+    const hasChat = document.querySelectorAll(".chat-line").length > 0;
+    const hasReveal = document.querySelectorAll(".revealed-impostor").length > 0;
+    const phaseBanner = overlayDocument?.querySelector("#phase-strip");
+    const phaseDisplay = phaseBanner && phaseBanner.ownerDocument.defaultView.getComputedStyle(phaseBanner).display;
+    const hasPhaseBanner = phaseBanner && !phaseBanner.hidden && phaseDisplay !== "none";
+    if (overlayReady && cardReady && hasChat && (expectReveal ? hasReveal : hasPhaseBanner)) break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  const failures = [];
+  const box = (element) => {
+    const rect = element.getBoundingClientRect();
+    return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height };
+  };
+  if (document.documentElement.scrollWidth > document.documentElement.clientWidth + 1) {
+    failures.push({ check: "watch-horizontal-overflow", element: "html" });
+  }
+  for (const element of document.querySelectorAll(".watch-header,.watch-layout,.stream-frame,.card-column")) {
+    const rect = box(element);
+    if (rect.left < -1 || rect.right > innerWidth + 1) {
+      failures.push({ check: "watch-viewport-overflow", element: "." + [...element.classList].join("."), box: rect });
+    }
+  }
+  for (const element of document.querySelectorAll(".watch-header,.watch-layout,.stream-column,.card-column,.card-heading,.player-switcher,.phone-shell")) {
+    if (element.scrollWidth > element.clientWidth + 1) {
+      failures.push({ check: "watch-cell-overflow", element: "." + [...element.classList].join("."), box: box(element) });
+    }
+  }
+  const stream = document.querySelector("#stream-frame");
+  const streamRect = box(stream);
+  if (Math.abs(streamRect.width / streamRect.height - (16 / 9)) > .03) {
+    failures.push({ check: "watch-stream-ratio", element: "#stream-frame", box: streamRect });
+  }
+  const room = document.querySelector(".room-backdrop");
+  const roomStyle = getComputedStyle(room);
+  const streamStyle = getComputedStyle(stream);
+  if (roomStyle.backgroundImage === "none"
+    || [roomStyle.backgroundColor, streamStyle.backgroundColor].some((color) => color === "rgb(255, 255, 255)")) {
+    failures.push({ check: "watch-stream-blank-white", element: ".room-backdrop" });
+  }
+  if (!document.querySelector("#overlay-frame")?.contentDocument?.querySelector("#stage")) {
+    failures.push({ check: "watch-overlay-missing", element: "#overlay-frame" });
+  }
+  const overlayFrame = document.querySelector("#overlay-frame");
+  const phaseBanner = overlayFrame?.contentDocument?.querySelector("#phase-strip");
+  const badge = document.querySelector(".live-pill");
+  const phaseDisplay = phaseBanner && phaseBanner.ownerDocument.defaultView.getComputedStyle(phaseBanner).display;
+  if (!expectReveal && (!phaseBanner || phaseBanner.hidden || phaseDisplay === "none")) {
+    failures.push({ check: "watch-phase-banner-missing", element: "#overlay-frame #phase-strip" });
+  } else if (phaseBanner && !phaseBanner.hidden && phaseDisplay !== "none") {
+    const iframeRect = box(overlayFrame);
+    const nativeRect = phaseBanner.getBoundingClientRect();
+    const scaleX = iframeRect.width / overlayFrame.offsetWidth;
+    const scaleY = iframeRect.height / overlayFrame.offsetHeight;
+    const bannerRect = {
+      left: iframeRect.left + nativeRect.left * scaleX,
+      top: iframeRect.top + nativeRect.top * scaleY,
+      right: iframeRect.left + nativeRect.right * scaleX,
+      bottom: iframeRect.top + nativeRect.bottom * scaleY,
+    };
+    const badgeRect = box(badge);
+    const overlaps = badgeRect.left < bannerRect.right && badgeRect.right > bannerRect.left
+      && badgeRect.top < bannerRect.bottom && badgeRect.bottom > bannerRect.top;
+    if (overlaps) failures.push({ check: "watch-live-badge-phase-overlap", element: ".live-pill", box: badgeRect });
+  }
+  if (!document.querySelector("#card-frame")?.contentDocument?.querySelector("#card-root")) {
+    failures.push({ check: "watch-card-missing", element: "#card-frame" });
+  }
+  for (const [frameSelector, containerSelector] of [["#overlay-frame", "#stream-frame"], ["#card-frame", "#phone-shell"]]) {
+    const frameRect = box(document.querySelector(frameSelector));
+    const containerRect = box(document.querySelector(containerSelector));
+    if (frameRect.right > containerRect.right + 1 || frameRect.bottom > containerRect.bottom + 1) {
+      failures.push({ check: "watch-frame-overflow", element: frameSelector, box: frameRect });
+    }
+  }
+  if (!document.querySelector(".chat-line")) {
+    failures.push({ check: "watch-chat-missing", element: "#chat-lines" });
+  }
+  const revealed = document.querySelectorAll(".revealed-impostor").length;
+  if (!expectReveal && revealed) failures.push({ check: "watch-role-leak", element: "#player-switcher" });
+  if (expectReveal && !revealed) failures.push({ check: "watch-reveal-marker-missing", element: "#player-switcher" });
+  return failures;
+})()`;
+
 function liveCardCheck(role, word = "") {
   return `(async () => {
     const deadline = Date.now() + 4000;
@@ -375,6 +467,11 @@ function prepareLiveDemoCards(game, count = 4) {
   const assignment = game.currentRound.impostors[0];
   const impostor = Number(assignment.playerId.replace("demo-", ""));
   const detectivePlayer = [...game.currentRound.roster.values()].find(({ id }) => id !== assignment.playerId);
+  game.recordMessage({
+    userId: detectivePlayer.id,
+    messageId: "watch-demo-chat",
+    text: "the rain sounds relaxing tonight",
+  });
   return { impostor, detective: Number(detectivePlayer.id.replace("demo-", "")), word: assignment.word };
 }
 
@@ -418,7 +515,14 @@ async function main() {
   const game = new Game({
     random: () => 0,
     codeGenerator: () => demoCodes.shift(),
-    durations: { round: 60_000, categoryHint: 30_000, letterHint: 50_000, vote: 15_000 },
+    durations: {
+      round: 60_000,
+      categoryHint: 30_000,
+      letterHint: 50_000,
+      vote: 15_000,
+      revealOne: 5_000,
+      revealTwo: 5_000,
+    },
     words: [{ word: "candle", category: "home" }],
   });
   const service = createSusWordServer({
@@ -452,6 +556,27 @@ async function main() {
       }, { width: 390, height: 844, mobile: true }, false);
       console.log(`✓ live demo ${role.toLowerCase()} card`);
     }
+    for (const dimensions of [
+      { width: 1280, height: 720 },
+      { width: 1920, height: 1080 },
+      { width: 390, height: 844, mobile: true },
+    ]) {
+      const size = `${dimensions.width}x${dimensions.height}`;
+      await loadRoute(devtools, sessionId, {
+        label: `watch round at ${size}`,
+        url: `${origin}/watch`,
+        verifyExpression: WATCH_LAYOUT_CHECK,
+      }, dimensions, false);
+      console.log(`✓ watch round at ${size}`);
+    }
+    game.beginVote();
+    game.finishVote();
+    await loadRoute(devtools, sessionId, {
+      label: "watch reveal role marker at 1280x720",
+      url: `${origin}/watch?expect=reveal`,
+      verifyExpression: WATCH_LAYOUT_CHECK,
+    }, { width: 1280, height: 720 }, false);
+    console.log("✓ watch reveal role marker at 1280x720");
     for (const dimensions of [{ width: 854, height: 480 }, { width: 1280, height: 720 }, { width: 1920, height: 1080 }]) {
       const size = `${dimensions.width}x${dimensions.height}`;
       for (const mock of OVERLAY_MOCKS) {

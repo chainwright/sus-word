@@ -213,6 +213,29 @@ test("health checks are side-effect free", async (context) => {
   }, before);
 });
 
+test("the hosted demo opens on watch while the normal server keeps the OBS overlay root", async () => {
+  for (const [env, destination] of [
+    [{}, "/overlay"],
+    [{ DEMO_MODE: "1", PUBLIC_URL: "https://sus-demo.example" }, "/watch"],
+  ]) {
+    const game = new Game();
+    const service = createSusWordServer({ game, port: 0, env, logger: { log() {}, error() {} } });
+    try {
+      const address = await service.start();
+      const origin = `http://127.0.0.1:${address.port}`;
+      const root = await fetch(`${origin}/`, { redirect: "manual" });
+      assert.equal(root.status, 302);
+      assert.equal(root.headers.get("location"), destination);
+      const watch = await fetch(`${origin}/watch`);
+      assert.equal(watch.status, 200);
+      assert.match(await watch.text(), /Simulated players · a round takes about 3 minutes/);
+    } finally {
+      game.reset();
+      await service.stop();
+    }
+  }
+});
+
 test("a local host WebSocket records voice as the configured broadcaster", async (context) => {
   const codes = ["A2B3", "C4D5", "E6F7"];
   const game = new Game({

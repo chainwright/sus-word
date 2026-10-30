@@ -1,0 +1,66 @@
+@font-face{font-family:"Courier Prime";src:url("/fonts/CourierPrime-Regular.ttf") format("truetype");font-weight:400;font-display:swap}
+@font-face{font-family:"Courier Prime";src:url("/fonts/CourierPrime-Bold.ttf") format("truetype");font-weight:700;font-display:swap}
+@font-face{font-family:"Oswald";src:url("/fonts/Oswald-Variable.ttf") format("truetype-variations");font-weight:200 700;font-display:swap}
+:root{--paper:#f3e4c2;--ink:#2d211d;--red:#b32f32;--gold:#d8ac59;--night:#100c0b;--panel:#211713;--line:#6f4932}
+*{box-sizing:border-box}
+html,body{min-width:0;margin:0;background:#100c0b;color:var(--paper);font-family:"Courier Prime",monospace}
+body{min-height:100vh;overflow-x:hidden;background:radial-gradient(circle at 38% 8%,#4a2c1c 0,#211510 34%,#0f0b0a 75%)}
+button,a{font:inherit}
+.watch-page{width:min(1880px,100%);min-height:100vh;margin:auto;padding:14px clamp(12px,1.6vw,28px) 18px;overflow:hidden}
+.watch-header{min-height:46px;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:0 4px 12px;border-bottom:1px solid #b7875355}
+.watch-header p{margin:0;font-size:clamp(14px,1.02vw,18px);font-weight:700;line-height:1.35}
+.watch-header a{flex:none;color:#efc779;font:600 clamp(13px,.9vw,16px)/1 "Oswald";letter-spacing:.04em;text-decoration:none;text-transform:uppercase}
+.watch-header a:hover,.watch-header a:focus-visible{color:#fff;text-decoration:underline}
+.watch-layout{display:grid;grid-template-columns:minmax(0,1fr) clamp(238px,20vw,350px);gap:clamp(14px,1.4vw,26px);align-items:start;padding-top:14px}
+.stream-column{min-width:0}
+.stream-frame{position:relative;width:100%;aspect-ratio:16/9;overflow:hidden;border:clamp(5px,.55vw,10px) solid #1e1511;border-radius:4px;background:#261710;box-shadow:0 24px 70px #000b,0 0 0 1px #a0714144,inset 0 0 0 2px #000;isolation:isolate}
+.room-backdrop{position:absolute;inset:0;overflow:hidden;background:radial-gradient(circle at 29% 42%,#d7a35a55 0 7%,transparent 25%),linear-gradient(90deg,#171315 0 29%,#3b2820 29% 65%,#181214 65%),linear-gradient(#36241c,#120e0d)}
+.room-backdrop:before{content:"";position:absolute;left:28%;right:32%;top:13%;height:50%;border:10px solid #251811;background:linear-gradient(#201b24aa,#30476088),repeating-linear-gradient(90deg,transparent 0 48%,#1c1210 49% 51%,transparent 52%);box-shadow:inset 0 0 30px #000b,0 8px 30px #0007}
+.room-backdrop:after{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at 30% 65%,transparent 0 26%,#06040444 68%,#0009 100%);pointer-events:none}
+.window{position:absolute;left:31%;top:17%;width:28%;height:41%;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:4px;opacity:.55}
+.window i{background:linear-gradient(145deg,#31415a,#121522 65%);box-shadow:inset 0 0 18px #08070a}
+.lamp{position:absolute;left:7%;bottom:17%;width:18%;height:48%;filter:drop-shadow(0 12px 8px #0008)}
+.lamp:before{content:"";position:absolute;left:42%;top:23%;width:8%;height:62%;border-radius:10px;background:linear-gradient(90deg,#68401f,#e1a74f,#513017)}
+.lamp:after{content:"";position:absolute;left:20%;bottom:0;width:52%;height:7%;border-radius:50%;background:linear-gradient(#b57a37,#4a2d18)}
+.lamp i{position:absolute;left:7%;top:0;width:78%;height:27%;border-radius:50% 50% 30% 30%;background:radial-gradient(circle at 50% 72%,#fff4bd,#dda64c 55%,#5a351b 75%);box-shadow:0 0 55px #f2c66e99}
+.room-shelf{position:absolute;right:4%;top:16%;width:24%;height:45%;border:8px solid #25150e;background:linear-gradient(90deg,#1c110d,#3b2115);box-shadow:0 12px 30px #000b;display:flex;align-items:flex-end;gap:6%;padding:10% 9%}
+.room-shelf:after{content:"";position:absolute;left:0;right:0;top:48%;height:7px;background:#170d09}
+.room-shelf i{width:24%;height:66%;background:linear-gradient(90deg,#5d2723,#aa5344,#3c1c19);box-shadow:inset -3px 0 #0005}
+.room-shelf i:nth-child(2){height:82%;background:linear-gradient(90deg,#3b4d4b,#78918a,#263532)}
+.room-shelf i:nth-child(3){height:54%;background:linear-gradient(90deg,#69552d,#bf9d56,#463718)}
+.desk-edge{position:absolute;left:0;right:0;bottom:0;height:18%;background:linear-gradient(#6b3f25 0 8%,#392017 9% 52%,#160e0b);box-shadow:0 -9px 28px #0008,inset 0 3px #b47b4755}
+.scaled-viewport{position:absolute;inset:0;overflow:hidden}
+.scaled-viewport iframe{display:block;border:0;transform-origin:0 0;background:transparent}
+.overlay-viewport{z-index:3;pointer-events:none}
+.stream-chat{position:absolute;right:33.1%;top:16%;bottom:21%;z-index:2;width:18%;min-width:150px;padding:8px;background:#130f10d9;border:1px solid #d9aa6744;box-shadow:0 10px 30px #0009;overflow:hidden}
+.stream-chat header{display:flex;align-items:center;gap:6px;padding-bottom:6px;border-bottom:1px solid #d6aa6855;color:#e2ba78;font:700 clamp(9px,.72vw,13px)/1 "Oswald";letter-spacing:.08em}
+.stream-chat header span,.live-pill i{width:7px;height:7px;border-radius:50%;background:#e23939;box-shadow:0 0 10px #f33}
+#chat-lines{display:flex;flex-direction:column;justify-content:flex-end;gap:5px;height:calc(100% - 20px);padding-top:7px;overflow:hidden}
+.chat-line{margin:0;color:#eadfcd;font-size:clamp(9px,.72vw,13px);line-height:1.24;text-shadow:0 1px #000}
+.chat-line strong{color:#e6b86e}
+.chat-line.voice:before{content:"🎙 ";font-size:.85em}
+.live-pill{display:flex;align-items:center;gap:7px;padding:5px 8px;color:#fff;background:#271a16;border:1px solid #e3b67555;font:700 clamp(10px,.78vw,14px)/1 "Oswald";letter-spacing:.06em;white-space:nowrap}
+.live-pill i{animation:pulse 1.5s infinite}
+.stream-caption{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:29px;margin:8px 3px 0;color:#ad9888;font-size:13px}
+.caption-status{display:flex;align-items:center;gap:9px;min-width:0}
+.stream-caption strong{color:#e1b66f;font:700 14px/1 "Oswald";letter-spacing:.06em}
+.card-column{min-width:0;padding:12px;border:1px solid #77503866;background:linear-gradient(#2c1d17,#17100e);box-shadow:0 20px 55px #0008}
+.card-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:8px;margin-bottom:9px}
+.card-heading small,.card-heading strong{display:block}.card-heading small{color:#a88d7b;font:600 11px/1 "Oswald";letter-spacing:.08em}.card-heading strong{margin-top:4px;font:700 clamp(18px,1.45vw,25px)/1 "Oswald"}.card-heading>span{padding:4px 6px;border:1px solid #5a8964;color:#85b78e;font:700 10px/1 "Oswald";white-space:nowrap}
+.player-switcher{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px}
+.player-switcher button{min-width:0;height:36px;border:1px solid #a57a5155;color:#e8d7bb;background:#17100e;font:700 17px/1 "Oswald";cursor:pointer}
+.player-switcher button[aria-pressed="true"]{color:#261a15;background:#e0bb79;border-color:#f1d497;box-shadow:0 0 15px #e0ac5555}
+.player-switcher button.revealed-impostor:after{content:" 🤫"}
+.phone-shell{position:relative;width:100%;aspect-ratio:390/844;margin:auto;overflow:hidden;border:clamp(5px,.45vw,8px) solid #0a0909;border-radius:clamp(20px,2vw,34px);background:#0a0909;box-shadow:0 15px 38px #000b,inset 0 0 0 2px #49403a}
+.card-viewport{inset:0;border-radius:inherit}
+.role-note{margin:9px 2px 0;color:#a99382;font-size:11px;line-height:1.3}
+@keyframes pulse{50%{opacity:.42;transform:scale(.82)}}
+@media (max-width:700px){
+  .watch-page{padding:10px 8px 16px}
+  .watch-header{display:block;padding:0 4px 9px}.watch-header p{font-size:13px}.watch-header a{display:inline-block;margin-top:7px;font-size:12px}
+  .watch-layout{display:block;padding-top:10px}.stream-caption{gap:7px;font-size:10px}.stream-caption strong{font-size:11px}.caption-status{gap:5px}
+  .stream-chat{right:33%;top:19%;bottom:23%;width:23%;min-width:0;padding:4px}.stream-chat header{font-size:6px;padding-bottom:3px}.stream-chat header span{width:4px;height:4px}#chat-lines{gap:2px;height:calc(100% - 10px);padding-top:3px}.chat-line{font-size:6px}
+  .live-pill{padding:3px 5px;font-size:7px}.live-pill i{width:4px;height:4px}
+  .card-column{width:min(250px,74vw);margin:13px auto 0;padding:9px}.card-heading strong{font-size:18px}.card-heading>span{font-size:8px}.role-note{font-size:10px}
+}
+@media (prefers-reduced-motion:reduce){.live-pill i{animation:none}}

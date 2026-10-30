@@ -447,7 +447,7 @@ export async function runDemo(options = {}) {
 
   const address = await service.start();
   voiceSocket = await connectVoiceSocket(address.port);
-  console.log(`[demo] Watch a round: ${publicUrl}/overlay`);
+  console.log(`[demo] Watch a round: ${publicUrl}/watch`);
   console.log(`[demo] ${fast ? "Fast rehearsal" : "Full timing"} mode.`);
   console.log(`[demo] Simulating ${profiles.length} players with seed "${seed}".`);
   console.log(`[demo] Follow player 1's card: ${publicUrl}/card?demo=1`);
