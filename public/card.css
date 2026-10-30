@@ -270,6 +270,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 4px s
   text-align: center;
 }
 .delivery-chip.delivered { border: 5px solid var(--green); color: var(--green); transform: rotate(-1deg); }
+.delivery-chip.busted { border: 5px solid var(--red); color: var(--red); transform: rotate(-2deg); }
 .role-hints { margin: 0 12px 13px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .hint-card { min-width: 0; padding: 9px; background: var(--paper); box-shadow: var(--shadow); }
 .hint-card small, .hint-card strong { display: block; }

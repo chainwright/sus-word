@@ -1,0 +1,4 @@
+Step 23c. npm test is 119/119, but the real-Chrome run (outside the sandbox) fails at 854x480:
+  Error: overlay round BUSTED row at 854x480 failed
+  - busted-label-overflow on .busted-mini · box {"width":103.3,"height":21.3,"clientWidth":112,"clientHeight":23,"scrollWidth":112,"scrollHeight":27}
+The BUSTED mini label is 4px taller than its box at 480p (text spills vertically). Make it fit at both sizes, e.g. a line-height/padding/font-size that keeps it on one line inside its own height, without shrinking the caught player's name below readable and without changing the row height. Don't loosen any check. Make the whole browser run pass at both sizes. Keep npm test green. Copy this prompt as codex-log/step-23c.txt. Do not commit; one commit message for 23–23c.

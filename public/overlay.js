@@ -10,6 +10,7 @@ import {
   overlayRenderPlan,
   roundRule,
   shouldAnimateVoteBanner,
+  streamTableLabel,
   syncBoardNoteVisibility,
   updateCompactLobbyClock,
   voteInstruction,
@@ -119,7 +120,7 @@ function playerRow(player, options = {}) {
   const name = el("strong", `player-name${String(playerName).length > 12 ? " long" : ""}`, playerName);
   row.append(name);
   if (player.simulated) row.append(el("span", "sim-tag", "SIM"));
-  if (options.vote) {
+  if (options.vote && !options.busted) {
     row.style.setProperty("--vote-fill", `${options.bar || 0}%`);
     row.style.setProperty("--vote-name-padding", `${options.namePadding || 0}px`);
     if (options.votes) row.classList.add("has-votes");
@@ -133,6 +134,13 @@ function playerRow(player, options = {}) {
   }
   if (options.busted) row.append(el("span", "busted-mini", bustedRowLabel(options.busted)));
   return row;
+}
+
+function renderTablePlate(round = {}) {
+  const plate = $("#table-plate");
+  const label = streamTableLabel(round);
+  plate.textContent = label;
+  plate.hidden = !label;
 }
 
 function messageSlip(message, index = 0, options = {}) {
@@ -296,6 +304,7 @@ function renderLobby(next) {
   $("#board-meta").textContent = "12 max";
   $("#hints").hidden = true;
   $("#leaderboard").hidden = true;
+  renderTablePlate();
   renderBoardRoster(next.players || [], {});
   setBoardNote(el("strong", "", "JOINING NOW?"), document.createTextNode("Type !join in chat, then open the card link it replies with. Takes 20 seconds."));
   if (full) {
@@ -320,6 +329,7 @@ function renderRound(next, newRound = false) {
   $("#board").hidden = false;
   $("#board-title").textContent = next.final ? "FINAL TABLE" : `ROUND ${next.roundNumber}`;
   $("#board-meta").textContent = `${impostorCount} IMPOSTER${impostorCount === 1 ? "" : "S"}`;
+  renderTablePlate(round);
   $("#hints").hidden = false;
   renderHints(round.hints || {});
   renderBoardRoster(round.players || next.players || [], round.messageCounts || {}, round.busted || []);
@@ -348,13 +358,18 @@ function renderVote(next, entering = false) {
   $("#board").hidden = false;
   $("#board-title").textContent = instruction.boardTitle;
   $("#board-meta").textContent = instruction.boardMeta;
+  renderTablePlate(round);
   $("#hints").hidden = false;
   renderHints(round.hints || {});
   const grid = $("#player-grid");
   grid.classList.add("vote-grid");
-  grid.replaceChildren(...players.map((player) => playerRow(player, votePlayerLayout(player, tallies.get(player.id), max, chatMax, showChat))));
+  grid.replaceChildren(...players.map((player) => {
+    const busted = round.busted?.find((item) => item.impostor?.id === player.id);
+    return playerRow(player, { ...votePlayerLayout(player, tallies.get(player.id), max, chatMax, showChat), busted });
+  }));
   const note = setBoardNote(el("strong", "", "VOTES ARE LIVE"), document.createTextNode(instruction.howTo));
   if (showChat) note.append(el("small", "chat-legend", "CHAT · tie-break only"));
+  $("#votes-locked").textContent = round.allVotesIn ? "ALL VOTES IN" : "VOTES LOCKED";
   $("#leaderboard").hidden = true;
   renderMessages(round.latestMessages || round.recentMessages || []);
   if (entering && !reduced.matches) $("#vote-banner").animate([{ transform: "translateY(-100%)" }, { transform: "translateY(7px)" }, { transform: "translateY(0)" }], { duration: 350, easing: "cubic-bezier(.2,.8,.2,1)" });
@@ -415,12 +430,15 @@ function renderRevealVoteRows(next) {
   const max = Math.max(1, ...[...tallies.values()].map(({ votes = 0 }) => votes));
   const chatMax = Math.max(1, ...[...tallies.values()].map(({ chatVotes = 0 }) => chatVotes));
   const showChat = [...tallies.values()].some(({ chatVotes = 0 }) => chatVotes > 0);
-  $("#board-meta").textContent = showChat ? "CHAT · TIE-BREAK ONLY" : "";
+  $("#board-meta").textContent = next.round?.allVotesIn
+    ? "ALL VOTES IN" : showChat ? "CHAT · TIE-BREAK ONLY" : "";
+  renderTablePlate(next.round);
   const grid = $("#player-grid");
   grid.classList.add("vote-grid");
-  grid.replaceChildren(...stablePlayers(next.round?.players || next.players || []).map((player) => (
-    playerRow(player, votePlayerLayout(player, tallies.get(player.id), max, chatMax, showChat))
-  )));
+  grid.replaceChildren(...stablePlayers(next.round?.players || next.players || []).map((player) => {
+    const busted = next.round?.busted?.find((item) => item.impostor?.id === player.id);
+    return playerRow(player, { ...votePlayerLayout(player, tallies.get(player.id), max, chatMax, showChat), busted });
+  }));
 }
 
 function renderRevealVotesBoard(next) {
@@ -469,7 +487,6 @@ function showRevealEnd(next, results) {
   layer.append(cases);
   $("#board").hidden = false;
   renderRevealPayoffBoard(next);
-  if (!params.has("mock") || params.get("play") === "1") later(() => cases.classList.add("shrunk"), 2_500);
 }
 
 function revealMvp(next, results) {
@@ -637,6 +654,10 @@ function renderReveal(next) {
     layer.replaceChildren(el("h1", "reveal-title", `ROUND ${next.roundNumber} · THE REVEAL`), card);
     return;
   }
+  if (params.get("frame") === "preleaders") {
+    showRevealEnd(next, results);
+    return;
+  }
   const play = params.get("play") === "1" || !params.has("mock");
   if (!play) {
     if (next.champion || reveal?.champion) showTopMoment(next, results);
@@ -710,7 +731,7 @@ function updateClocks() {
     if (second > 0 && second <= 10) tickSound();
     lastVoteSecond = second;
   }
-  $("#votes-locked").classList.toggle("show", ms <= 0);
+  $("#votes-locked").classList.toggle("show", Boolean(state?.round?.allVotesIn) || ms <= 0);
   if (!$("#how-panel").hidden) $("#how-clock").textContent = `Starting in ${clock(ms)}`;
   updateCompactLobbyClock($("#compact-lobby-clock"), ms);
 }
@@ -740,7 +761,8 @@ function mockState(kind) {
     votes: [0, 5, 0, 3, 1, 0, 0, 0, 0, 1, 0, 0][index] || 0,
     chatVotes: [2, 7, 1, 4, 0, 1, 0, 0, 0, 0, 0, 0][index] || 0,
   }));
-  base.round = { players, remainingMs: base.remainingMs, impostorCount: kind === "reveal2" ? 2 : 1, hints: { category: "FOOD · HOME", letter: kind === "vote" ? "L · B" : null }, messageCounts, latestMessages: messages.slice(0, 3), recentMessages: messages, tallies };
+  const tableCount = Math.max(1, Number(params.get("tables")) || 1);
+  base.round = { players, remainingMs: base.remainingMs, tableId: tableCount > 1 ? 2 : 1, tableCount, impostorCount: kind === "reveal2" ? 2 : 1, hints: { category: "FOOD · HOME", letter: kind === "vote" ? "L · B" : null }, messageCounts, latestMessages: messages.slice(0, 3), recentMessages: messages, tallies };
   if (params.get("frame") === "busted") {
     base.round.busted = [{ impostor: players[3], accuser: players[0] }];
   }

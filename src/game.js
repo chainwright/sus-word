@@ -617,6 +617,7 @@ export class Game extends EventEmitter {
       table.voteEndsAt = now + this.durations.vote;
       table.votes = new Map(table.earlyVotes);
       table.crowdVotes = new Map(table.crowdEarlyVotes);
+      table.allVotesIn = false;
     }
     this.votes = new Map([...this.tables.values()].flatMap((table) => [...table.votes]));
     this.#transition(PHASES.VOTE);
@@ -629,7 +630,8 @@ export class Game extends EventEmitter {
       duration: this.durations.vote,
       grace: this.durations.voteGrace,
     });
-    return { ok: true, state: this.state };
+    const allVotesIn = this.#finishVoteIfAllSeated();
+    return { ok: true, state: this.state, allVotesIn };
   }
 
   vote(voterReference, targetReference) {
@@ -704,7 +706,20 @@ export class Game extends EventEmitter {
       tallies: this.getTallies(table.id),
     };
     this.#publish("vote", result);
-    return { ...result, state: this.state };
+    const allVotesIn = !crowd && this.#finishVoteIfAllSeated();
+    return { ...result, allVotesIn, state: this.state };
+  }
+
+  #finishVoteIfAllSeated() {
+    if (this.state !== PHASES.VOTE || !this.tables.size) return false;
+    if (![...this.tables.values()].every((table) => table.votes.size === table.roster.size)) return false;
+    for (const table of this.tables.values()) table.allVotesIn = true;
+    this.#publish("allVotesIn", {
+      roundNumber: this.roundNumber,
+      message: "ALL VOTES IN",
+    });
+    this.#completeReveal();
+    return true;
   }
 
   finishVote() {
@@ -864,6 +879,7 @@ export class Game extends EventEmitter {
       earlyVoteTargetId: table.earlyVotes.get(player.id) ?? null,
       earlyVoteTargetNumber: table.roster.get(table.earlyVotes.get(player.id))?.number ?? null,
       voteTargetId: table.votes.get(player.id) ?? null,
+      allVotesIn: table.allVotesIn,
       canAccuse: this.state === PHASES.ROUND && !this.roundAccusations.has(player.id),
       canVote: this.state === PHASES.VOTE,
     };
@@ -885,6 +901,9 @@ export class Game extends EventEmitter {
       delivered: Boolean(assignment.smuggle),
       deliveredAt: assignment.smuggle ? formatElapsed(assignment.smuggle.elapsedMs) : null,
       busted: assignment.busted,
+      bustedBy: assignment.bustedBy
+        ? this.#publicPlayer(table.roster.get(assignment.bustedBy) ?? this.profiles.get(assignment.bustedBy))
+        : null,
     };
   }
 
@@ -949,6 +968,7 @@ export class Game extends EventEmitter {
         impostor: this.#publicPlayer(table.roster.get(assignment.playerId) ?? this.profiles.get(assignment.playerId)),
         accuser: this.#publicPlayer(this.profiles.get(assignment.bustedBy)),
       })),
+      allVotesIn: table.allVotesIn,
     };
     if (this.state === PHASES.REVEAL) round.reveal = table.reveal;
     return { ...state, round };
@@ -1072,6 +1092,7 @@ export class Game extends EventEmitter {
         scoreChanges: new Map([...roster.keys()].map((playerId) => [playerId, 0])),
         reveal: null,
         phaseResult: null,
+        allVotesIn: false,
       });
     }
     this.roundNumber += 1;

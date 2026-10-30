@@ -10,6 +10,7 @@ import {
   missedWordCopy,
   roundRule,
   shouldAnimateVoteBanner,
+  streamTableLabel,
   syncBoardNoteVisibility,
   updateCompactLobbyClock,
   overlayRenderPlan,
@@ -47,8 +48,20 @@ test("BUSTED toasts keep priority and their full display time", () => {
   assert.deepEqual(orderAccusationToasts([miss, busted]), [busted, miss]);
   assert.equal(accusationToastDuration(busted), 3_000);
   assert.equal(accusationToastDuration(miss), 1_800);
-  assert.equal(bustedRowLabel({ accuser: { number: 12, login: "an_extremely_long_name" } }), "BUSTED · by #12");
+  assert.equal(bustedRowLabel({ accuser: { number: 12, login: "an_extremely_long_name" } }), "BUSTED");
   assert.equal(bustedRowLabel({ accuser: { login: "missing_number" } }), "BUSTED");
+  assert.equal(bustedRowLabel(null), "");
+});
+
+test("multi-table rounds identify the table currently on stream", () => {
+  assert.equal(streamTableLabel({ tableId: 2, tableCount: 3 }), "TABLE 2 OF 3 · ON STREAM");
+  assert.equal(streamTableLabel({ tableId: 1, tableCount: 1 }), "");
+});
+
+test("a busted player keeps a full-height readable status band", async () => {
+  const css = await readFile(new URL("../public/overlay.css", import.meta.url), "utf8");
+  assert.match(css, /\.player-row:has\(\.busted-mini\)\{height:50px/);
+  assert.match(css, /\.player-row \.busted-mini\{[^}]*height:23px[^}]*font:700 21px\/23px "Courier Prime"/);
 });
 
 test("crowd vote rows hide zero CHAT counts without taking name-line space", () => {

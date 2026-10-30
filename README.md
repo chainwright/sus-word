@@ -11,7 +11,7 @@ Sus Word is a live Twitch chat game about hiding an ordinary word in plain sight
 1. Viewers type `!join`, open the private card, enter their exact Twitch name, then send the card's `!join CODE` command.
 2. Each table gets one Imposter, or two at tables with 10–12 players. Every player keeps the same table number for the session.
 3. The Imposter has three minutes to use it naturally in chat. Category and first-letter hints appear as time runs out.
-4. Seated players vote with a number such as `2`, `#2`, `!2`, or `!vote 2`. Votes typed early are saved, and the vote has a silent six-second grace period. Viewers without a card can vote too; their CHAT votes only break ties between seated votes.
+4. Seated players vote with a number such as `2`, `#2`, `!2`, or `!vote 2`. Votes typed early are saved; voting closes as soon as every seated player has voted, otherwise it has a silent six-second grace period. Viewers without a card can vote too; their CHAT votes only break ties between seated votes.
 5. The overlay rewinds chat, highlights the exact hidden word, reveals the verdict, shows the round leaders, and then deals new roles.
 
 ## Setup in 5 steps
@@ -22,7 +22,7 @@ Sus Word is a live Twitch chat game about hiding an ordinary word in plain sight
 4. Run `npm run auth` once and authorize the requested chat scopes.
 5. Run `npm start`. In OBS, add `http://localhost:3000/overlay` as a 1920×1080 browser source. For remote player cards, run `cloudflared tunnel --url http://localhost:3000`, put its public base URL in `PUBLIC_URL`, and restart Sus Word. Host controls accept only local requests. To operate `/host` remotely, set `HOST_SECRET` and open `/host?secret=YOUR_SECRET`.
 
-Open `http://localhost:3000/host` for the detective-desk controls, player numbers, host-plays switch, streamer mic, and next bot-message preview. For an offline rehearsal, run `npm run demo -- --fast` and open the overlay; omit `--fast` for full three-minute timing. Add `--players 30` (up to 200) to rehearse multiple tables. Open `/card?demo=1` (or another player number) to view a simulated player's live card.
+Open `http://localhost:3000/host` for the detective-desk controls, player numbers, host-plays switch, streamer mic, and next bot-message preview. For an offline rehearsal, run `npm run demo -- --fast` and open the overlay; omit `--fast` for full three-minute timing. Add `--players 30` (up to 200) to rehearse multiple tables, and `--seed rehearsal-1` for a repeatable mix of catches and misses. Open `/card?demo=1` (or another player number) to view a simulated player's live card.
 
 The v3 screens are built for a real stream: the first lobby teaches the rules, the round board shows stable numbers and active speakers, voting gets a large countdown, and the reveal stays below the camera before ending on the top three. The phone card handles joining, private roles, tap-to-vote, results, and the final Champion screen.
 
@@ -43,7 +43,7 @@ One table is the whole game for a small stream. When more people claim cards, Su
 
 Tested in rehearsal with up to 200 virtual players; a 200-player round resolves in a few milliseconds.
 
-`npm test` runs the fast, browser-free logic suite. `npm run test:browser` launches local Chrome and loads every overlay mock at 854×480 and 1920×1080, checking real computed layout for board-cell overflow, clipped fixture names, name/VOTE overlap, and console errors. It also opens every card mock at 390×844 and checks its console. Set `CHROME_PATH` if Chrome is not in a standard location.
+`npm test` runs the fast, browser-free logic suite. `npm run test:browser` launches local Chrome and loads every overlay mock at 854×480 and 1920×1080, checking real computed layout for board-cell overflow, clipped fixture names, name/VOTE overlap, the pre-leader reveal card, BUSTED rows in every phase, and console errors. It also opens every card mock at 390×844 and checks its console. Set `CHROME_PATH` if Chrome is not in a standard location.
 
 ## Streamer voice
 
@@ -73,7 +73,7 @@ The card page first checks that the Twitch name spoke in chat recently, then giv
 
 ## Built with Codex
 
-Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first rehearsal simulator was drafted outside Codex and later rewritten in Codex (step 15). The current game is covered by 111 browser-free automated tests, plus the real-Chrome mock check:
+Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first rehearsal simulator was drafted outside Codex and later rewritten in Codex (step 15). The current game is covered by 119 browser-free automated tests, plus the real-Chrome mock check:
 
 1. Pure game logic, word detection, scoring, and tests.
 2. Twitch OAuth, EventSub chat, server routes, and live state.
@@ -97,3 +97,4 @@ Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first reh
 20. Reveal-board regression fixes, readable payoff copy, spoiler-safe case-file timing, and honest layout-budget coverage.
 21. Case-file headline and miss-frame polish, readable vote totals, final standings, real Chrome layout checks, and push CI.
 22. Host-control security, all-busted early reveals, live Imposter counts, durable accusation slams, reveal overflow checks, stronger finals, and live demo cards.
+23. Phase-driven demo rounds, repeatable varied outcomes, persistent BUSTED states, early vote completion, table labels, and reveal-transition polish.

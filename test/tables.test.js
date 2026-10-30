@@ -268,6 +268,22 @@ describe("live accusations", () => {
     assert.equal(game.scores.get(impostor.id), 1);
   });
 
+  test("a busted Imposter card names the detective who caught them", () => {
+    const { game } = accusationGame(13);
+    const table = game.tables.get(1);
+    const assignment = table.impostors[0];
+    const impostor = table.roster.get(assignment.playerId);
+    const detective = [...table.roster.values()].find(({ id }) => id !== impostor.id);
+    game.sessions.set("busted-card", { userId: impostor.id, linkedAt: 0 });
+    game.recordMessage({ userId: impostor.id, text: `this ${assignment.word} sounds natural tonight` });
+    assert.equal(game.accuse(detective.id, impostor.id, assignment.word).correct, true);
+    assert.equal(game.phase, PHASES.ROUND, "another unresolved table keeps the round open");
+    const card = game.getCard("busted-card");
+    assert.equal(card.busted, true);
+    assert.equal(card.bustedBy.id, detective.id);
+    assert.equal(card.delivered, true);
+  });
+
   test("a two-Imposter table reveals only after both have been busted", () => {
     const { game } = startGame(12);
     const table = game.currentRound;

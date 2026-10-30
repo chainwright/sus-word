@@ -13,7 +13,7 @@ const OVERLAY_MOCKS = [
   "reveal", "reveal2", "reveal-miss", "champion", "newround",
 ];
 const CARD_MOCKS = [
-  "join", "join-wrong", "claim", "imposter", "imposter-2", "delivered",
+  "join", "join-wrong", "claim", "imposter", "imposter-2", "delivered", "busted",
   "detective", "vote", "reveal-hold", "result", "champion", "side", "featured",
 ];
 
@@ -212,6 +212,44 @@ const OVERLAY_LAYOUT_CHECK = String.raw`(async () => {
       fail("reveal-caption-card-overflow", caption, caption.textContent);
     }
   }
+  const query = new URLSearchParams(location.search);
+  if (query.get("frame") === "preleaders") {
+    const cards = [...document.querySelectorAll(".reveal-cases .case-card")].filter(visible);
+    if (!cards.length) failures.push({
+      check: "reveal-case-missing",
+      element: ".reveal-cases .case-card",
+      detail: "the pre-leader frame must keep its case card visible",
+    });
+    for (const card of cards) {
+      if (!visible(card)) continue;
+      if (card.closest(".reveal-cases")?.classList.contains("shrunk") || card.getBoundingClientRect().height < 100) {
+        fail("reveal-case-collapsed", card, "case card must remain readable before the leaders panel");
+      }
+    }
+  }
+  if (query.get("frame") === "busted") {
+    const labels = [...document.querySelectorAll(".player-row .busted-mini")].filter(visible);
+    if (!labels.length) failures.push({
+      check: "busted-state-missing",
+      element: ".player-row .busted-mini",
+      detail: "the caught-player state must remain visible in this phase",
+    });
+    for (const label of labels) {
+      if (label.textContent.trim() !== "BUSTED") fail("busted-copy", label, label.textContent);
+      if (parseFloat(getComputedStyle(label).fontSize) < 21) fail("busted-label-too-small", label);
+      if (label.scrollWidth > label.clientWidth + 1 || label.scrollHeight > label.clientHeight + 1) {
+        fail("busted-label-overflow", label);
+      }
+    }
+  }
+  if (Number(query.get("tables")) > 1) {
+    const plate = document.querySelector("#table-plate");
+    if (!visible(plate)) failures.push({
+      check: "table-plate-missing",
+      element: "#table-plate",
+      detail: "a multi-table overlay must identify the featured table",
+    });
+  }
   return failures;
 })()`;
 
@@ -333,10 +371,22 @@ async function main() {
       }, dimensions, true);
       console.log(`✓ overlay reveal payoff at ${size}`);
       await loadRoute(devtools, sessionId, {
-        label: `overlay BUSTED row at ${size}`,
-        url: `${origin}/overlay?mock=round&frame=busted`,
+        label: `overlay reveal before leaders at ${size}`,
+        url: `${origin}/overlay?mock=reveal&frame=preleaders`,
       }, dimensions, true);
-      console.log(`✓ overlay BUSTED row at ${size}`);
+      console.log(`✓ overlay reveal before leaders at ${size}`);
+      for (const phase of ["round", "vote", "reveal"]) {
+        await loadRoute(devtools, sessionId, {
+          label: `overlay ${phase} BUSTED row at ${size}`,
+          url: `${origin}/overlay?mock=${phase}&frame=busted`,
+        }, dimensions, true);
+        console.log(`✓ overlay ${phase} BUSTED row at ${size}`);
+      }
+      await loadRoute(devtools, sessionId, {
+        label: `overlay featured table plate at ${size}`,
+        url: `${origin}/overlay?mock=round&tables=3`,
+      }, dimensions, true);
+      console.log(`✓ overlay featured table plate at ${size}`);
     }
     for (const mock of CARD_MOCKS) {
       await loadRoute(devtools, sessionId, {

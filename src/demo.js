@@ -57,6 +57,59 @@ function requestedPlayerCount(argv = process.argv) {
   return Number.isFinite(count) ? Math.max(3, Math.min(200, count)) : 4;
 }
 
+function requestedSeed(argv = process.argv) {
+  const argument = argv.find((value) => value.startsWith("--seed="));
+  const separateIndex = argv.indexOf("--seed");
+  return String(argument?.split("=", 2)[1]
+    ?? (separateIndex >= 0 ? argv[separateIndex + 1] : null)
+    ?? "sus-word-demo");
+}
+
+export function seededRandom(seed = "sus-word-demo") {
+  let value = 2166136261;
+  for (const character of String(seed)) {
+    value ^= character.codePointAt(0);
+    value = Math.imul(value, 16777619);
+  }
+  return () => {
+    value += 0x6d2b79f5;
+    let mixed = value;
+    mixed = Math.imul(mixed ^ (mixed >>> 15), mixed | 1);
+    mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
+    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+export function demoRoundOutcomes(game, random, missOffset = 0) {
+  const outcomes = new Map();
+  let index = 0;
+  for (const table of game.tables.values()) {
+    for (const assignment of table.impostors) {
+      const missCycle = (game.roundNumber + table.id + index + missOffset) % 3;
+      outcomes.set(assignment.playerId, {
+        bust: missCycle !== 0,
+        catchByVote: random() < .62,
+      });
+      index += 1;
+    }
+  }
+  return outcomes;
+}
+
+export function demoWordPicker(random) {
+  const used = new Set();
+  return ({ words }) => {
+    let choices = words.filter(({ word }) => !used.has(word));
+    if (!choices.length) {
+      used.clear();
+      choices = words;
+    }
+    const picked = choices[Math.floor(random() * choices.length)];
+    used.add(picked.word);
+    return picked;
+  };
+}
+
 export function demoProfiles(count = 4) {
   const profiles = CORE_PROFILES.slice(0, Math.min(count, CORE_PROFILES.length));
   for (let index = profiles.length; index < count; index += 1) {
@@ -155,7 +208,7 @@ async function postMessage(game, service, player, text, sequence, voiceSocket, f
   return result;
 }
 
-async function playRoundChat(game, service, profiles, fast, voiceSocket) {
+async function playRoundChat(game, service, profiles, fast, voiceSocket, outcomes) {
   const interval = fast ? 3_500 : 6_000;
   const decoyAt = game.durations.round * .3;
   const smuggleAt = game.durations.round * .55;
@@ -203,19 +256,21 @@ async function playRoundChat(game, service, profiles, fast, voiceSocket) {
         const detectives = [...table.roster.values()].filter(({ id }) => (
           !table.impostors.some(({ playerId }) => playerId === id)
         ));
+        const outcome = outcomes.get(assignment.playerId);
         if (detectives[0]) {
+          const guessedWord = outcome.bust ? assignment.word : "banana";
           if (table.id === game.featuredTableId) {
             await service.handleChatMessage({
               userId: detectives[0].id,
               login: detectives[0].login,
-              text: `!accuse ${impostor.login} ${assignment.word}`,
+              text: `!accuse ${impostor.login} ${guessedWord}`,
             });
           } else {
             service.handleCardAction(demoSessionId(detectives[0]), {
-              type: "accuse", target: impostor.login, word: assignment.word,
+              type: "accuse", target: impostor.login, word: guessedWord,
             });
           }
-          console.log(`[accuse] @${detectives[0].login} busted @${impostor.login}`);
+          console.log(`[accuse] @${detectives[0].login} ${outcome.bust ? "busted" : "missed"} @${impostor.login}`);
         }
         if (detectives[1]) {
           const result = table.id === game.featuredTableId
@@ -240,17 +295,22 @@ async function playRoundChat(game, service, profiles, fast, voiceSocket) {
   }
 }
 
-async function castVotes(game, service, fast) {
+async function castVotes(game, service, fast, outcomes) {
   const seated = [...game.tables.values()].reduce((sum, table) => sum + table.roster.size, 0);
   const pause = seated > 12 ? (fast ? 35 : 75) : fast ? 2_500 : 4_000;
   for (const table of game.tables.values()) {
     const impostorId = table.impostorId;
     const fallback = [...table.roster.values()].find(({ id }) => id !== impostorId);
+    const outcome = outcomes.get(impostorId);
     for (const player of table.roster.values()) {
       if (game.phase !== PHASES.VOTE) return;
       await sleep(pause);
       if (game.phase !== PHASES.VOTE) return;
-      const target = table.roster.get(player.id === impostorId ? fallback.id : impostorId);
+      const preferred = outcome?.catchByVote ? impostorId : fallback.id;
+      const alternate = [...table.roster.values()].find(({ id }) => (
+        id !== player.id && (outcome?.catchByVote || id !== impostorId)
+      )) ?? [...table.roster.values()].find(({ id }) => id !== player.id);
+      const target = table.roster.get(player.id === preferred ? alternate.id : preferred);
       if (table.id === game.featuredTableId) {
         await service.handleChatMessage({
           userId: player.id,
@@ -265,19 +325,30 @@ async function castVotes(game, service, fast) {
   }
 }
 
+export async function driveDemoRound(game, actions) {
+  await actions.playChat();
+  if (game.phase === PHASES.ROUND) await (actions.waitForPhase ?? waitForPhase)(game, PHASES.VOTE);
+  if (game.phase === PHASES.VOTE) await actions.castVotes();
+  if (game.phase !== PHASES.REVEAL) await (actions.waitForPhase ?? waitForPhase)(game, PHASES.REVEAL);
+  return game.lastReveal;
+}
+
 export async function runDemo(options = {}) {
   const fast = options.fast ?? process.argv.includes("--fast");
   const playerCount = Number(options.players ?? requestedPlayerCount());
   const profiles = demoProfiles(playerCount);
   const port = Number(options.port ?? process.env.PORT ?? 3000);
   const publicUrl = process.env.PUBLIC_URL || `http://localhost:${port}`;
-  const roleRolls = [0, .999, .35, .999];
-  let roleRoll = 0;
+  const seed = String(options.seed ?? requestedSeed());
+  const gameRandom = seededRandom(`${seed}:game`);
+  const behaviorRandom = seededRandom(`${seed}:behavior`);
+  const missOffset = Math.floor(behaviorRandom() * 3);
   let claimIndex = 0;
   const game = new Game({
     durations: fast ? FAST_DURATIONS : undefined,
     codeGenerator: () => claimCode(claimIndex++),
-    random: fast ? () => roleRolls[roleRoll++ % roleRolls.length] : Math.random,
+    random: gameRandom,
+    wordPicker: demoWordPicker(gameRandom),
   });
   const service = createSusWordServer({
     game,
@@ -302,7 +373,7 @@ export async function runDemo(options = {}) {
   voiceSocket = await connectVoiceSocket(address.port);
   console.log(`[demo] Open http://localhost:${address.port}/overlay in a 1920×1080 browser source.`);
   console.log(`[demo] ${fast ? "Fast rehearsal" : "Full timing"} mode. Press Ctrl+C to stop.`);
-  console.log(`[demo] Simulating ${profiles.length} players.`);
+  console.log(`[demo] Simulating ${profiles.length} players with seed "${seed}".`);
   console.log(`[demo] Open player 1's live card: http://localhost:${address.port}/card?demo=1`);
 
   game.start();
@@ -314,11 +385,12 @@ export async function runDemo(options = {}) {
     if (!running) break;
     round += 1;
     console.log(`[demo] Starting round ${round}`);
-    game.go({ word: "candle", category: "home" });
-    await playRoundChat(game, service, profiles, fast, voiceSocket);
-    await waitForPhase(game, PHASES.VOTE);
-    await castVotes(game, service, fast);
-    await waitForPhase(game, PHASES.REVEAL);
+    game.go();
+    const outcomes = demoRoundOutcomes(game, behaviorRandom, missOffset);
+    await driveDemoRound(game, {
+      playChat: () => playRoundChat(game, service, profiles, fast, voiceSocket, outcomes),
+      castVotes: () => castVotes(game, service, fast, outcomes),
+    });
     console.log(`[demo] ${game.lastReveal.botMessage}`);
     await waitForPhase(game, PHASES.LOBBY);
   }

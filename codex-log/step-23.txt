@@ -1,0 +1,11 @@
+Step 23. The end-to-end re-run after ca00b9e (read the section "Re-run after ca00b9e" in playtest/E2E_JUDGE_2026-10-30.md; frames in playtest/e2e2_2026-10-30/). Fix each with a test:
+
+1. Demo stall: after a round that goes straight to the reveal (all Imposters busted), src/demo.js still waits for a vote phase that no longer comes, so the next round runs with no simulated chat and ends "WORD NEVER LANDED". Drive the demo from the phase the game actually reports, so every round after an early reveal plays normally. Test: a demo round where the Imposter is busted early is followed by a normal round with chat.
+2. At 854x480 the case card collapses into an unreadable strip for 1–3 s just before the leaders panel. Find the transition that causes it and keep the card readable (or hide it cleanly) during that change. Add a browser-test frame for that moment if you can reproduce it with a mock frame.
+3. A busted Imposter's card still says "DELIVERED… Don't get caught". When the player is busted, the card must say they were caught (and by whom), not encourage them.
+4. The busted mark on the board is tiny at 480p and disappears during the vote. Keep a clear, readable BUSTED state on that player's cell through the vote and the reveal.
+5. The vote doesn't close early when every seated player has voted: close it right away (keep the grace window for late chat votes if the rules need it) and show "all votes in".
+6. The overlay doesn't show which table is on stream when there are several: add a small "TABLE 2 OF 3 · ON STREAM" label.
+7. Demo realism: the demo uses the same word every round and its simulated detectives always bust the Imposter. Vary the words, and make the simulated players miss sometimes (seeded, so rehearsals stay repeatable).
+
+Check every overlay and card mock for console errors. Copy this prompt as codex-log/step-23.txt. Keep npm test and npm run test:browser green (I'll run the browser one outside the sandbox). Do not commit; give me one commit message and the list of done items.

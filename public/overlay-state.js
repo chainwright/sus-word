@@ -40,9 +40,14 @@ export function accusationToastDuration(accusation = {}) {
   return accusation.correct ? 3_000 : 1_800;
 }
 
-export function bustedRowLabel(busted = {}) {
-  const number = Number(busted.accuser?.number);
-  return Number.isInteger(number) && number > 0 ? `BUSTED · by #${number}` : "BUSTED";
+export function bustedRowLabel(busted = null) {
+  return busted ? "BUSTED" : "";
+}
+
+export function streamTableLabel(round = {}) {
+  const count = Number(round.tableCount) || 1;
+  if (count <= 1) return "";
+  return `TABLE ${Number(round.tableId) || 1} OF ${count} · ON STREAM`;
 }
 
 export function formatOverlayClock(milliseconds) {

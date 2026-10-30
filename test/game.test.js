@@ -424,8 +424,8 @@ describe("round messages and reveal payload", () => {
     game.vote(alice.id, bruno.id);
     game.vote(bruno.id, chloe.id);
     const result = game.vote(chloe.id, bruno.id);
-    assert.equal(result.state, PHASES.VOTE);
-    game.finishVote();
+    assert.equal(result.state, PHASES.REVEAL);
+    assert.equal(result.allVotesIn, true);
     assert.equal(game.lastReveal.smuggled, false);
     assert.equal(game.lastReveal.caption, "The word never made it out.");
     assert.equal(game.lastReveal.verdict, "WORD NEVER LANDED");
@@ -496,8 +496,8 @@ describe("voting and scoring", () => {
 
     game.vote(chloe.id, alice.id);
     const lastVote = game.vote(alice.id, bruno.id);
-    assert.equal(lastVote.state, PHASES.VOTE);
-    game.finishVote();
+    assert.equal(lastVote.state, PHASES.REVEAL);
+    assert.equal(lastVote.allVotesIn, true);
     assert.equal(game.lastReveal.caught, true);
     assert.equal(game.lastReveal.verdict, "CAUGHT");
     assert.equal(game.scores.get(alice.id), 1);
@@ -562,12 +562,11 @@ describe("voting and scoring", () => {
     game.beginVote();
     game.vote(alice.id, chloe.id);
     game.vote(bruno.id, alice.id);
-    game.vote(chloe.id, bruno.id);
     const crowd = game.vote({ userId: "crowd-1", login: "viewer", transport: "twitch" }, { number: 1 });
     assert.equal(crowd.ok, true);
     assert.equal(crowd.crowd, true);
     assert.equal(game.getTallies().find(({ player }) => player.id === alice.id).chatVotes, 1);
-    game.finishVote();
+    game.vote(chloe.id, bruno.id);
     assert.equal(game.lastReveal.verdict, "CAUGHT");
     assert.match(game.lastReveal.caseFileMessage, / · caught$/);
 
@@ -589,5 +588,20 @@ describe("voting and scoring", () => {
     game.beginVote();
     game.finishVote();
     assert.equal(game.lastReveal.caseFileMessage, "Round 1: CANDLE slipped in at 1:12 · 1 read it · nobody noticed");
+  });
+
+  test("closes voting as soon as every seated player has voted", () => {
+    const { game } = createGame();
+    const [alice, bruno, chloe] = startRound(game);
+    let event;
+    game.once("allVotesIn", (payload) => { event = payload; });
+    game.beginVote();
+    assert.equal(game.vote(alice.id, bruno.id).state, PHASES.VOTE);
+    assert.equal(game.vote(bruno.id, alice.id).state, PHASES.VOTE);
+    const finalVote = game.vote(chloe.id, alice.id);
+    assert.equal(finalVote.allVotesIn, true);
+    assert.equal(finalVote.state, PHASES.REVEAL);
+    assert.equal(event.message, "ALL VOTES IN");
+    assert.equal(game.getPublicState().round.allVotesIn, true);
   });
 });

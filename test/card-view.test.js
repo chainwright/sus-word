@@ -4,6 +4,7 @@ import { describe, test } from "node:test";
 import {
   cardRenderSignature,
   cardScreen,
+  impostorStatus,
   vibrateIfActivated,
   voteProgress,
 } from "../public/card-view.js";
@@ -45,6 +46,11 @@ describe("card screen selection", () => {
       messages: [...base.messages, { id: "two", text: "unrelated chat", player: { id: "p2" } }],
     }));
     assert.notEqual(cardRenderSignature(base), cardRenderSignature({ ...base, delivered: true }));
+    assert.notEqual(cardRenderSignature(base), cardRenderSignature({
+      ...base,
+      busted: true,
+      bustedBy: { id: "p2", login: "quietfox", number: 2 },
+    }));
   });
 
   test("vibrates only after a user gesture and when the API exists", () => {
@@ -61,5 +67,18 @@ describe("card screen selection", () => {
     const active = { ...inactive, userActivation: { hasBeenActive: true } };
     assert.equal(vibrateIfActivated(active), true);
     assert.deepEqual(calls, [[80, 60, 80]]);
+  });
+
+  test("a busted Imposter card replaces the mission with who caught them", () => {
+    assert.deepEqual(impostorStatus({
+      delivered: true,
+      deliveredAt: "0:47",
+      busted: true,
+      bustedBy: { login: "quietfox" },
+    }), {
+      className: "busted",
+      status: "BUSTED · caught by @quietfox",
+      job: "You were caught. Watch the rest of the round and see how the case closes.",
+    });
   });
 });

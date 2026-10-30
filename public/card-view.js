@@ -25,6 +25,24 @@ export function vibrateIfActivated(navigatorLike, pattern = [80, 60, 80]) {
   return true;
 }
 
+export function impostorStatus(state = {}) {
+  if (state.busted) return {
+    className: "busted",
+    status: `BUSTED · caught by @${state.bustedBy?.login || "a detective"}`,
+    job: "You were caught. Watch the rest of the round and see how the case closes.",
+  };
+  if (state.delivered) return {
+    className: "delivered",
+    status: `✓ DELIVERED ${state.deliveredAt || "0:00"} into the round`,
+    job: "Your job: slip this word into chat inside a normal sentence before the timer runs out. Don’t get caught.",
+  };
+  return {
+    className: "",
+    status: "Word not sent yet",
+    job: "Your job: slip this word into chat inside a normal sentence before the timer runs out. Don’t get caught.",
+  };
+}
+
 export function cardRenderSignature(state = {}) {
   const mate = (player = {}) => ({
     id: player.id,
@@ -43,6 +61,8 @@ export function cardRenderSignature(state = {}) {
     word: state.word,
     delivered: state.delivered,
     deliveredAt: state.deliveredAt,
+    busted: state.busted,
+    bustedBy: mate(state.bustedBy),
     impostorCount: state.impostorCount,
     hints: state.hints,
     tableId: state.tableId,

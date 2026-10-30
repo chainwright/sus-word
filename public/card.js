@@ -1,4 +1,4 @@
-import { cardRenderSignature, cardScreen, vibrateIfActivated, voteProgress } from "./card-view.js";
+import { cardRenderSignature, cardScreen, impostorStatus, vibrateIfActivated, voteProgress } from "./card-view.js";
 
 const root = document.querySelector("#card-root");
 const connection = document.querySelector("#connection");
@@ -359,7 +359,7 @@ function accusePanel() {
 function renderRole(role, signal) {
   const page = node("div", "role-page");
   page.append(topBar(`SUS WORD · ROUND ${state.roundNumber}`));
-  page.append(node("div", "new-round-banner", "🔔 NEW ROUND: CHECK YOUR ROLE"));
+  if (signal) page.append(node("div", "new-round-banner", "🔔 NEW ROUND: CHECK YOUR ROLE"));
   const table = tableLabel();
   if (table) page.append(table);
   const sheet = paperSheet(`role-sheet ${role === "IMPOSTER" ? "imposter-sheet" : "detective-sheet"}`);
@@ -371,9 +371,9 @@ function renderRole(role, signal) {
   if (role === "IMPOSTER") {
     sheet.append(node("p", "secret-label", "YOUR SECRET WORD THIS ROUND"));
     highlight = node("strong", "secret-word", state.word || "SECRET");
-    sheet.append(highlight, node("div", `delivery-chip${state.delivered ? " delivered" : ""}`,
-      state.delivered ? `✓ DELIVERED ${state.deliveredAt || "0:00"} into the round` : "Word not sent yet"),
-    node("p", "role-job", "Your job: slip this word into chat inside a normal sentence before the timer runs out. Don’t get caught."));
+    const status = impostorStatus(state);
+    sheet.append(highlight, node("div", `delivery-chip${status.className ? ` ${status.className}` : ""}`, status.status),
+      node("p", "role-job", status.job));
     if (state.impostorCount > 1) sheet.append(node("p", "two-imposters", "2 Imposters this round; the other one has a different word."));
   } else {
     sheet.append(node("p", "role-job", state.impostorCount > 1
@@ -549,6 +549,8 @@ function playChime() {
 function runNewRoundSignal(sheet, stamp, highlight) {
   playChime();
   vibrateIfActivated(navigator);
+  const banner = root.querySelector(".new-round-banner");
+  setTimeout(() => banner?.remove(), reducedMotion.matches ? 400 : 3_000);
   if (reducedMotion.matches) {
     sheet.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200 });
     return;
@@ -667,8 +669,11 @@ function mockCard(kind) {
     hints: { category: "food", letter: null }, messages: [], canAccuse: true, accusationUsed: false,
     impostorCount: ["imposter-2", "detective", "vote"].includes(kind) ? 2 : 1,
   };
-  if (["imposter", "imposter-2", "delivered", "side"].includes(kind)) Object.assign(base, {
+  if (["imposter", "imposter-2", "delivered", "busted", "side"].includes(kind)) Object.assign(base, {
     role: "IMPOSTER", word: "lemon", delivered: kind === "delivered", deliveredAt: kind === "delivered" ? "0:47" : null,
+  });
+  if (kind === "busted") Object.assign(base, {
+    delivered: true, deliveredAt: "0:47", busted: true, bustedBy: tableMates[1],
   });
   if (kind === "side") Object.assign(base, { tableId: 2, tableCount: 3, onStream: false });
   if (kind === "vote") Object.assign(base, { state: "VOTE", remainingMs: 19_000, phaseDurationMs: 30_000, voteTargetId: "p2" });
@@ -703,7 +708,7 @@ document.addEventListener("visibilitychange", () => {
 
 setInterval(updateTimers, 250);
 const mock = new URLSearchParams(location.search).get("mock");
-const mockKinds = ["join", "join-wrong", "claim", "imposter", "imposter-2", "delivered", "detective", "vote", "reveal-hold", "result", "champion", "side", "featured"];
+const mockKinds = ["join", "join-wrong", "claim", "imposter", "imposter-2", "delivered", "busted", "detective", "vote", "reveal-hold", "result", "champion", "side", "featured"];
 if (mockKinds.includes(mock)) {
   connection.textContent = "PREVIEW";
   render(mockCard(mock));
