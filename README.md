@@ -49,7 +49,7 @@ One table is the whole game for a small stream. When more people claim cards, Su
 
 Tested in rehearsal with up to 200 virtual players; a 200-player round resolves in a few milliseconds.
 
-`npm test` runs the fast, browser-free logic suite. `npm run test:browser` launches local Chrome and loads every overlay mock at 854×480, 1280×720, and 1920×1080, checking real computed layout for board-cell overflow, clipped fixture names, name/VOTE overlap, chat and voice reveal captions, stamps, the champion panel, the pre-leader reveal card, BUSTED rows in every phase, long two-Imposter topics, and console errors. It opens every card mock at 390×844, then opens real demo-mode Imposter and Detective cards and verifies the live secret role payloads render without console errors. It also checks `/watch` at both desktop sizes and 390×844 for its above-the-fold pitch and frames, first-paint placeholders, separate simulated chat, mobile card order, demo badge clearance, role privacy, and `/host` redirect. Set `CHROME_PATH` if Chrome is not in a standard location.
+`npm test` runs the fast, browser-free logic suite. `npm run test:browser` launches local Chrome and loads every overlay mock at 854×480, 1280×720, and 1920×1080, checking real computed layout for board-cell overflow, clipped fixture names, name/VOTE overlap, chat and voice reveal captions, stamps, the champion panel, the pre-leader reveal card, BUSTED rows in every phase, long two-Imposter topics, and console errors. It opens every card mock at 390×844, then opens real demo-mode Imposter and Detective cards and verifies the live secret role payloads render without console errors. It also checks `/watch` at both desktop sizes and 390×844 for its above-the-fold pitch and frames, first-paint placeholders, WOFF2 font requests, socket-reconnect status, separate simulated chat, mobile card order, demo badge clearance, role privacy, and `/host` redirect. Set `CHROME_PATH` if Chrome is not in a standard location.
 
 ## Streamer voice
 
@@ -79,7 +79,7 @@ The card page first checks that the Twitch name spoke in chat recently, then giv
 
 ## Built with Codex
 
-Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first rehearsal simulator was drafted outside Codex and later rewritten in Codex (step 15). The current game is covered by 143 browser-free automated tests, plus the real-Chrome mock and live-card check:
+Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first rehearsal simulator was drafted outside Codex and later rewritten in Codex (step 15). The current game is covered by 146 browser-free automated tests, plus the real-Chrome mock and live-card check:
 
 1. Pure game logic, word detection, scoring, and tests.
 2. Twitch OAuth, EventSub chat, server routes, and live state.
@@ -109,3 +109,4 @@ Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first reh
 26. A bounded, read-only hosted demo with public links, health checks, and locked host controls.
 27. The responsive watch-a-round page with a stream backdrop, live chat, and switchable player cards.
 28. A faster hosted-demo pitch, honest session timing, safer voting, meaningful finals, and cold-visitor browser coverage.
+29. Multi-table demo sessions that end in a FINAL and reset, socket reconnects, varied demo chat and slip timing, WOFF2 fonts, and a shared phase deadline.

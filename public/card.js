@@ -7,6 +7,7 @@ import {
   vibrateIfActivated,
   voteProgress,
 } from "./card-view.js";
+import { phaseRemainingMs } from "./display.js";
 
 const root = document.querySelector("#card-root");
 const connection = document.querySelector("#connection");
@@ -19,6 +20,7 @@ let state = { linked: false, role: null };
 let receivedAt = Date.now();
 let reconnectDelay = 1_000;
 let cardSocket = null;
+let reconnectTimer = null;
 let audioContext = null;
 let wakeLock = null;
 let signaledRound = null;
@@ -45,8 +47,7 @@ function formatClock(milliseconds) {
 }
 
 function remainingMs() {
-  if (Number.isFinite(state.remainingMs)) return Math.max(0, state.remainingMs - (Date.now() - receivedAt));
-  return Math.max(0, (state.phaseEndsAt || Date.now()) - Date.now());
+  return phaseRemainingMs(state, receivedAt);
 }
 
 function playerPhoto(player, className = "player-photo") {
@@ -539,6 +540,7 @@ function render(nextState) {
   receivedAt = Date.now();
   if (nextSignature === lastRenderSignature) {
     updateTimers();
+    if (parent !== window) parent.postMessage({ type: "sus-word-frame-ready", view: "card" }, location.origin);
     return;
   }
   lastRenderSignature = nextSignature;
@@ -561,6 +563,7 @@ function render(nextState) {
     if (topbar) topbar.after(note);
     else root.prepend(note);
   }
+  if (parent !== window) parent.postMessage({ type: "sus-word-frame-ready", view: "card" }, location.origin);
 }
 
 async function unlockAudio() {
@@ -649,6 +652,7 @@ function connect() {
   const socket = new WebSocket(`${protocol}//${location.host}/ws?view=card`);
   cardSocket = socket;
   socket.addEventListener("open", () => {
+    clearTimeout(reconnectTimer);
     connection.textContent = "LIVE";
     connection.classList.add("online");
     reconnectDelay = 1_000;
@@ -661,12 +665,21 @@ function connect() {
       else showToast(payload.data?.message || actionError(payload.data?.reason));
     }
   });
-  socket.addEventListener("close", () => {
-    if (cardSocket === socket) cardSocket = null;
+  const retry = () => {
+    if (cardSocket !== socket) return;
+    cardSocket = null;
     connection.textContent = "RECONNECTING";
     connection.classList.remove("online");
-    setTimeout(connect, reconnectDelay);
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connect, reconnectDelay);
     reconnectDelay = Math.min(15_000, reconnectDelay * 1.7);
+  };
+  socket.addEventListener("error", () => {
+    connection.textContent = "RECONNECTING";
+    connection.classList.remove("online");
+  });
+  socket.addEventListener("close", () => {
+    retry();
   });
 }
 
@@ -754,5 +767,9 @@ if (mockKinds.includes(mock)) {
   connection.textContent = "PREVIEW";
   render(mockCard(mock));
 } else {
-  loadCard().finally(connect);
+  connect();
+  loadCard().catch(() => {
+    connection.textContent = "RECONNECTING";
+    connection.classList.remove("online");
+  });
 }

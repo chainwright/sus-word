@@ -2,12 +2,19 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import {
+  phaseRemainingMs,
   readerCountLabel,
   revealPayoffLabel,
   selectLobbyPlayers,
   selectRoundPlayers,
   selectVoteSuspects,
 } from "../public/display.js";
+
+test("overlay and card countdowns share the absolute phase deadline", () => {
+  assert.equal(phaseRemainingMs({ phaseEndsAt: 15_000, remainingMs: 99_000 }, 1_000, 10_000), 5_000);
+  assert.equal(phaseRemainingMs({ remainingMs: 8_000 }, 5_000, 7_000), 6_000);
+  assert.equal(phaseRemainingMs({ round: { remainingMs: 4_000 } }, 8_000, 9_500), 2_500);
+});
 
 test("reveal reader counts use the singular only for one person", () => {
   assert.equal(readerCountLabel(0), "0 people read\u00a0it");

@@ -53,3 +53,11 @@ export function revealPayoffLabel(result) {
     ? "Said out loud on stream"
     : readerCountLabel(safeResult.readerCount);
 }
+
+export function phaseRemainingMs(state, receivedAt = Date.now(), now = Date.now()) {
+  const safeState = state ?? {};
+  if (Number.isFinite(safeState.phaseEndsAt)) return Math.max(0, safeState.phaseEndsAt - now);
+  const relative = Number.isFinite(safeState.remainingMs)
+    ? safeState.remainingMs : safeState.round?.remainingMs;
+  return Number.isFinite(relative) ? Math.max(0, relative - (now - receivedAt)) : 0;
+}

@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Watch Sus Word</title>
     <link rel="icon" href="data:,">
-    <link rel="preload" href="/fonts/Oswald-Variable.ttf" as="font" type="font/ttf" crossorigin>
-    <link rel="preload" href="/fonts/CourierPrime-Bold.ttf" as="font" type="font/ttf" crossorigin>
+    <link rel="preload" href="/fonts/Oswald-Variable.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/CourierPrime-Bold.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/img/cork.jpg" as="image">
     <link rel="preload" href="/img/stopwatch.webp" as="image">
     <link rel="stylesheet" href="/watch.css">
@@ -41,7 +41,7 @@
               </div>
               <div id="stream-placeholder" class="frame-placeholder stream-placeholder" role="status">Connecting to the live round…</div>
               <div id="overlay-viewport" class="scaled-viewport overlay-viewport">
-                <iframe id="overlay-frame" title="Live Sus Word game overlay" src="/overlay" width="1280" height="720" loading="lazy"></iframe>
+                <iframe id="overlay-frame" title="Live Sus Word game overlay" src="/overlay" width="1280" height="720" loading="eager"></iframe>
               </div>
             </div>
             <aside id="stream-chat" class="stream-chat" aria-label="Simulated live chat">

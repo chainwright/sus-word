@@ -429,7 +429,43 @@ const WATCH_LAYOUT_CHECK = String.raw`(async () => {
   const revealed = document.querySelectorAll(".revealed-impostor").length;
   if (!expectReveal && revealed) failures.push({ check: "watch-role-leak", element: "#player-switcher" });
   if (expectReveal && !revealed) failures.push({ check: "watch-reveal-marker-missing", element: "#player-switcher" });
+  for (const [selector, painted] of [
+    ["#stream-placeholder", Boolean(document.querySelector("#overlay-frame")?.contentDocument?.querySelector("#stage > :not([hidden])"))],
+    ["#phone-placeholder", Boolean(document.querySelector("#card-frame")?.contentDocument?.querySelector("#card-root > *"))],
+  ]) {
+    const placeholder = document.querySelector(selector);
+    if (painted && (!placeholder?.classList.contains("is-ready") || getComputedStyle(placeholder).visibility !== "hidden")) {
+      failures.push({ check: "watch-placeholder-still-covering-live-frame", element: selector });
+    }
+  }
+  const fontResources = performance.getEntriesByType("resource").map(({ name }) => name);
+  if (!fontResources.some((name) => name.endsWith(".woff2"))) {
+    failures.push({ check: "watch-woff2-not-requested", element: "head" });
+  }
   return failures;
+})()`;
+
+const WATCH_RECONNECT_CHECK = String.raw`(async () => {
+  const socket = window.__susWordWatchSocket;
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    return [{ check: "watch-test-socket-not-open", element: "#connection-label" }];
+  }
+  const placeholder = document.querySelector("#stream-placeholder");
+  placeholder.classList.remove("is-ready");
+  placeholder.textContent = "Connecting to the live round…";
+  socket.close(4000, "browser reconnect check");
+  const deadline = Date.now() + 6500;
+  let sawReconnectStatus = false;
+  while (Date.now() < deadline) {
+    sawReconnectStatus ||= document.querySelector("#connection-label")?.textContent.includes("Reconnecting");
+    if (sawReconnectStatus && placeholder.textContent.includes("Reconnecting")) return [];
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return [{
+    check: sawReconnectStatus ? "watch-reconnect-placeholder-missing" : "watch-reconnect-status-missing",
+    element: "#connection-label",
+    detail: (document.querySelector("#connection-label")?.textContent || "") + " · " + placeholder.textContent,
+  }];
 })()`;
 
 const WATCH_PLACEHOLDER_CHECK = String.raw`(() => {
@@ -638,6 +674,12 @@ async function main() {
       }, dimensions, false);
       console.log(`✓ watch first-paint placeholders at ${size}`);
     }
+    await loadRoute(devtools, sessionId, {
+      label: "watch reconnect status after forced socket close",
+      url: `${origin}/watch`,
+      verifyExpression: WATCH_RECONNECT_CHECK,
+    }, { width: 1280, height: 720 }, false);
+    console.log("✓ watch reconnect status after forced socket close");
     await loadRoute(devtools, sessionId, {
       label: "hosted demo host redirect",
       url: `${origin}/host`,

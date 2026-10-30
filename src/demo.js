@@ -28,20 +28,83 @@ const CORE_PROFILES = [
 
 const AVATAR_COLORS = ["#51405f", "#7653a5", "#d56a3d", "#477b86", "#81613f", "#3f6881"];
 
-const CHAT_LINES = [
+const CHAT_BASE_LINES = [
   "did anyone else hear that thunder just now",
-  "my stream lights always flicker when the weather turns",
-  "I finally remembered to make dinner before going live",
-  "the rain against the window is actually kind of relaxing",
+  "my stream lights flickered twice a minute ago",
+  "I finally remembered to eat before going live",
+  "the rain against the window is actually relaxing",
   "this soundtrack makes every tiny task feel dramatic",
-  "my cat has claimed the warmest spot on the desk",
-  "I should probably charge my phone before the power dips",
+  "my cat claimed the warmest spot on the desk",
+  "I should charge my phone before the power dips",
   "the cozy setup is doing a lot of work tonight",
   "someone remind me to close the kitchen window later",
-  "I cannot believe that last round ended like that",
+  "I still cannot believe how the last round ended",
   "tea was absolutely the correct choice for this weather",
   "the room got very quiet all of a sudden",
+  "I moved my drink away from the keyboard for once",
+  "the lamp makes this room look much warmer on camera",
+  "my headphones picked a strange time to feel uncomfortable",
+  "I keep checking the window whenever the wind picks up",
+  "the loading screen music is stuck in my head now",
+  "I found the charger that was missing all afternoon",
+  "my desk is somehow messier after I cleaned it",
+  "the weather app really undersold this storm",
+  "I can hear someone making snacks in the kitchen",
+  "that transition was smoother than I expected",
+  "I turned the volume down and immediately missed a sound",
+  "the little clock on my desk is running fast again",
+  "my chair only squeaks when the room gets quiet",
+  "I forgot how early it gets dark this time of year",
+  "the chat pace is perfect for a rainy night",
+  "I nearly knocked over the stack beside my monitor",
+  "the warm light makes the whole setup feel calmer",
+  "my browser has far too many tabs open right now",
+  "I heard the rain start before I saw it outside",
+  "the next cup of tea is definitely happening soon",
+  "my cat just looked directly at the camera again",
+  "I finally found a comfortable volume for the music",
+  "the window keeps rattling when the wind changes",
+  "I need to tidy these cables after the stream",
 ];
+
+const CHAT_FOLLOWUPS = [
+  "Cozy timing",
+  "Perfect weather for it",
+  "Chat gets it",
+];
+
+export function createDemoChatPlan(random = Math.random) {
+  const pool = CHAT_FOLLOWUPS.flatMap((followup) => (
+    CHAT_BASE_LINES.map((line) => `${line}. ${followup}`)
+  ));
+  for (let index = pool.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(random() * (index + 1));
+    [pool[index], pool[swap]] = [pool[swap], pool[index]];
+  }
+  let cursor = 0;
+  return {
+    size: pool.length,
+    next() {
+      if (cursor >= pool.length) return null;
+      const line = pool[cursor];
+      cursor += 1;
+      return line;
+    },
+  };
+}
+
+export function demoRoundSchedule(durationMs, random = Math.random) {
+  const duration = Math.max(1, Number(durationMs) || 1);
+  const smuggleAt = Math.round(duration * (.22 + random() * .56));
+  return {
+    decoyAt: Math.round(duration * (.18 + random() * .16)),
+    smuggleAt,
+    accuseAt: Math.round(Math.min(duration * .92, Math.max(
+      duration * (.78 + random() * .1),
+      smuggleAt + duration * .08,
+    ))),
+  };
+}
 
 const PLURAL_WORDS = new Set(["pants", "socks", "shoes", "boots", "shorts", "glasses", "scissors", "notes"]);
 
@@ -274,8 +337,8 @@ function connectVoiceSocket(port) {
   });
 }
 
-async function populateLobby(game, profiles, fast) {
-  const pause = profiles.length > 12 ? (fast ? 10 : 25) : fast ? 350 : 700;
+async function populateLobby(game, profiles, fast, pauseScale = 1) {
+  const pause = Math.max(0, (profiles.length > 12 ? (fast ? 10 : 25) : fast ? 350 : 700) * pauseScale);
   for (const profile of profiles) {
     await sleep(pause);
     game.join(profile);
@@ -285,10 +348,10 @@ async function populateLobby(game, profiles, fast) {
   }
 }
 
-async function postMessage(game, service, player, text, sequence, voiceSocket, fast) {
+async function postMessage(game, service, player, text, sequence, voiceSocket, fast, logger = console) {
   if (fast && player.login === "streamer") {
     voiceSocket.send(JSON.stringify({ type: "voice", text }));
-    console.log(`[voice] ${player.login}: ${text}`);
+    logger.log?.(`[voice] ${player.login}: ${text}`);
     return null;
   }
   const tableId = game.playerTables.get(player.id);
@@ -301,14 +364,16 @@ async function postMessage(game, service, player, text, sequence, voiceSocket, f
       id: `demo-${game.roundNumber}-${sequence}`,
       text,
     });
-  if (result.ok) console.log(`[chat] ${player.login}: ${text}`);
+  if (result.ok) logger.log?.(`[chat] ${player.login}: ${text}`);
   return result;
 }
 
-async function playRoundChat(game, service, profiles, fast, voiceSocket, outcomes) {
-  const interval = fast ? 3_500 : 6_000;
-  const decoyAt = game.durations.round * .3;
-  const smuggleAt = game.durations.round * .55;
+async function playRoundChat(game, service, profiles, fast, voiceSocket, outcomes, options = {}) {
+  const pauseScale = Math.max(0, Number(options.pauseScale ?? 1));
+  const interval = Math.max(1, (fast ? 3_500 : 6_000) * pauseScale);
+  const schedule = options.schedule ?? demoRoundSchedule(game.durations.round, options.random);
+  const linePlan = options.linePlan ?? createDemoChatPlan(options.random);
+  const logger = options.logger ?? console;
   const assignments = [...game.tables.values()].flatMap((table) => (
     table.impostors.map((assignment) => ({ table, assignment }))
   ));
@@ -319,7 +384,7 @@ async function playRoundChat(game, service, profiles, fast, voiceSocket, outcome
 
   for (const { table, assignment } of assignments) {
     const impostor = profiles.find(({ id }) => id === assignment.playerId);
-    console.log(`[demo] T${table.id}: @${impostor.login} has ${assignment.word.toUpperCase()}`);
+    logger.log?.(`[demo] T${table.id}: @${impostor.login} has ${assignment.word.toUpperCase()}`);
   }
   while (game.phase === PHASES.ROUND) {
     await sleep(interval);
@@ -327,26 +392,26 @@ async function playRoundChat(game, service, profiles, fast, voiceSocket, outcome
     const elapsed = Date.now() - game.currentRound.startedAt;
     sequence += 1;
 
-    if (!decoySent && elapsed >= decoyAt) {
+    if (!decoySent && elapsed >= schedule.decoyAt) {
       for (const { table, assignment } of assignments) {
         const decoy = [...table.roster.values()].find(({ id }) => id !== assignment.playerId);
         sequence += 1;
-        await postMessage(game, service, decoy, demoWordLines(assignment).decoy, sequence, voiceSocket, fast);
+        await postMessage(game, service, decoy, demoWordLines(assignment).decoy, sequence, voiceSocket, fast, logger);
       }
       decoySent = true;
       continue;
     }
-    if (!smuggleSent && elapsed >= smuggleAt) {
+    if (!smuggleSent && elapsed >= schedule.smuggleAt) {
       for (const { assignment } of assignments) {
         const impostor = profiles.find(({ id }) => id === assignment.playerId);
         sequence += 1;
-        await postMessage(game, service, impostor, demoWordLines(assignment).smuggle, sequence, voiceSocket, fast);
+        await postMessage(game, service, impostor, demoWordLines(assignment).smuggle, sequence, voiceSocket, fast, logger);
       }
       smuggleSent = true;
       continue;
     }
 
-    if (!accusationsSent && elapsed >= game.durations.round * .7) {
+    if (!accusationsSent && elapsed >= schedule.accuseAt) {
       for (const table of game.tables.values()) {
         const [assignment] = table.impostors;
         const impostor = table.roster.get(assignment.playerId);
@@ -367,7 +432,7 @@ async function playRoundChat(game, service, profiles, fast, voiceSocket, outcome
               type: "accuse", target: impostor.login, word: guessedWord,
             });
           }
-          console.log(`[accuse] @${detectives[0].login} ${outcome.bust ? "busted" : "missed"} @${impostor.login}`);
+          logger.log?.(`[accuse] @${detectives[0].login} ${outcome.bust ? "busted" : "missed"} @${impostor.login}`);
         }
         if (detectives[1]) {
           const result = table.id === game.featuredTableId
@@ -379,7 +444,7 @@ async function playRoundChat(game, service, profiles, fast, voiceSocket, outcome
             : service.handleCardAction(demoSessionId(detectives[1]), {
               type: "accuse", target: impostor.login, word: "banana",
             });
-          console.log(`[accuse] @${detectives[1].login} missed (${result.correct ? "right" : "wrong"})`);
+          logger.log?.(`[accuse] @${detectives[1].login} missed (${result.correct ? "right" : "wrong"})`);
         }
       }
       accusationsSent = true;
@@ -387,14 +452,14 @@ async function playRoundChat(game, service, profiles, fast, voiceSocket, outcome
     }
 
     const player = profiles[(sequence - 1) % profiles.length];
-    const text = CHAT_LINES[(sequence - 1) % CHAT_LINES.length];
-    await postMessage(game, service, player, text, sequence, voiceSocket, fast);
+    const text = linePlan.next() ?? "chat is moving quickly tonight";
+    await postMessage(game, service, player, text, sequence, voiceSocket, fast, logger);
   }
 }
 
-async function castVotes(game, service, fast, outcomes) {
+async function castVotes(game, service, fast, outcomes, pauseScale = 1, logger = console) {
   const seated = [...game.tables.values()].reduce((sum, table) => sum + table.roster.size, 0);
-  const pause = seated > 12 ? (fast ? 35 : 75) : fast ? 2_500 : 4_000;
+  const pause = Math.max(1, (seated > 12 ? (fast ? 35 : 75) : fast ? 2_500 : 4_000) * pauseScale);
   for (const table of game.tables.values()) {
     for (const player of table.roster.values()) {
       if (game.phase !== PHASES.VOTE) return;
@@ -411,7 +476,7 @@ async function castVotes(game, service, fast, outcomes) {
       } else {
         service.handleCardAction(demoSessionId(player), { type: "vote", target: target.login });
       }
-      console.log(`[vote] T${table.id}: @${player.login} voted for @${target.login}`);
+      logger.log?.(`[vote] T${table.id}: @${player.login} voted for @${target.login}`);
     }
   }
 }
@@ -427,6 +492,11 @@ export async function driveDemoRound(game, actions) {
 export async function runDemo(options = {}) {
   const fast = options.fast ?? process.argv.includes("--fast");
   const playerCount = Number(options.players ?? requestedPlayerCount());
+  const pauseScale = Math.max(0, Number(options.pauseScale ?? 1));
+  const roundsPerSession = Math.max(1, Number(options.roundsPerSession ?? 3));
+  const maxSessions = Number.isFinite(options.maxSessions) ? Math.max(1, Number(options.maxSessions)) : Infinity;
+  const report = typeof options.onDemoEvent === "function" ? options.onDemoEvent : () => {};
+  const logger = options.logger ?? console;
   const profiles = demoProfiles(playerCount);
   const port = Number(options.port ?? process.env.PORT ?? 3000);
   const publicUrlSetting = options.publicUrl ?? process.env.DEMO_PUBLIC_URL;
@@ -436,11 +506,16 @@ export async function runDemo(options = {}) {
   const behaviorRandom = seededRandom(`${seed}:behavior`);
   const missOffset = Math.floor(behaviorRandom() * 3);
   let claimIndex = 0;
+  const baseDurations = fast
+    ? { ...FAST_DURATIONS, lobby: demoLobbyDuration(true) }
+    : { lobby: demoLobbyDuration(false) };
   const game = new Game({
-    durations: fast ? { ...FAST_DURATIONS, lobby: demoLobbyDuration(true) } : { lobby: demoLobbyDuration(false) },
+    durations: { ...baseDurations, ...(options.durations || {}) },
     codeGenerator: () => claimCode(claimIndex++),
     random: gameRandom,
     wordPicker: demoWordPicker(gameRandom),
+    // The demo owns the intermission so its FINAL decision cannot race the lobby timer.
+    autoStartLobby: false,
     // Hosted showcases use two readable tables at ten players; normal rehearsals keep the 12-player rules cap.
     maxTableSize: options.maxTableSize ?? demoTableCapacity(playerCount, publicUrlSetting),
   });
@@ -448,12 +523,15 @@ export async function runDemo(options = {}) {
     game,
     port,
     env: { PORT: String(port), PUBLIC_URL: publicUrl, CHANNEL_LOGIN: "streamer", DEMO_MODE: "1" },
+    logger,
   });
   let running = true;
+  let stopped = false;
   let voiceSocket = null;
 
   async function stop() {
-    if (!running) return;
+    if (stopped) return;
+    stopped = true;
     running = false;
     game.reset();
     voiceSocket?.close();
@@ -463,52 +541,78 @@ export async function runDemo(options = {}) {
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
 
-  const address = await service.start();
-  voiceSocket = await connectVoiceSocket(address.port);
-  console.log(`[demo] Watch a round: ${publicUrl}/watch`);
-  console.log(`[demo] ${fast ? "Fast rehearsal" : "Full timing"} mode.`);
-  console.log(`[demo] Simulating ${profiles.length} players with seed "${seed}".`);
-  console.log(`[demo] Follow player 1's card: ${publicUrl}/card?demo=1`);
-
-  await populateLobby(game, profiles, fast);
-  game.start();
-  let round = 0;
+  let completedSessions = 0;
   let sessionRounds = 0;
+  let chatPlan = createDemoChatPlan(behaviorRandom);
+  try {
+    const address = await service.start();
+    voiceSocket = await connectVoiceSocket(address.port);
+    logger.log?.(`[demo] Watch a round: ${publicUrl}/watch`);
+    logger.log?.(`[demo] ${fast ? "Fast rehearsal" : "Full timing"} mode.`);
+    logger.log?.(`[demo] Simulating ${profiles.length} players with seed "${seed}".`);
+    logger.log?.(`[demo] Follow player 1's card: ${publicUrl}/card?demo=1`);
 
-  while (running) {
-    const intermission = demoIntermissionPlan(fast, game.sessionOver);
-    if (game.sessionOver) {
-      await sleep(intermission.sessionOverMs);
-      if (!running) break;
-      game.prepareNextSession(intermission.nextSessionMs);
-      await sleep(intermission.nextSessionMs);
-      if (!running) break;
-      resetDemoSession(game, profiles);
-      sessionRounds = 0;
-    } else {
-      await sleep(intermission.lobbyMs);
+    await populateLobby(game, profiles, fast, pauseScale);
+    game.start();
+
+    while (running) {
+      const intermission = demoIntermissionPlan(fast, game.sessionOver);
+      if (game.sessionOver) {
+        completedSessions += 1;
+        report({ type: "sessionOver", session: completedSessions, roundNumber: game.roundNumber });
+        await sleep(intermission.sessionOverMs * pauseScale);
+        if (!running) break;
+        game.prepareNextSession(intermission.nextSessionMs * pauseScale);
+        await sleep(intermission.nextSessionMs * pauseScale);
+        if (!running) break;
+        resetDemoSession(game, profiles);
+        sessionRounds = 0;
+        chatPlan = createDemoChatPlan(behaviorRandom);
+        report({
+          type: "sessionReset",
+          session: completedSessions + 1,
+          roundNumber: game.roundNumber,
+          scores: [...game.scores.values()],
+        });
+        if (completedSessions >= maxSessions) break;
+        continue;
+      }
+
+      if (game.phase === PHASES.LOBBY) {
+        await sleep(intermission.lobbyMs * pauseScale);
+        if (!running) break;
+        if (sessionRounds >= roundsPerSession) {
+          if (shouldStartDemoFinal(sessionRounds, game.lastRoundSeating)) game.final();
+          else game.completeSession();
+        } else game.go();
+      }
+      if (game.phase !== PHASES.ROUND) continue;
+
+      const finalRound = game.isFinalRound;
+      logger.log?.(`[demo] Starting ${finalRound ? "FINAL" : `round ${game.roundNumber}`}`);
+      report({ type: "roundStart", final: finalRound, roundNumber: game.roundNumber, session: completedSessions + 1 });
+      const outcomes = demoRoundOutcomes(game, behaviorRandom, missOffset);
+      const schedule = demoRoundSchedule(game.durations.round, behaviorRandom);
+      report({ type: "roundSchedule", final: finalRound, roundNumber: game.roundNumber, ...schedule });
+      await driveDemoRound(game, {
+        playChat: () => playRoundChat(game, service, profiles, fast, voiceSocket, outcomes, {
+          linePlan: chatPlan,
+          schedule,
+          pauseScale,
+          random: behaviorRandom,
+          logger,
+        }),
+        castVotes: () => castVotes(game, service, fast, outcomes, pauseScale, logger),
+      });
+      logger.log?.(`[demo] ${game.lastReveal.botMessage}`);
+      if (!finalRound) sessionRounds += 1;
+      await waitForPhase(game, PHASES.LOBBY);
     }
-    if (!running) break;
-    round += 1;
-    let finalRound = game.isFinalRound;
-    if (game.phase === PHASES.LOBBY) {
-      finalRound = shouldStartDemoFinal(sessionRounds, game.lastRoundSeating);
-      if (finalRound) game.final();
-      else game.go();
-    }
-    if (game.phase !== PHASES.ROUND) continue;
-    console.log(`[demo] Starting ${finalRound ? "FINAL" : `round ${round}`}`);
-    const outcomes = demoRoundOutcomes(game, behaviorRandom, missOffset);
-    await driveDemoRound(game, {
-      playChat: () => playRoundChat(game, service, profiles, fast, voiceSocket, outcomes),
-      castVotes: () => castVotes(game, service, fast, outcomes),
-    });
-    console.log(`[demo] ${game.lastReveal.botMessage}`);
-    if (!finalRound) sessionRounds += 1;
-    await waitForPhase(game, PHASES.LOBBY);
-    if (!finalRound && sessionRounds >= 3 && game.lastRoundSeating.length === 1) {
-      game.completeSession();
-    }
+    return { completedSessions, roundNumber: game.roundNumber, scores: [...game.scores.values()] };
+  } finally {
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
+    await stop();
   }
 }
 

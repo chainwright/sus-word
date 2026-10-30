@@ -4,7 +4,9 @@ import { test } from "node:test";
 
 import Game, { PHASES } from "../src/game.js";
 import {
+  createDemoChatPlan,
   demoRoundOutcomes,
+  demoRoundSchedule,
   demoIntermissionPlan,
   demoLobbyDuration,
   demoProfiles,
@@ -16,6 +18,7 @@ import {
   resetDemoSession,
   requestedPlayerCount,
   requestedSeed,
+  runDemo,
   seededRandom,
   selectDemoVoteTarget,
   shouldStartDemoFinal,
@@ -86,6 +89,64 @@ test("seeded demo outcomes repeat and include both hits and misses", () => {
   assert.ok(first.some(({ bust }) => !bust));
   assert.ok(first.some(({ catchByVote }) => catchByVote));
   assert.ok(first.some(({ catchByVote }) => !catchByVote));
+});
+
+test("demo chat does not repeat within a session and seeded slip times vary", () => {
+  const first = createDemoChatPlan(seededRandom("chat-plan-29"));
+  const second = createDemoChatPlan(seededRandom("chat-plan-29"));
+  const firstLines = Array.from({ length: first.size }, () => first.next());
+  const secondLines = Array.from({ length: second.size }, () => second.next());
+  assert.deepEqual(secondLines, firstLines, "a rehearsal seed must reproduce its chat order");
+  assert.equal(new Set(firstLines).size, firstLines.length, "a session must not repeat a normal chat line");
+
+  const randomA = seededRandom("slip-plan-29");
+  const randomB = seededRandom("slip-plan-29");
+  const schedulesA = Array.from({ length: 12 }, () => demoRoundSchedule(180_000, randomA));
+  const schedulesB = Array.from({ length: 12 }, () => demoRoundSchedule(180_000, randomB));
+  assert.deepEqual(schedulesB, schedulesA);
+  assert.ok(new Set(schedulesA.map(({ smuggleAt }) => smuggleAt)).size > 8, "smuggles must not land at one scripted time");
+  assert.ok(schedulesA.every(({ smuggleAt }) => smuggleAt >= 39_600 && smuggleAt <= 140_400));
+  assert.ok(schedulesA.every(({ smuggleAt, accuseAt }) => accuseAt > smuggleAt), "the hunt must open after the word lands");
+});
+
+test("the real demo loop completes and resets two multi-table sessions", async () => {
+  const durations = {
+    lobby: 30,
+    categoryHint: 25,
+    letterHint: 55,
+    round: 90,
+    vote: 80,
+    voteGrace: 5,
+    revealOne: 18,
+    revealTwo: 24,
+    cardResultDelay: 5,
+    championHold: 20,
+  };
+  for (const [players, maxTableSize] of [[30, 12], [10, 6]]) {
+    const events = [];
+    const result = await runDemo({
+      fast: true,
+      players,
+      maxTableSize,
+      port: 0,
+      seed: `loop-${players}-29`,
+      maxSessions: 2,
+      pauseScale: .001,
+      durations,
+      logger: { log() {}, error() {} },
+      onDemoEvent: (event) => events.push(event),
+    });
+    assert.equal(result.completedSessions, 2, `${players} players must finish two sessions`);
+    const starts = events.filter(({ type }) => type === "roundStart");
+    for (const session of [1, 2]) {
+      const sessionStarts = starts.filter((event) => event.session === session);
+      assert.deepEqual(sessionStarts.map(({ final }) => final), [false, false, false, true]);
+      assert.deepEqual(sessionStarts.map(({ roundNumber }) => roundNumber), [1, 2, 3, 4]);
+    }
+    const resets = events.filter(({ type }) => type === "sessionReset");
+    assert.equal(resets.length, 2);
+    assert.ok(resets.every(({ roundNumber, scores }) => roundNumber === 0 && scores.every((score) => score === 0)));
+  }
 });
 
 test("the demo lets the game choose a fresh catalog word each round", async () => {

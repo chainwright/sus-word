@@ -1,6 +1,6 @@
-@font-face{font-family:"Courier Prime";src:url("/fonts/CourierPrime-Regular.ttf") format("truetype");font-weight:400;font-display:swap}
-@font-face{font-family:"Courier Prime";src:url("/fonts/CourierPrime-Bold.ttf") format("truetype");font-weight:700;font-display:swap}
-@font-face{font-family:"Oswald";src:url("/fonts/Oswald-Variable.ttf") format("truetype-variations");font-weight:200 700;font-display:swap}
+@font-face{font-family:"Courier Prime";src:url("/fonts/CourierPrime-Regular.woff2") format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Courier Prime";src:url("/fonts/CourierPrime-Bold.woff2") format("woff2");font-weight:700;font-display:swap}
+@font-face{font-family:"Oswald";src:url("/fonts/Oswald-Variable.woff2") format("woff2");font-weight:200 700;font-display:swap}
 :root{--paper:#f3e4c2;--ink:#2d211d;--red:#b32f32;--gold:#d8ac59;--night:#100c0b;--panel:#211713;--line:#6f4932}
 *{box-sizing:border-box}
 html,body{min-width:0;margin:0;background:#100c0b;color:var(--paper);font-family:"Courier Prime",monospace}

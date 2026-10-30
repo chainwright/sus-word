@@ -1,4 +1,4 @@
-import { readerCountLabel, revealPayoffLabel } from "/display.js";
+import { phaseRemainingMs, readerCountLabel, revealPayoffLabel } from "/display.js";
 import {
   caseFileHeadline,
   championBoardModel,
@@ -27,6 +27,8 @@ const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 let state = null;
 let receivedAt = Date.now();
 let reconnectDelay = 1_000;
+let overlaySocket = null;
+let reconnectTimer = null;
 let previousCounts = {};
 let previousHint = {};
 let previousLobbyIds = new Set();
@@ -86,9 +88,7 @@ function fit() {
 }
 
 function remaining() {
-  if (Number.isFinite(state?.remainingMs)) return Math.max(0, state.remainingMs - (Date.now() - receivedAt));
-  if (Number.isFinite(state?.round?.remainingMs)) return Math.max(0, state.round.remainingMs - (Date.now() - receivedAt));
-  return Math.max(0, (state?.phaseEndsAt || Date.now()) - Date.now());
+  return phaseRemainingMs(state, receivedAt);
 }
 
 function clock(ms) {
@@ -784,6 +784,7 @@ function render(next) {
     }
   }
   updateClocks();
+  if (parent !== window) parent.postMessage({ type: "sus-word-frame-ready", view: "overlay" }, location.origin);
 }
 
 function updateClocks() {
@@ -862,9 +863,22 @@ function mockState(kind) {
 function connect() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   const socket = new WebSocket(`${protocol}//${location.host}/ws?view=overlay`);
-  socket.addEventListener("open", () => { reconnectDelay = 1_000; $("#connection-badge").hidden = true; });
+  overlaySocket = socket;
+  socket.addEventListener("open", () => {
+    clearTimeout(reconnectTimer);
+    reconnectDelay = 1_000;
+    $("#connection-badge").hidden = true;
+  });
   socket.addEventListener("message", (event) => { const payload = JSON.parse(event.data); if (payload.type === "state") render(payload.data); });
-  socket.addEventListener("close", () => { $("#connection-badge").hidden = false; setTimeout(connect, reconnectDelay); reconnectDelay = Math.min(15_000, reconnectDelay * 1.7); });
+  socket.addEventListener("error", () => { $("#connection-badge").hidden = false; });
+  socket.addEventListener("close", () => {
+    if (overlaySocket !== socket) return;
+    overlaySocket = null;
+    $("#connection-badge").hidden = false;
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connect, reconnectDelay);
+    reconnectDelay = Math.min(15_000, reconnectDelay * 1.7);
+  });
 }
 
 fit();

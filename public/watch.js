@@ -13,6 +13,8 @@ const holdPlaceholders = new URLSearchParams(location.search).get("holdPlacehold
 let activePlayer = 1;
 let socket = null;
 let reconnectDelay = 1_000;
+let reconnectTimer = null;
+const placeholderTimers = new Map();
 let revealedImpostors = new Set();
 let revealMarkerTimer = null;
 let markerRound = null;
@@ -33,8 +35,20 @@ addEventListener("load", fitFrames);
 
 function markFrameReady(frame, placeholder) {
   if (holdPlaceholders) return;
+  clearTimeout(placeholderTimers.get(placeholder));
+  placeholderTimers.delete(placeholder);
   placeholder?.classList.add("is-ready");
   frame?.classList.add("is-ready");
+}
+
+function armPlaceholder(placeholder, reconnectingCopy) {
+  if (!placeholder || holdPlaceholders) return;
+  clearTimeout(placeholderTimers.get(placeholder));
+  placeholderTimers.set(placeholder, setTimeout(() => {
+    if (placeholder.classList.contains("is-ready")) return;
+    const status = placeholder.querySelector("span") || placeholder;
+    status.textContent = reconnectingCopy;
+  }, 5_000));
 }
 
 function waitForFramePaint(frame, placeholder, selector) {
@@ -51,6 +65,17 @@ function waitForFramePaint(frame, placeholder, selector) {
 
 overlayFrame.addEventListener("load", () => waitForFramePaint(overlayFrame, document.querySelector("#stream-placeholder"), "#stage > :not([hidden])"));
 cardFrame.addEventListener("load", () => waitForFramePaint(cardFrame, document.querySelector("#phone-placeholder"), "#card-root > *"));
+addEventListener("message", (event) => {
+  if (event.origin !== location.origin || event.data?.type !== "sus-word-frame-ready") return;
+  if (event.source === overlayFrame.contentWindow && event.data.view === "overlay") {
+    markFrameReady(overlayFrame, document.querySelector("#stream-placeholder"));
+  }
+  if (event.source === cardFrame.contentWindow && event.data.view === "card") {
+    markFrameReady(cardFrame, document.querySelector("#phone-placeholder"));
+  }
+});
+armPlaceholder(document.querySelector("#stream-placeholder"), "Reconnecting to the live round…");
+armPlaceholder(document.querySelector("#phone-placeholder"), "Reconnecting to player 1…");
 
 function voteLike(message) {
   return message?.isVote || message?.voteMessage || /^\s*(?:!vote\s+|[!#]?\d+\s*$)/i.test(message?.text || "");
@@ -126,7 +151,9 @@ function connect() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   const next = new WebSocket(`${protocol}//${location.host}/ws?view=overlay`);
   socket = next;
+  window.__susWordWatchSocket = next;
   next.addEventListener("open", () => {
+    clearTimeout(reconnectTimer);
     reconnectDelay = 1_000;
     connectionLabel.textContent = "Connected to the live round";
   });
@@ -134,10 +161,19 @@ function connect() {
     const payload = JSON.parse(event.data);
     if (payload.type === "state") renderState(payload.data);
   });
+  next.addEventListener("error", () => {
+    if (socket === next) connectionLabel.textContent = "Reconnecting to the round…";
+  });
   next.addEventListener("close", () => {
     if (socket !== next) return;
+    socket = null;
     connectionLabel.textContent = "Reconnecting to the round…";
-    setTimeout(connect, reconnectDelay);
+    const streamPlaceholder = document.querySelector("#stream-placeholder");
+    if (!streamPlaceholder?.classList.contains("is-ready")) {
+      armPlaceholder(streamPlaceholder, "Reconnecting to the live round…");
+    }
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connect, reconnectDelay);
     reconnectDelay = Math.min(15_000, reconnectDelay * 1.7);
   });
 }
@@ -150,9 +186,11 @@ switcher.addEventListener("click", (event) => {
     candidate.setAttribute("aria-pressed", String(candidate === button));
   }
   followLabel.textContent = `Follow player ${activePlayer}`;
-  document.querySelector("#phone-placeholder")?.classList.remove("is-ready");
-  const phoneStatus = document.querySelector("#phone-placeholder span");
+  const phonePlaceholder = document.querySelector("#phone-placeholder");
+  phonePlaceholder?.classList.remove("is-ready");
+  const phoneStatus = phonePlaceholder?.querySelector("span");
   if (phoneStatus) phoneStatus.textContent = `Connecting to player ${activePlayer}…`;
+  armPlaceholder(phonePlaceholder, `Reconnecting to player ${activePlayer}…`);
   cardFrame.src = `/card?demo=${activePlayer}`;
 });
 

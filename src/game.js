@@ -149,6 +149,7 @@ export class Game extends EventEmitter {
     };
     this.random = options.random ?? Math.random;
     this.wordPicker = options.wordPicker ?? null;
+    this.autoStartLobby = options.autoStartLobby !== false;
     this.maxTableSize = Math.max(3, Math.min(12, Number(options.maxTableSize) || 12));
     this.codeGenerator = options.codeGenerator ?? null;
     this.words = options.words ?? WORDS;
@@ -1492,7 +1493,7 @@ export class Game extends EventEmitter {
   }
 
   #maybeAutoStartLobby() {
-    if (this.state === PHASES.LOBBY && this.lobbyOpenedAt !== null
+    if (this.autoStartLobby && this.state === PHASES.LOBBY && this.lobbyOpenedAt !== null
       && this.#now() - this.lobbyOpenedAt >= this.durations.lobby
       && [...this.players.values()].filter(({ claimed }) => claimed).length >= 3) this.go();
   }
@@ -1527,6 +1528,7 @@ export class Game extends EventEmitter {
   }
 
   #armLobbyTimer() {
+    if (!this.autoStartLobby) return;
     this.#setTimer("lobby", this.durations.lobby, () => {
       if (this.state !== PHASES.LOBBY) return;
       if (this.sessionOver) return;
