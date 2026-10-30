@@ -25,6 +25,7 @@ let audioContext = null;
 let wakeLock = null;
 let signaledRound = null;
 let nameCheckTimer = null;
+let claimHelpTimer = null;
 let toastTimer = null;
 let muted = localStorage.getItem("sus-word-muted") === "true";
 let chatDraft = "";
@@ -242,6 +243,12 @@ function renderClaim(claim) {
   const steps = node("ol", "claim-steps");
   steps.append(node("li", "", `Paste it in Twitch chat from @${claim.login}`), node("li", "", "Come back here. Your role appears when the round starts."));
   sheet.append(code, copy, steps);
+  const help = node("p", "claim-help", "Not linked yet? Twitch sometimes hides messages from brand-new accounts. Check that your message appears for other viewers, or ask the streamer to mark you as trusted.");
+  help.hidden = true;
+  sheet.append(help);
+  const createdAt = Number(claim.createdAt);
+  const helpAt = (Number.isFinite(createdAt) ? createdAt : Date.now()) + 25_000;
+  claimHelpTimer = setTimeout(() => { help.hidden = false; }, Math.max(0, helpAt - Date.now()));
   if (claim.error) sheet.append(node("p", "wrong-account", claim.error));
   const change = node("button", "change-name", "Change name");
   change.type = "button";
@@ -543,6 +550,8 @@ function render(nextState) {
     if (parent !== window) parent.postMessage({ type: "sus-word-frame-ready", view: "card" }, location.origin);
     return;
   }
+  clearTimeout(claimHelpTimer);
+  claimHelpTimer = null;
   lastRenderSignature = nextSignature;
   const screen = cardScreen(state);
   const signal = ["imposter", "detective"].includes(screen) && state.state === "ROUND" && state.roundNumber !== signaledRound;
@@ -634,7 +643,9 @@ function updateTimers() {
   const remaining = remainingMs();
   for (const timer of document.querySelectorAll("[data-timer='phase']")) timer.textContent = `⏱ ${formatClock(remaining)}`;
   for (const timer of document.querySelectorAll("[data-timer='vote']")) timer.textContent = formatClock(remaining);
-  for (const timer of document.querySelectorAll("[data-timer='lobby']")) timer.textContent = state.state === "LOBBY" ? `LOBBY ${formatClock(remaining)}` : "PRIVATE";
+  for (const timer of document.querySelectorAll("[data-timer='lobby']")) timer.textContent = state.state === "LOBBY"
+    ? state.lobbyAutoStart === false ? "WAITING" : `LOBBY ${formatClock(remaining)}`
+    : "PRIVATE";
   for (const timer of document.querySelectorAll("[data-timer='hold']")) timer.textContent = "ON STREAM";
   const bar = document.querySelector(".vote-progress i");
   if (bar) bar.style.transform = `scaleX(${voteProgress(state, Date.now() - receivedAt)})`;
@@ -705,12 +716,13 @@ function mockCard(kind) {
     remainingMs: 42_000,
     nameCheck: { seen: true, message: "✓ @pixel_mara is in chat" },
   };
-  if (["join-wrong", "claim"].includes(kind)) return {
+  if (["join-wrong", "claim", "claim-help"].includes(kind)) return {
     linked: false,
     role: null,
     pendingClaim: {
       login: "pixel_mara",
       code: "QMYP",
+      createdAt: kind === "claim-help" ? Date.now() - 26_000 : Date.now(),
       expiresAt: Date.now() + 570_000,
       ...(kind === "join-wrong" ? { error: "@quietfox this code was made for @pixel_mara. Open the card and type your own Twitch name" } : {}),
     },
@@ -762,7 +774,7 @@ document.addEventListener("visibilitychange", () => {
 
 setInterval(updateTimers, 250);
 const mock = new URLSearchParams(location.search).get("mock");
-const mockKinds = ["join", "join-wrong", "claim", "imposter", "imposter-2", "delivered", "busted", "detective", "vote", "reveal-hold", "result", "champion", "side", "featured"];
+const mockKinds = ["join", "join-wrong", "claim", "claim-help", "imposter", "imposter-2", "delivered", "busted", "detective", "vote", "reveal-hold", "result", "champion", "side", "featured"];
 if (mockKinds.includes(mock)) {
   connection.textContent = "PREVIEW";
   render(mockCard(mock));

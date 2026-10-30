@@ -404,6 +404,7 @@ export function createSusWordServer(options = {}) {
       cardUrl: `${publicUrl}/card`,
       channelLogin: String(env.CHANNEL_LOGIN ?? "").trim().replace(/^@/, "").toLowerCase(),
       twitchConnected: Boolean(twitch?.connected),
+      demoMode,
     };
   }
 

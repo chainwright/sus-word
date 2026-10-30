@@ -155,6 +155,18 @@ describe("state machine and role selection", () => {
     assert.equal(game.getPublicState().remainingMs, DEFAULT_DURATIONS.lobby);
   });
 
+  test("a host-controlled lobby exposes no fake deadline", () => {
+    const { clock } = createGame();
+    const game = new Game({ clock, autoStartLobby: false });
+    game.start();
+    const state = game.getPublicState();
+    assert.equal(state.lobbyAutoStart, false);
+    assert.equal(state.phaseEndsAt, null);
+    assert.equal(state.remainingMs, 0);
+    clock.tick(DEFAULT_DURATIONS.lobby * 2);
+    assert.equal(game.state, PHASES.LOBBY);
+  });
+
   test("a real round exposes the new-round signal for four seconds", () => {
     const { clock, game } = createGame();
     claimPlayers(game);

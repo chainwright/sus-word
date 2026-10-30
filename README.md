@@ -49,7 +49,7 @@ One table is the whole game for a small stream. When more people claim cards, Su
 
 Tested in rehearsal with up to 200 virtual players; a 200-player round resolves in a few milliseconds.
 
-`npm test` runs the fast, browser-free logic suite. `npm run test:browser` launches local Chrome and loads every overlay mock at 854×480, 1280×720, and 1920×1080, checking real computed layout for board-cell overflow, clipped fixture names, name/VOTE overlap, chat and voice reveal captions, stamps, the champion panel, the pre-leader reveal card, BUSTED rows in every phase, long two-Imposter topics, and console errors. It opens every card mock at 390×844, then opens real demo-mode Imposter and Detective cards and verifies the live secret role payloads render without console errors. It also checks `/watch` at both desktop sizes and 390×844 for its above-the-fold pitch and frames, first-paint placeholders, WOFF2 font requests, socket-reconnect status, separate simulated chat, mobile card order, demo badge clearance, role privacy, and `/host` redirect. Set `CHROME_PATH` if Chrome is not in a standard location.
+`npm test` runs the fast, browser-free logic suite. `npm run test:browser` launches local Chrome and loads every overlay mock at 854×480, 1280×720, and 1920×1080, checking real computed layout for board-cell overflow, clipped fixture names, name/VOTE overlap, hint deadlines, the five-line live evidence tray, stable reveal-count geometry, chat and voice reveal captions, stamps, the champion panel, the pre-leader reveal card, BUSTED rows in every phase, long two-Imposter topics, and console errors. It opens every card mock at 390×844, including the delayed Twitch-link help, then opens real demo-mode Imposter and Detective cards and verifies the live secret role payloads render without console errors. It also checks `/watch` at both desktop sizes and 390×844 for its above-the-fold pitch and frames, first-paint placeholders, WOFF2 font requests, socket-reconnect status, separate simulated chat, mobile card order, demo badge clearance, role privacy, and `/host` redirect. Set `CHROME_PATH` if Chrome is not in a standard location.
 
 ## Streamer voice
 
@@ -77,9 +77,13 @@ Open the host page in Google Chrome and turn on **🎙 Mic**. Allow microphone a
 
 The card page first checks that the Twitch name spoke in chat recently, then gives the viewer a short code tied to an HTTP-only browser session. They send `!join CODE` from that same Twitch account. The secret role goes only to that browser session; viewers never authorize a Twitch account, and a wrong account cannot consume the code.
 
+### Joining troubleshooting
+
+If a code is still waiting after 25 seconds, check whether the `!join CODE` message is visible to other viewers. Twitch sometimes hides messages from brand-new or suspicious accounts before they ever reach the bot. Ask the streamer to mark the account as trusted or review it in Twitch's suspicious-user moderation controls, then send the command again.
+
 ## Built with Codex
 
-Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first rehearsal simulator was drafted outside Codex and later rewritten in Codex (step 15). The current game is covered by 148 browser-free automated tests, plus the real-Chrome mock and live-card check:
+Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first rehearsal simulator was drafted outside Codex and later rewritten in Codex (step 15). The current game is covered by 151 browser-free automated tests, plus the real-Chrome mock and live-card check:
 
 1. Pure game logic, word detection, scoring, and tests.
 2. Twitch OAuth, EventSub chat, server routes, and live state.
@@ -111,3 +115,4 @@ Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first reh
 28. A faster hosted-demo pitch, honest session timing, safer voting, meaningful finals, and cold-visitor browser coverage.
 29. Multi-table demo sessions that end in a FINAL and reset, socket reconnects, varied demo chat and slip timing, WOFF2 fonts, and a shared phase deadline.
 30. Session-wide no-repeat SIM chat, human pacing, and secret-safe reactions to real players.
+31. Honest host-controlled lobbies, clearer card onboarding, scheduled hint labels, stable reveal counts, and fuller live chat evidence.

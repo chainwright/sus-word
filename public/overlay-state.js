@@ -159,6 +159,33 @@ export function readyPlayersCopy(count, needed = 3) {
   return ready >= needed ? `${ready} ${noun} ready` : `${ready} ${noun} ready · ${needed} needed to start`;
 }
 
+export function lobbyPresentation(state = {}, needed = 3) {
+  const safeState = state ?? {};
+  const ready = Math.max(0, Number(safeState.claimedCount) || 0);
+  const noun = ready === 1 ? "card holder" : "card holders";
+  const readyText = `${ready} ${noun} ready`;
+  if (safeState.lobbyAutoStart === false) {
+    return { readyText, statusText: "Waiting for the host", showCountdown: false };
+  }
+  const missing = Math.max(0, needed - ready);
+  if (missing) {
+    return {
+      readyText,
+      statusText: `Waiting for ${missing} more player${missing === 1 ? "" : "s"}`,
+      showCountdown: false,
+    };
+  }
+  return {
+    readyText,
+    statusText: (Number(safeState.roundNumber) || 0) <= 1 ? "Starting in" : "Next round in",
+    showCountdown: true,
+  };
+}
+
+export function lobbyPlayerStatus(player = {}) {
+  return player?.claimed === false ? "CARD NOT OPENED" : "";
+}
+
 export function hasLeaderboardScore(entries) {
   return (entries || []).filter(Boolean).some((entry) => (Number(entry?.score ?? entry?.player?.score) || 0) !== 0);
 }

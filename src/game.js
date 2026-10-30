@@ -342,7 +342,7 @@ export class Game extends EventEmitter {
     if (!code) return { ok: false, reason: "code_unavailable" };
     const claim = { code, sessionId, login, createdAt: now, expiresAt: now + this.durations.claim, usedAt: null, userId: null };
     this.claims.set(code, claim);
-    return { ok: true, code, login, expiresAt: claim.expiresAt };
+    return { ok: true, code, login, createdAt: claim.createdAt, expiresAt: claim.expiresAt };
   }
 
   claim(codeOrOptions, chatter, userId) {
@@ -899,6 +899,7 @@ export class Game extends EventEmitter {
       state: this.state,
       sessionOver: this.sessionOver,
       nextSessionStartsAt: this.nextSessionStartsAt,
+      lobbyAutoStart: this.autoStartLobby,
       roundNumber: this.roundNumber,
       phaseEndsAt: this.#phaseEndsAt(),
       phaseDurationMs: this.state === PHASES.REVEAL
@@ -991,6 +992,7 @@ export class Game extends EventEmitter {
         && !this.mutedPlayerIds.has(player.id)
         && (this.hostPlays || player.login !== this.streamerLogin)
       )).length,
+      lobbyAutoStart: this.autoStartLobby,
       scores: this.#leaderboard(),
       leaderboard: this.#leaderboard(),
       tables: [...this.tables.values()].map((entry) => ({
@@ -1055,6 +1057,7 @@ export class Game extends EventEmitter {
     return {
       code: claim.code,
       login: claim.login,
+      createdAt: claim.createdAt,
       expiresAt: claim.expiresAt,
       ...(claim.error ? { error: claim.error } : {}),
     };
@@ -1692,7 +1695,7 @@ export class Game extends EventEmitter {
   #phaseEndsAt() {
     const table = this.tables.get(this.featuredTableId);
     if (this.state === PHASES.LOBBY && this.lobbyOpenedAt !== null) {
-      return this.lobbyOpenedAt + this.durations.lobby;
+      return this.autoStartLobby ? this.lobbyOpenedAt + this.durations.lobby : null;
     }
     if (!table) return null;
     if (this.state === PHASES.ROUND) return table.endsAt;

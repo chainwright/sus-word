@@ -14,7 +14,7 @@ const OVERLAY_MOCKS = [
   "reveal", "reveal2", "reveal-voice", "reveal-miss", "champion", "newround",
 ];
 const CARD_MOCKS = [
-  "join", "join-wrong", "claim", "imposter", "imposter-2", "delivered", "busted",
+  "join", "join-wrong", "claim", "claim-help", "imposter", "imposter-2", "delivered", "busted",
   "detective", "vote", "reveal-hold", "result", "champion", "side", "featured",
 ];
 
@@ -225,6 +225,56 @@ const OVERLAY_LAYOUT_CHECK = String.raw`(async () => {
       if (overlaps) fail("reveal-caption-verdict-overlap", caption, caption.textContent);
     }
   }
+  const frame = new URLSearchParams(location.search).get("frame");
+  if (frame === "count") {
+    const count = document.querySelector(".read-count[data-stable='true']");
+    if (!visible(count) || count.textContent.trim().replace(/\s+/g, " ") !== "9 people read it") {
+      failures.push({ check: "reveal-count-final-missing", element: ".read-count", detail: count?.textContent || "missing" });
+    } else {
+      const intrinsic = () => ({
+        width: count.offsetWidth,
+        height: count.offsetHeight,
+        fontSize: getComputedStyle(count).fontSize,
+      });
+      const before = intrinsic();
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      const after = intrinsic();
+      if (before.width !== after.width || before.height !== after.height || before.fontSize !== after.fontSize) {
+        fail("reveal-count-intrinsic-layout-jump", count,
+          before.width + "x" + before.height + " @ " + before.fontSize
+          + " to " + after.width + "x" + after.height + " @ " + after.fontSize);
+      }
+      const card = count.closest(".case-card");
+      await Promise.all((card?.getAnimations({ subtree: true }) || []).map((animation) => animation.finished.catch(() => {})));
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const settledBefore = count.getBoundingClientRect();
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      const settledAfter = count.getBoundingClientRect();
+      if (Math.abs(settledBefore.width - settledAfter.width) > .5 || Math.abs(settledBefore.height - settledAfter.height) > .5) {
+        fail("reveal-count-settled-geometry-jump", count,
+          settledBefore.width + "x" + settledBefore.height
+          + " to " + settledAfter.width + "x" + settledAfter.height);
+      }
+    }
+  }
+  if (frame === "locked-hints") {
+    for (const [selector, copy] of [["#hint-category-time", "AT 1:30"], ["#hint-letter-time", "AT 0:30"]]) {
+      const label = document.querySelector(selector);
+      if (!visible(label) || label.textContent.trim() !== copy) {
+        failures.push({ check: "hint-unlock-time-missing", element: selector, detail: label?.textContent || "missing" });
+      }
+    }
+  }
+  const tray = document.querySelector("#evidence-tray");
+  if (new URLSearchParams(location.search).get("mock") === "round" && !frame) {
+    const slips = [...tray.querySelectorAll(".message-slip")].filter(visible);
+    if (!tray.classList.contains("live-chat") || slips.length !== 5) {
+      failures.push({ check: "live-chat-five-lines-missing", element: "#evidence-tray", detail: slips.length + " visible slips" });
+    }
+  }
+  if (new URLSearchParams(location.search).get("mock")?.startsWith("reveal") && visible(tray)) {
+    fail("chat-slips-cover-reveal", tray, "live chat must be hidden throughout reveal");
+  }
   if (new URLSearchParams(location.search).get("mock") === "champion") {
     const panel = document.querySelector(".champion-moment");
     const revealArea = document.querySelector("#camera-dim");
@@ -295,6 +345,12 @@ const CARD_LAYOUT_CHECK = String.raw`(async () => {
   if (new URLSearchParams(location.search).get("mock") === "busted"
     && document.querySelector(".imposter-tips")) {
     failures.push({ check: "busted-card-tips-visible", element: ".imposter-tips" });
+  }
+  if (new URLSearchParams(location.search).get("mock") === "claim-help") {
+    const help = document.querySelector(".claim-help");
+    if (!help || help.hidden || !help.textContent.includes("Twitch sometimes hides messages from brand-new accounts")) {
+      failures.push({ check: "claim-timeout-help-missing", element: ".claim-help", detail: help?.textContent || "missing" });
+    }
   }
   return failures;
 })()`;
@@ -708,6 +764,16 @@ async function main() {
         url: `${origin}/overlay?mock=reveal&frame=payoff`,
       }, dimensions, true);
       console.log(`✓ overlay reveal payoff at ${size}`);
+      await loadRoute(devtools, sessionId, {
+        label: `overlay stable reveal count at ${size}`,
+        url: `${origin}/overlay?mock=reveal&frame=count`,
+      }, dimensions, true);
+      console.log(`✓ overlay stable reveal count at ${size}`);
+      await loadRoute(devtools, sessionId, {
+        label: `overlay locked hint times at ${size}`,
+        url: `${origin}/overlay?mock=round&frame=locked-hints`,
+      }, dimensions, true);
+      console.log(`✓ overlay locked hint times at ${size}`);
       await loadRoute(devtools, sessionId, {
         label: `overlay voice reveal payoff at ${size}`,
         url: `${origin}/overlay?mock=reveal-voice&frame=payoff`,

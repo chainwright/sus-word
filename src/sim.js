@@ -400,6 +400,7 @@ export async function runSim(options = {}) {
   const game = options.game ?? new Game({
     random,
     durations: fast ? FAST_DURATIONS : REHEARSAL_DURATIONS,
+    autoStartLobby: false,
   });
   const twitch = options.twitch ?? new TwitchClient();
   const service = options.service ?? createSusWordServer({ game, twitch });

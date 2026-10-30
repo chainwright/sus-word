@@ -8,6 +8,8 @@ import {
   caseFileHeadline,
   championBoardModel,
   hasLeaderboardScore,
+  lobbyPlayerStatus,
+  lobbyPresentation,
   missedWordCopy,
   roundRule,
   readyPlayersCopy,
@@ -202,6 +204,30 @@ test("lobby, leaderboard, and vote-lock copy reflect live state", () => {
   assert.equal(hasLeaderboardScore([{ score: 1 }]), true);
   assert.equal(voteLockLabel(false), "VOTES LOCKED");
   assert.equal(voteLockLabel(true), "ALL VOTES IN");
+});
+
+test("lobby copy distinguishes host control, missing players, and a real countdown", () => {
+  assert.deepEqual(lobbyPresentation({ claimedCount: 1, lobbyAutoStart: false }), {
+    readyText: "1 card holder ready",
+    statusText: "Waiting for the host",
+    showCountdown: false,
+  });
+  assert.deepEqual(lobbyPresentation({ claimedCount: 1, lobbyAutoStart: true }), {
+    readyText: "1 card holder ready",
+    statusText: "Waiting for 2 more players",
+    showCountdown: false,
+  });
+  assert.equal(lobbyPresentation({ claimedCount: 2, lobbyAutoStart: true }).statusText, "Waiting for 1 more player");
+  assert.deepEqual(lobbyPresentation({ claimedCount: 3, lobbyAutoStart: true, roundNumber: 2 }), {
+    readyText: "3 card holders ready",
+    statusText: "Next round in",
+    showCountdown: true,
+  });
+});
+
+test("unlinked lobby players are explicitly marked as not ready", () => {
+  assert.equal(lobbyPlayerStatus({ login: "joined", claimed: false }), "CARD NOT OPENED");
+  assert.equal(lobbyPlayerStatus({ login: "ready", claimed: true }), "");
 });
 
 test("overlay state helpers accept the server's explicit null values", () => {
