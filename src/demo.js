@@ -86,6 +86,10 @@ export function demoIntermissionPlan(fast, sessionOver = false) {
     : { sessionOverMs: 0, nextSessionMs: 0, lobbyMs: 10_000 };
 }
 
+export function shouldStartDemoFinal(roundsPlayed, seating = []) {
+  return Number(roundsPlayed) >= 3 && (seating || []).length > 0;
+}
+
 export function selectDemoVoteTarget(table, player, outcomes) {
   if (!table || !player) return null;
   const hidden = table.impostors.filter(({ busted }) => !busted);
@@ -134,8 +138,9 @@ export function seededRandom(seed = "sus-word-demo") {
   };
 }
 
-export function demoPublicUrl(port = 3000) {
-  return `http://localhost:${Number(port) || 3000}`;
+export function demoPublicUrl(port = 3000, configured = "") {
+  const publicUrl = String(configured || "").trim().replace(/\/+$/, "");
+  return publicUrl || `http://localhost:${Number(port) || 3000}`;
 }
 
 export function demoRoundOutcomes(game, random, missOffset = 0) {
@@ -196,6 +201,25 @@ function claimCode(index) {
 function demoSessionId(player) {
   return player.sessionId
     || `demo-player-session-${String(player.id).replace(/^demo-/, "").padStart(4, "0")}`;
+}
+
+function linkDemoProfile(game, profile) {
+  game.join(profile);
+  const claim = game.createClaim({ sessionId: profile.sessionId, login: profile.login });
+  return game.claim({ ...profile, code: claim.code, userId: profile.id });
+}
+
+export function resetDemoSession(game, profiles) {
+  game.reset();
+  game.start();
+  for (const profile of profiles) linkDemoProfile(game, profile);
+  return {
+    players: game.players.size,
+    profiles: game.profiles.size,
+    sessions: game.sessions.size,
+    claims: game.claims.size,
+    timers: game.timers.size,
+  };
 }
 
 export function avatarDataUri(color, initials) {
@@ -390,7 +414,7 @@ export async function runDemo(options = {}) {
   const playerCount = Number(options.players ?? requestedPlayerCount());
   const profiles = demoProfiles(playerCount);
   const port = Number(options.port ?? process.env.PORT ?? 3000);
-  const publicUrl = demoPublicUrl(port);
+  const publicUrl = demoPublicUrl(port, options.publicUrl ?? process.env.PUBLIC_URL);
   const seed = String(options.seed ?? requestedSeed());
   const gameRandom = seededRandom(`${seed}:game`);
   const behaviorRandom = seededRandom(`${seed}:behavior`);
@@ -423,14 +447,15 @@ export async function runDemo(options = {}) {
 
   const address = await service.start();
   voiceSocket = await connectVoiceSocket(address.port);
-  console.log(`[demo] Open http://localhost:${address.port}/overlay in a 1920×1080 browser source.`);
-  console.log(`[demo] ${fast ? "Fast rehearsal" : "Full timing"} mode. Press Ctrl+C to stop.`);
+  console.log(`[demo] Watch a round: ${publicUrl}/overlay`);
+  console.log(`[demo] ${fast ? "Fast rehearsal" : "Full timing"} mode.`);
   console.log(`[demo] Simulating ${profiles.length} players with seed "${seed}".`);
-  console.log(`[demo] Open player 1's live card: http://localhost:${address.port}/card?demo=1`);
+  console.log(`[demo] Follow player 1's card: ${publicUrl}/card?demo=1`);
 
   game.start();
   await populateLobby(game, profiles, fast);
   let round = 0;
+  let sessionRounds = 0;
 
   while (running) {
     const intermission = demoIntermissionPlan(fast, game.sessionOver);
@@ -439,20 +464,29 @@ export async function runDemo(options = {}) {
       if (!running) break;
       game.prepareNextSession(intermission.nextSessionMs);
       await sleep(intermission.nextSessionMs);
+      if (!running) break;
+      resetDemoSession(game, profiles);
+      sessionRounds = 0;
     } else {
       await sleep(intermission.lobbyMs);
     }
     if (!running) break;
     round += 1;
-    console.log(`[demo] Starting round ${round}`);
-    if (game.phase === PHASES.LOBBY) game.go();
+    let finalRound = game.isFinalRound;
+    if (game.phase === PHASES.LOBBY) {
+      finalRound = shouldStartDemoFinal(sessionRounds, game.lastRoundSeating);
+      if (finalRound) game.final();
+      else game.go();
+    }
     if (game.phase !== PHASES.ROUND) continue;
+    console.log(`[demo] Starting ${finalRound ? "FINAL" : `round ${round}`}`);
     const outcomes = demoRoundOutcomes(game, behaviorRandom, missOffset);
     await driveDemoRound(game, {
       playChat: () => playRoundChat(game, service, profiles, fast, voiceSocket, outcomes),
       castVotes: () => castVotes(game, service, fast, outcomes),
     });
     console.log(`[demo] ${game.lastReveal.botMessage}`);
+    if (!finalRound) sessionRounds += 1;
     await waitForPhase(game, PHASES.LOBBY);
   }
 }

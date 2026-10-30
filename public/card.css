@@ -106,6 +106,22 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 4px s
 }
 #toast.show { opacity: 1; translate: -50% 0; }
 #toast.success { background: var(--green); }
+.demo-watch-note {
+  position: fixed;
+  z-index: 75;
+  left: 50%;
+  bottom: 8px;
+  min-height: 30px;
+  padding: 6px 12px;
+  translate: -50% 0;
+  border: 2px solid #d9b26a;
+  color: #f8e8ca;
+  background: #2b201bed;
+  box-shadow: 0 4px 12px #0008;
+  font: 700 14px/1 "Oswald", sans-serif;
+  letter-spacing: .05em;
+  white-space: nowrap;
+}
 
 .card-topbar {
   min-height: 70px;

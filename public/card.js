@@ -116,11 +116,16 @@ function actionError(reason) {
     already_busted: "That player is already BUSTED. Vote for someone still hidden.",
     invalid_state: "That action is not open right now.",
     accusation_used: "Your one accusation is already used.",
+    demo_read_only: "Demo card · watching only.",
   };
   return messages[reason] || String(reason || "That was not accepted.").replaceAll("_", " ");
 }
 
 function sendCardAction(payload) {
+  if (state.demoReadOnly) {
+    showToast("Demo card · watching only.");
+    return false;
+  }
   if (cardSocket?.readyState !== WebSocket.OPEN) {
     showToast("Reconnecting—try again in a moment.");
     return false;
@@ -200,7 +205,9 @@ function renderLogin(options = {}) {
         body: JSON.stringify({ login: input.value }),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.reason === "invalid_login" ? "Use a valid Twitch name." : "Could not make a code. Try again.");
+      if (!response.ok) throw new Error(result.reason === "demo_read_only"
+        ? "Demo card · watching only. Open /card?demo=1 to follow a player."
+        : result.reason === "invalid_login" ? "Use a valid Twitch name." : "Could not make a code. Try again.");
       render({ linked: false, role: null, pendingClaim: result });
     } catch (error) {
       renderLogin({ login: input.value, message: error.message });
@@ -546,6 +553,7 @@ function render(nextState) {
   else if (screen === "result") renderResult();
   else if (screen === "session-over") renderSessionOver();
   else renderWaiting();
+  if (state.demoReadOnly) root.append(node("div", "demo-watch-note", "DEMO CARD · WATCHING ONLY"));
 }
 
 async function unlockAudio() {

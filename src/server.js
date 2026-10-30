@@ -147,9 +147,10 @@ export function createSusWordServer(options = {}) {
   const game = options.game ?? new Game();
   const app = express();
   const server = createHttpServer(app);
-  const browserSockets = new WebSocketServer({ noServer: true });
+  const browserSockets = new WebSocketServer({ noServer: true, maxPayload: 16 * 1_024 });
   const clients = new Set();
   const publicUrl = cleanPublicUrl(env.PUBLIC_URL);
+  const demoMode = env.DEMO_MODE === "1";
   const hostSecret = String(env.HOST_SECRET ?? "");
   const configuredPort = Number(options.port ?? env.PORT ?? 3000);
   let twitch = options.twitch ?? null;
@@ -187,6 +188,7 @@ export function createSusWordServer(options = {}) {
   app.use(express.json({ limit: "16kb" }));
 
   app.get("/", (_request, response) => response.redirect("/overlay"));
+  app.get("/healthz", (_request, response) => response.json({ ok: true }));
   app.get("/overlay", (_request, response) => {
     response.sendFile(resolve(PUBLIC_DIR, "overlay.html"));
   });
@@ -195,7 +197,7 @@ export function createSusWordServer(options = {}) {
   });
   app.get("/card", (request, response) => {
     const demoNumber = Number.parseInt(request.query.demo, 10);
-    if (env.DEMO_MODE === "1" && Number.isInteger(demoNumber) && demoNumber >= 1 && demoNumber <= 200) {
+    if (demoMode && Number.isInteger(demoNumber) && demoNumber >= 1 && demoNumber <= 200) {
       setSessionCookie(response, `demo-player-session-${String(demoNumber).padStart(4, "0")}`);
     } else {
       sessionId(request, response);
@@ -210,6 +212,10 @@ export function createSusWordServer(options = {}) {
   });
 
   app.post("/api/card/check", (request, response) => {
+    if (demoMode) {
+      response.status(403).json({ ok: false, reason: "demo_read_only", message: "Demo cards are watching only." });
+      return;
+    }
     const login = String(request.body?.login ?? "").trim().replace(/^@/, "").toLowerCase();
     if (!/^[a-z0-9_]{1,25}$/.test(login)) {
       response.status(400).json({ ok: false, reason: "invalid_login" });
@@ -219,6 +225,10 @@ export function createSusWordServer(options = {}) {
   });
 
   app.post("/api/card/start", (request, response) => {
+    if (demoMode) {
+      response.status(403).json({ ok: false, reason: "demo_read_only", message: "Demo cards are watching only." });
+      return;
+    }
     const sid = sessionId(request, response);
     const login = String(request.body?.login ?? "").trim().replace(/^@/, "");
     if (!/^[A-Za-z0-9_]{1,25}$/.test(login)) {
@@ -460,7 +470,9 @@ export function createSusWordServer(options = {}) {
       return;
     }
     if (client.view === "card") {
-      const result = handleCardAction(client.sessionId, payload);
+      const result = demoMode
+        ? { ok: false, reason: "demo_read_only", message: "Demo card · watching only" }
+        : handleCardAction(client.sessionId, payload);
       sendJson(client.socket, {
         type: "actionResult",
         action: payload?.type,
@@ -519,7 +531,8 @@ export function createSusWordServer(options = {}) {
   function cardState(sid) {
     const card = game.getCard(sid);
     const pendingClaim = card.linked ? null : game.getPendingClaim(sid);
-    return pendingClaim ? { ...card, pendingClaim } : card;
+    const state = pendingClaim ? { ...card, pendingClaim } : card;
+    return demoMode ? { ...state, demoReadOnly: true } : state;
   }
 
   function broadcastPublicState() {
@@ -808,7 +821,8 @@ export function createSusWordServer(options = {}) {
     }
 
     const address = server.address();
-    logger.log?.(`Sus Word listening on http://localhost:${address.port}`);
+    const listeningUrl = env.PUBLIC_URL ? publicUrl : `http://localhost:${address.port}`;
+    logger.log?.(`Sus Word listening on ${listeningUrl}`);
     return address;
   }
 

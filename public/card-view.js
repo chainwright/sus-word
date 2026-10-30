@@ -75,6 +75,7 @@ export function cardRenderSignature(state = {}) {
   });
   return JSON.stringify({
     linked: card.linked,
+    demoReadOnly: card.demoReadOnly,
     joined: card.joined,
     pendingClaim: card.pendingClaim,
     nameCheck: card.nameCheck,

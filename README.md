@@ -26,6 +26,10 @@ Open `http://localhost:3000/host` for the detective-desk controls, player number
 
 The v3 screens are built for a real stream: the first lobby teaches the rules, the round board shows stable numbers and active speakers, voting gets a large countdown, and the reveal stays below the camera before ending on the top three. The phone card handles joining, private roles, tap-to-vote, results, and the final Champion screen.
 
+## Hosted demo
+
+Run `npm run demo` on a Node 24 host with its assigned `PORT` and set `PUBLIC_URL` to the public HTTPS origin, such as `https://sus-word.onrender.com`. Use `/healthz` for a keep-warm health check. Visitors can watch the simulated game at `/overlay` and follow simulated player 1 at `/card?demo=1`; demo cards are read-only, and every player and chat line is generated locally rather than posted to Twitch. The showcase plays three rounds, a FINAL, a clear next-session countdown, then starts a fresh bounded session.
+
 ## Mixed rehearsal on your real channel
 
 Testing alone? `npm run sim` connects to your real Twitch channel like `npm start` and seats three clearly labelled simulated players. Their names start with "Sim", their lines appear on the overlay and in the reveal, and they never post in Twitch chat. Join normally, then start rounds with `!sus go`: they chat, hide a word when dealt Imposter, and vote by number. Use `--players 5`, `--rounds 3`, `--fast`, or `--seed rehearsal-1` for repeatable rehearsals. The lobby waits for `!sus go`.
@@ -73,7 +77,7 @@ The card page first checks that the Twitch name spoke in chat recently, then giv
 
 ## Built with Codex
 
-Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first rehearsal simulator was drafted outside Codex and later rewritten in Codex (step 15). The current game is covered by 132 browser-free automated tests, plus the real-Chrome mock and live-card check:
+Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first rehearsal simulator was drafted outside Codex and later rewritten in Codex (step 15). The current game is covered by 136 browser-free automated tests, plus the real-Chrome mock and live-card check:
 
 1. Pure game logic, word detection, scoring, and tests.
 2. Twitch OAuth, EventSub chat, server routes, and live state.

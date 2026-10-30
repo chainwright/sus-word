@@ -6,12 +6,15 @@ import Game, { PHASES } from "../src/game.js";
 import {
   demoRoundOutcomes,
   demoIntermissionPlan,
+  demoProfiles,
   demoPublicUrl,
   demoWordLines,
   demoWordPicker,
   driveDemoRound,
+  resetDemoSession,
   seededRandom,
   selectDemoVoteTarget,
+  shouldStartDemoFinal,
 } from "../src/demo.js";
 import { WORDS, findWord } from "../src/words.js";
 
@@ -128,6 +131,9 @@ test("full demo intermissions show card results and clearly restart after a fina
   });
   assert.equal(demoIntermissionPlan(true, false).lobbyMs, 2_000);
   assert.ok(demoIntermissionPlan(true, true).nextSessionMs < 1_000, "--fast must stay fast");
+  assert.equal(shouldStartDemoFinal(2, [{ id: 1 }]), false);
+  assert.equal(shouldStartDemoFinal(3, [{ id: 1 }]), true);
+  assert.equal(shouldStartDemoFinal(30, []), false);
 });
 
 test("demo voters never target an already-busted Imposter", () => {
@@ -147,4 +153,44 @@ test("demo voters never target an already-busted Imposter", () => {
 test("offline demo links stay local even when a stale tunnel is in the environment", () => {
   assert.equal(demoPublicUrl(3000), "http://localhost:3000");
   assert.equal(demoPublicUrl(4123), "http://localhost:4123");
+  assert.equal(demoPublicUrl(3000, "https://sus-demo.example/"), "https://sus-demo.example");
+});
+
+test("many demo sessions reset all growing game collections", () => {
+  let codeIndex = 0;
+  const codes = ["A2B3", "C4D5", "E6F7", "G8H9"];
+  const liveTimers = new Set();
+  const game = new Game({
+    clock: {
+      now: () => 1_000,
+      setTimeout(callback, delay) {
+        const timer = { callback, delay };
+        liveTimers.add(timer);
+        return timer;
+      },
+      clearTimeout(timer) { liveTimers.delete(timer); },
+    },
+    random: () => 0,
+    codeGenerator: () => codes[codeIndex++ % codes.length],
+    words: [{ word: "candle", category: "home" }],
+  });
+  const profiles = demoProfiles(4);
+  for (let session = 0; session < 40; session += 1) {
+    const seeded = resetDemoSession(game, profiles);
+    assert.deepEqual(seeded, { players: 4, profiles: 4, sessions: 4, claims: 4, timers: 1 });
+    assert.equal(game.go({ word: "candle", category: "home" }).ok, true);
+    game.isFinalRound = true;
+    game.beginVote();
+    game.finishVote();
+    game.nextRound();
+    assert.equal(game.sessionOver, true);
+    assert.ok(game.cardResults.size <= profiles.length);
+    assert.ok(game.lastRoundSeating.length <= 1);
+    assert.ok(game.timers.size <= 2);
+  }
+  assert.equal(game.players.size, profiles.length);
+  assert.equal(game.profiles.size, profiles.length);
+  assert.equal(game.sessions.size, profiles.length);
+  assert.equal(game.claims.size, profiles.length);
+  assert.ok(liveTimers.size <= 2);
 });

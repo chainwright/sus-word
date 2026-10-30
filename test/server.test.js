@@ -152,6 +152,67 @@ test("host controls require a local origin or the configured secret", async (con
 
 });
 
+test("a proxied hosted demo keeps HTTP and WebSocket host controls private", async (context) => {
+  const game = new Game();
+  const logs = [];
+  const service = createSusWordServer({
+    game,
+    port: 0,
+    env: { DEMO_MODE: "1", PUBLIC_URL: "https://sus-demo.example" },
+    logger: { log(message) { logs.push(message); }, error() {} },
+  });
+  context.after(async () => {
+    game.reset();
+    await service.stop();
+  });
+  const address = await service.start();
+  const origin = `http://127.0.0.1:${address.port}`;
+  assert.ok(logs.includes("Sus Word listening on https://sus-demo.example"));
+  assert.equal(logs.some((line) => /listening on http:\/\/localhost/.test(line)), false);
+  const proxyHeaders = {
+    Host: "sus-demo.example",
+    Origin: "https://sus-demo.example",
+    "X-Forwarded-For": "203.0.113.8",
+    "X-Forwarded-Proto": "https",
+  };
+  const response = await fetch(`${origin}/api/host/start`, { method: "POST", headers: proxyHeaders });
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).reason, "host_forbidden");
+  assert.equal(game.phase, "IDLE");
+  assert.equal(await refusedSocketStatus(
+    `ws://127.0.0.1:${address.port}/ws?view=host`,
+    { origin: "https://sus-demo.example", headers: { Host: "sus-demo.example", "X-Forwarded-For": "203.0.113.8" } },
+  ), 403);
+
+  const overlay = await firstSocketMessage(`ws://127.0.0.1:${address.port}/ws?view=overlay`);
+  assert.equal(overlay.payload.data.cardUrl, "https://sus-demo.example/card");
+  overlay.socket.close();
+});
+
+test("health checks are side-effect free", async (context) => {
+  const game = new Game();
+  const service = createSusWordServer({ game, port: 0, env: {}, logger: { log() {}, error() {} } });
+  context.after(() => service.stop());
+  const address = await service.start();
+  const before = {
+    phase: game.phase,
+    players: game.players.size,
+    claims: game.claims.size,
+    sessions: game.sessions.size,
+    timers: game.timers.size,
+  };
+  const response = await fetch(`http://127.0.0.1:${address.port}/healthz`);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true });
+  assert.deepEqual({
+    phase: game.phase,
+    players: game.players.size,
+    claims: game.claims.size,
+    sessions: game.sessions.size,
+    timers: game.timers.size,
+  }, before);
+});
+
 test("a local host WebSocket records voice as the configured broadcaster", async (context) => {
   const codes = ["A2B3", "C4D5", "E6F7"];
   const game = new Game({
@@ -283,6 +344,83 @@ test("offline demo card links attach to the simulated player's real session", as
   }).then((response) => response.json());
   assert.equal(card.linked, true);
   assert.equal(card.player.login, "pixel_mara");
+  assert.equal(card.demoReadOnly, true);
+});
+
+test("public demo cards can watch but cannot mutate or allocate game state", async (context) => {
+  const game = new Game({ random: () => 0, words: [{ word: "candle", category: "home" }] });
+  for (let index = 1; index <= 4; index += 1) {
+    const login = `demo_${index}`;
+    game.join({ id: `demo-${index}`, login, simulated: true });
+    game.players.get(`demo-${index}`).claimed = true;
+    game.sessions.set(`demo-player-session-${String(index).padStart(4, "0")}`, {
+      userId: `demo-${index}`,
+      linkedAt: 0,
+    });
+  }
+  game.start();
+  game.go({ word: "candle", category: "home" });
+  const service = createSusWordServer({
+    game,
+    port: 0,
+    env: { DEMO_MODE: "1", PUBLIC_URL: "https://sus-demo.example" },
+    logger: { log() {}, error() {} },
+  });
+  context.after(async () => {
+    game.reset();
+    await service.stop();
+  });
+  const address = await service.start();
+  const origin = `http://127.0.0.1:${address.port}`;
+  const cardPage = await fetch(`${origin}/card?demo=1`);
+  const cookie = cardPage.headers.get("set-cookie").split(";", 1)[0];
+  const before = {
+    players: game.players.size,
+    profiles: game.profiles.size,
+    sessions: game.sessions.size,
+    claims: game.claims.size,
+    messages: game.currentRound.messages.length,
+    votes: game.currentRound.votes.size,
+    accusations: game.currentRound.accusationLog.length,
+    timers: game.timers.size,
+  };
+
+  for (const path of ["check", "start"]) {
+    const response = await fetch(`${origin}/api/card/${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ login: `visitor_${path}` }),
+    });
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).reason, "demo_read_only");
+  }
+
+  const cardSocket = await firstSocketMessage(
+    `ws://127.0.0.1:${address.port}/ws?view=card`,
+    { headers: { Cookie: cookie } },
+  );
+  assert.equal(cardSocket.payload.data.demoReadOnly, true);
+  for (const action of [
+    { type: "tableChat", text: "I am trying to change the shared demo" },
+    { type: "vote", number: 2 },
+    { type: "accuse", target: "demo_2", word: "candle" },
+  ]) {
+    const response = socketMessageOfType(cardSocket.socket, "actionResult");
+    cardSocket.socket.send(JSON.stringify(action));
+    assert.equal((await response).data.reason, "demo_read_only");
+  }
+  cardSocket.socket.close();
+
+  assert.deepEqual({
+    players: game.players.size,
+    profiles: game.profiles.size,
+    sessions: game.sessions.size,
+    claims: game.claims.size,
+    messages: game.currentRound.messages.length,
+    votes: game.currentRound.votes.size,
+    accusations: game.currentRound.accusationLog.length,
+    timers: game.timers.size,
+  }, before);
 });
 
 test("name checks use chat seen in the last 15 minutes", async (context) => {

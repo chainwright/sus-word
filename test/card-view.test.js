@@ -56,6 +56,7 @@ describe("card screen selection", () => {
       busted: true,
       bustedBy: { id: "p2", login: "quietfox", number: 2 },
     }));
+    assert.notEqual(cardRenderSignature(base), cardRenderSignature({ ...base, demoReadOnly: true }));
   });
 
   test("vibrates only after a user gesture and when the API exists", () => {

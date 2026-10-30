@@ -755,6 +755,12 @@ function render(next) {
   receivedAt = Date.now();
   const phase = plan.phase;
   if (plan.resetBase) hideBase();
+  if (phase === "LOBBY" && plan.phaseChanged) {
+    seenAccusations.clear();
+    accusationsInitialized = false;
+    accusationQueue = [];
+    accusationToastActive = false;
+  }
   if (phase !== "REVEAL" && plan.phaseChanged) { clearReveal(); revealKey = ""; }
   if (phase === "IDLE") $("#idle-tag").hidden = false;
   else if (phase === "LOBBY") renderLobby(next);
