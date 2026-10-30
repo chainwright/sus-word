@@ -275,7 +275,7 @@ function renderLeaderboard(entries = [], prior = [], options = {}) {
     const row = el("div", "leader-row");
     const label = el("span", "", player.login || "player");
     if (old >= 0 && old !== index) label.append(el("i", "rank-arrow", ` ${old > index ? "▲" : "▼"}`));
-    row.append(el("b", "", `${index + 1}.`), label, el("b", "", String(entry.score ?? player.score ?? 0)));
+    row.append(el("b", "", `${entry.rank ?? index + 1}.`), label, el("b", "", String(entry.score ?? player.score ?? 0)));
     panel.append(row);
     if (old >= 0 && old !== index && !reduced.matches) row.animate(
       [{ transform: `translateY(${(old - index) * 23}px)` }, { transform: "translateY(0)" }],
@@ -316,18 +316,29 @@ function renderLobby(next) {
   $("#how-panel").hidden = true;
   $("#compact-lobby").hidden = true;
   $("#board").hidden = false;
-  $("#board-title").textContent = next.sessionOver ? "SESSION OVER" : "PLAYERS";
+  const restarting = Boolean(next.nextSessionStartsAt);
+  $("#board-title").textContent = restarting ? "NEXT SESSION" : next.sessionOver ? "SESSION OVER" : "PLAYERS";
   $("#board-meta").textContent = "12 max";
   $("#hints").hidden = true;
   $("#leaderboard").hidden = true;
   renderTablePlate();
   renderBoardRoster(next.players || [], {});
   setBoardNote(
-    el("strong", "", next.sessionOver ? "THE CASE IS CLOSED" : "JOINING NOW?"),
-    document.createTextNode(next.sessionOver
+    el("strong", "", restarting ? "A NEW CASE IS OPENING" : next.sessionOver ? "THE CASE IS CLOSED" : "JOINING NOW?"),
+    document.createTextNode(restarting
+      ? "The next session starts shortly. Keep your card open."
+      : next.sessionOver
       ? "Thanks for playing. The next case begins when the host starts another round."
       : "Type !join in chat, then open the card link it replies with. Takes 20 seconds."),
   );
+  if (restarting) {
+    const compact = $("#compact-lobby");
+    compact.hidden = false;
+    const countdown = el("time", "", clock(Math.max(0, next.nextSessionStartsAt - Date.now())));
+    countdown.id = "next-session-clock";
+    compact.replaceChildren(document.createTextNode("NEXT SESSION STARTING · "), countdown);
+    return;
+  }
   if (next.sessionOver) {
     const compact = $("#compact-lobby");
     compact.hidden = false;
@@ -380,7 +391,8 @@ function renderVote(next, entering = false) {
   const showChat = [...tallies.values()].some(({ chatVotes = 0 }) => chatVotes > 0);
   const hiddenCount = round.remainingImpostorCount ?? next.remainingImpostorCount
     ?? round.impostorCount ?? next.impostorCount ?? 1;
-  const instruction = voteInstruction(hiddenCount);
+  const bustedCount = (round.busted || []).filter(Boolean).length;
+  const instruction = voteInstruction(hiddenCount, bustedCount);
   $("#vote-banner").hidden = false;
   $("#vote-instruction").replaceChildren(
     document.createTextNode(instruction.bannerLines[0]),
@@ -565,7 +577,7 @@ function showTopMoment(next, results) {
     const oldRank = prior.findIndex((priorEntry) => (priorEntry.player || priorEntry).id === player.id);
     const movement = oldRank > index ? "▲" : oldRank >= 0 && oldRank < index ? "▼" : "—";
     const row = el("div", "top-three-row");
-    row.append(el("b", "", `${index + 1}`), avatar(player), el("strong", "", `@${player.login}`), el("i", "", movement), el("b", "", String(entry.score ?? player.score ?? 0)));
+    row.append(el("b", "", `${entry.rank ?? index + 1}`), avatar(player), el("strong", "", `@${player.login}`), el("i", "", movement), el("b", "", String(entry.score ?? player.score ?? 0)));
     panel.append(row);
     if (!reduced.matches) row.animate([{ transform: "translateX(-90px)", opacity: 0 }, { transform: "none", opacity: 1 }], { duration: 320, delay: index * 110, fill: "both" });
   });
@@ -635,11 +647,14 @@ function animateOneResult(next, result, index, done) {
       caption.style.opacity = "0";
       const readerCount = result.readerCount ?? 0;
       const voice = result.evidence?.source === "voice";
-      caption.replaceChildren(
-        document.createTextNode(`${result.elapsed || result.evidence.elapsed || "1:12"} into the round · `),
-        el("strong", `read-count${voice ? " voice-payoff" : ""}`, voice ? revealPayoffLabel(result) : readerCountLabel(0)),
+      caption.replaceChildren(...(voice ? [
+        el("strong", "read-count voice-payoff", revealPayoffLabel(result)),
         document.createTextNode(result.caught || result.busted ? " · someone noticed" : " · nobody noticed"),
-      );
+      ] : [
+        document.createTextNode(`${result.elapsed || result.evidence.elapsed || "1:12"} into the round · `),
+        el("strong", "read-count", readerCountLabel(0)),
+        document.createTextNode(result.caught || result.busted ? " · someone noticed" : " · nobody noticed"),
+      ]));
       layer.append(card);
       card.animate([{ transform: "scale(1)", boxShadow: "none" }, { transform: "scale(1.35)", boxShadow: "0 24px 38px #000b" }], { duration: 400, fill: "both" });
       later(() => card.querySelector(".evidence-line mark")?.animate([{ backgroundSize: "0 70%" }, { backgroundSize: "100% 70%" }], { duration: 500, fill: "both" }), 500);
@@ -776,6 +791,8 @@ function updateClocks() {
   $("#votes-locked").classList.toggle("show", Boolean(state?.round?.allVotesIn) || ms <= 0);
   if (!$("#how-panel").hidden) $("#how-clock").textContent = `Starting in ${clock(ms)}`;
   updateCompactLobbyClock($("#compact-lobby-clock"), ms);
+  const nextSessionClock = $("#next-session-clock");
+  if (nextSessionClock) nextSessionClock.textContent = clock(Math.max(0, (state.nextSessionStartsAt || Date.now()) - Date.now()));
 }
 
 function mockAvatar(index) {
@@ -786,7 +803,7 @@ function mockAvatar(index) {
 
 const names = ["drovosek7777", "cydshop", "romabuilds", "pixel_mara", "quietfox", "tomtom_irl", "nightbyte", "akira_k", "lumi", "bigsalad", "jo_plays", "marrow"];
 function mockState(kind) {
-  const count = kind === "lobby-first" || kind === "round12" || ["vote", "reveal", "reveal2", "reveal-miss", "champion", "newround"].includes(kind) ? 12 : 7;
+  const count = kind === "lobby-first" || kind === "round12" || ["vote", "reveal", "reveal2", "reveal-voice", "reveal-miss", "champion", "newround"].includes(kind) ? 12 : 7;
   const players = Array.from({ length: count }, (_, index) => ({ id: `p${index + 1}`, number: index + 1, login: names[index] || `player_${index + 1}`, displayName: names[index], avatar: mockAvatar(index), claimed: true, score: 12 - index }));
   const messages = [
     { id: "m1", player: players[4] || players[0], text: "anyone else eating dinner rn", elapsedMs: 31_000, elapsed: "0:31" },
@@ -811,7 +828,10 @@ function mockState(kind) {
     base.round.busted = [{ impostor: players[3], accuser: players[0] }];
   }
   if (base.state === "REVEAL") {
-    const first = { impostor: players[3], word: "lemon", evidence: kind === "reveal-miss" ? null : messages[3], messages, elapsed: "1:48", readerCount: 9, caught: true, verdict: kind === "reveal-miss" ? "WORD NEVER LANDED" : "CAUGHT", caption: kind === "reveal-miss" ? "THE WORD NEVER MADE IT OUT" : "1:48 into the round · 9 people read it · someone noticed" };
+    const firstEvidence = kind === "reveal-miss" ? null
+      : kind === "reveal-voice" ? { ...messages[3], source: "voice", elapsedMs: 33_000, elapsed: "0:33" }
+        : messages[3];
+    const first = { impostor: players[3], word: "lemon", evidence: firstEvidence, messages, elapsed: kind === "reveal-voice" ? "0:33" : "1:48", readerCount: kind === "reveal-voice" ? 0 : 9, caught: true, verdict: kind === "reveal-miss" ? "WORD NEVER LANDED" : "CAUGHT", caption: kind === "reveal-miss" ? "THE WORD NEVER MADE IT OUT" : kind === "reveal-voice" ? "Said out loud on stream. Someone noticed." : "1:48 into the round · 9 people read it · someone noticed" };
     const secondEvidence = { ...messages[1], index: 22, length: 7 };
     const second = { impostor: players[1], word: "blanket", evidence: secondEvidence, messages, elapsed: "0:51", readerCount: 1, caught: false, verdict: "GOT AWAY", caption: "0:51 into the round · 1 person read it · nobody noticed" };
     const summary = kind === "reveal-miss"
@@ -841,5 +861,5 @@ addEventListener("resize", fit);
 addEventListener("pointerdown", () => audio().resume(), { once: true });
 setInterval(updateClocks, 250);
 const mock = params.get("mock");
-if (["lobby-first", "lobby", "round", "round12", "vote", "reveal", "reveal2", "reveal-miss", "champion", "newround"].includes(mock)) render(mockState(mock));
+if (["lobby-first", "lobby", "round", "round12", "vote", "reveal", "reveal2", "reveal-voice", "reveal-miss", "champion", "newround"].includes(mock)) render(mockState(mock));
 else connect();

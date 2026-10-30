@@ -11,7 +11,7 @@ import { createSusWordServer } from "../src/server.js";
 
 const OVERLAY_MOCKS = [
   "lobby-first", "lobby", "round", "round12", "vote",
-  "reveal", "reveal2", "reveal-miss", "champion", "newround",
+  "reveal", "reveal2", "reveal-voice", "reveal-miss", "champion", "newround",
 ];
 const CARD_MOCKS = [
   "join", "join-wrong", "claim", "imposter", "imposter-2", "delivered", "busted",
@@ -452,7 +452,7 @@ async function main() {
       }, { width: 390, height: 844, mobile: true }, false);
       console.log(`✓ live demo ${role.toLowerCase()} card`);
     }
-    for (const dimensions of [{ width: 854, height: 480 }, { width: 1920, height: 1080 }]) {
+    for (const dimensions of [{ width: 854, height: 480 }, { width: 1280, height: 720 }, { width: 1920, height: 1080 }]) {
       const size = `${dimensions.width}x${dimensions.height}`;
       for (const mock of OVERLAY_MOCKS) {
         await loadRoute(devtools, sessionId, {
@@ -466,6 +466,11 @@ async function main() {
         url: `${origin}/overlay?mock=reveal&frame=payoff`,
       }, dimensions, true);
       console.log(`✓ overlay reveal payoff at ${size}`);
+      await loadRoute(devtools, sessionId, {
+        label: `overlay voice reveal payoff at ${size}`,
+        url: `${origin}/overlay?mock=reveal-voice&frame=payoff`,
+      }, dimensions, true);
+      console.log(`✓ overlay voice reveal payoff at ${size}`);
       await loadRoute(devtools, sessionId, {
         label: `overlay reveal before leaders at ${size}`,
         url: `${origin}/overlay?mock=reveal&frame=preleaders`,

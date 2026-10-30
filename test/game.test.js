@@ -279,6 +279,32 @@ describe("state machine and role selection", () => {
     clock.tick(DEFAULT_DURATIONS.lobby);
     assert.equal(game.state, PHASES.LOBBY, "a finished final must not auto-deal another round");
   });
+
+  test("a demo can advertise an eight-second next-session pause after the final", () => {
+    const { clock, game } = createGame();
+    startRound(game);
+    game.isFinalRound = true;
+    game.beginVote();
+    const finished = game.finishVote();
+    clock.tick(finished.revealDuration);
+    assert.equal(game.getPublicState().sessionOver, true);
+    const queued = game.prepareNextSession(8_000);
+    assert.equal(queued.ok, true);
+    assert.equal(game.getPublicState().nextSessionStartsAt, clock.now() + 8_000);
+    game.go();
+    assert.equal(game.getPublicState().nextSessionStartsAt, null);
+  });
+
+  test("equal leaderboard scores share equal competition ranks", () => {
+    const { game } = createGame();
+    const players = claimPlayers(game, ["alpha", "bravo", "charlie", "delta"]);
+    game.scores.set(players[0].id, 5);
+    game.scores.set(players[1].id, 3);
+    game.scores.set(players[2].id, 3);
+    game.scores.set(players[3].id, 1);
+    const entries = game.getPublicState().leaderboard;
+    assert.deepEqual(entries.map(({ rank }) => rank), [1, 2, 2, 4]);
+  });
 });
 
 describe("round messages and reveal payload", () => {
@@ -309,7 +335,7 @@ describe("round messages and reveal payload", () => {
     assert.equal(released.voteTarget.id, alice.id);
     assert.equal(released.voteWasRight, true);
     assert.equal(released.roundPoints, 1);
-    assert.equal(released.rank, 2);
+    assert.equal(released.rank, 1, "equal scores share the same competition rank");
     assert.ok(released.result.imposters.length > 0);
   });
 
@@ -340,7 +366,7 @@ describe("round messages and reveal payload", () => {
     assert.equal(reveal.evidence.source, "voice");
     assert.equal(
       reveal.caption,
-      "0:00 into the round. Said out loud on stream. Someone noticed.",
+      "Said out loud on stream. Someone noticed.",
     );
     assert.match(reveal.botMessage, /said out loud 0:00 into the round/);
     assert.doesNotMatch(reveal.botMessage, /I lit a candle/);
@@ -358,7 +384,7 @@ describe("round messages and reveal payload", () => {
     const { reveal } = game.finishVote();
     assert.equal(
       reveal.caption,
-      "0:00 into the round. Said out loud on stream. Nobody noticed.",
+      "Said out loud on stream. Nobody noticed.",
     );
   });
 

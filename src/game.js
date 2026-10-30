@@ -186,6 +186,7 @@ export class Game extends EventEmitter {
     this.mutedPlayerIds = new Set();
     this.isFinalRound = false;
     this.sessionOver = false;
+    this.nextSessionStartsAt = null;
     this.cardResults = new Map();
     this.nextPlayerNumber = 1;
     this.lobbyOpenedAt = null;
@@ -227,6 +228,7 @@ export class Game extends EventEmitter {
   start() {
     if (this.state !== PHASES.IDLE) return { ok: false, reason: "invalid_state" };
     this.sessionOver = false;
+    this.nextSessionStartsAt = null;
     this.#enterLobby();
     return { ok: true, state: this.state };
   }
@@ -235,6 +237,7 @@ export class Game extends EventEmitter {
     if (this.state === PHASES.IDLE) return { ok: false, reason: "invalid_state" };
     this.cardResults.clear();
     this.sessionOver = true;
+    this.nextSessionStartsAt = null;
     this.#clearActiveRound();
     this.#transition(PHASES.IDLE);
     return { ok: true, state: this.state };
@@ -254,6 +257,7 @@ export class Game extends EventEmitter {
     this.lastReveal = null;
     this.lastChampion = null;
     this.sessionOver = false;
+    this.nextSessionStartsAt = null;
     this.lastFeaturedTableId = 0;
     this.lastFeaturedPlayerIds.clear();
     this.cardResults.clear();
@@ -752,9 +756,12 @@ export class Game extends EventEmitter {
         [...this.playerTables.keys()].map((id) => this.players.get(id) ?? this.profiles.get(id)).filter(Boolean),
       ) : [];
     const finalLeaderboard = this.isFinalRound
-      ? rankedFinalists.slice(0, 5).map((player) => ({
+      ? rankedFinalists.slice(0, 5).map((player, index, ranked) => ({
         player: this.#publicPlayer(player),
         score: this.scores.get(player.id) ?? 0,
+        rank: ranked.findIndex((candidate) => (
+          (this.scores.get(candidate.id) ?? 0) === (this.scores.get(player.id) ?? 0)
+        )) + 1,
       }))
       : this.#leaderboard(5);
     for (const table of this.tables.values()) table.reveal.leaderboard = finalLeaderboard;
@@ -771,7 +778,7 @@ export class Game extends EventEmitter {
         const voteTargetId = table.votes.get(player.id) ?? null;
         const voteTarget = voteTargetId ? table.roster.get(voteTargetId) : null;
         const voteWasRight = Boolean(table.impostors.some(({ playerId }) => playerId === voteTargetId));
-        const standing = fullLeaderboard.findIndex(({ player: ranked }) => ranked.id === player.id);
+        const standing = fullLeaderboard.find(({ player: ranked }) => ranked.id === player.id);
         const availableAt = table.revealEndsAt + this.durations.cardResultDelay;
         this.cardResults.set(player.id, {
           availableAt,
@@ -784,7 +791,7 @@ export class Game extends EventEmitter {
           voteWasRight,
           roundPoints: table.scoreChanges.get(player.id) ?? 0,
           totalScore: this.scores.get(player.id) ?? 0,
-          rank: standing >= 0 ? standing + 1 : null,
+          rank: standing?.rank ?? null,
           playerCount: fullLeaderboard.length,
         });
       }
@@ -826,6 +833,14 @@ export class Game extends EventEmitter {
     return { ok: true, state: this.state };
   }
 
+  prepareNextSession(delayMs = 8_000) {
+    if (this.state !== PHASES.LOBBY || !this.sessionOver) return { ok: false, reason: "invalid_state" };
+    const delay = Math.max(0, Number(delayMs) || 0);
+    this.nextSessionStartsAt = this.#now() + delay;
+    this.#publish("nextSession", { startsAt: this.nextSessionStartsAt, delayMs: delay });
+    return { ok: true, startsAt: this.nextSessionStartsAt, delayMs: delay };
+  }
+
   getTallies(tableId = this.featuredTableId) {
     const table = this.tables.get(Number(tableId));
     if (!table) return [];
@@ -858,6 +873,7 @@ export class Game extends EventEmitter {
       player: this.#publicPlayer(player),
       state: this.state,
       sessionOver: this.sessionOver,
+      nextSessionStartsAt: this.nextSessionStartsAt,
       roundNumber: this.roundNumber,
       phaseEndsAt: this.#phaseEndsAt(),
       phaseDurationMs: this.state === PHASES.REVEAL
@@ -970,6 +986,7 @@ export class Game extends EventEmitter {
       canFinal: this.state === PHASES.LOBBY && this.lastRoundSeating.length > 0,
       champion: this.state === PHASES.REVEAL ? this.lastChampion : null,
       sessionOver: this.sessionOver,
+      nextSessionStartsAt: this.nextSessionStartsAt,
       hostPlays: this.hostPlays,
       streamerLogin: this.streamerLogin,
       streamerSeated: Boolean(this.#streamerPlayer() && this.#tableForPlayer(this.#streamerPlayer().id)),
@@ -1136,6 +1153,7 @@ export class Game extends EventEmitter {
     this.lastReveal = null;
     this.lastChampion = null;
     this.sessionOver = false;
+    this.nextSessionStartsAt = null;
     this.crowdParticipants.clear();
     this.crowdAccusations.clear();
     this.crowdVoteTables.clear();
@@ -1289,7 +1307,7 @@ export class Game extends EventEmitter {
     const noticed = assignment.busted || assignment.caught;
     const caption = assignment.smuggle
       ? assignment.smuggle.source === "voice"
-        ? `${elapsed} into the round. Said out loud on stream. ${noticed ? "Someone noticed." : "Nobody noticed."}`
+        ? `Said out loud on stream. ${noticed ? "Someone noticed." : "Nobody noticed."}`
         : readers.length === 0
           ? `${elapsed} into the round. Nobody spoke after it. ${noticed ? "Someone noticed anyway." : "It slipped by quietly."}`
           : `${elapsed} into the round. ${readers.length} ${readers.length === 1 ? "person" : "people"} read this. ${noticed ? "Someone noticed." : "Nobody noticed."}`
@@ -1395,12 +1413,15 @@ export class Game extends EventEmitter {
   }
 
   #leaderboard(limit = Infinity) {
-    return [...this.scores.entries()].map(([id, score]) => ({
+    const sorted = [...this.scores.entries()].map(([id, score]) => ({
       player: this.#publicPlayer(this.players.get(id) ?? this.profiles.get(id), score),
       score,
     })).filter(({ player }) => player)
-      .sort((left, right) => right.score - left.score || left.player.login.localeCompare(right.player.login))
-      .slice(0, limit);
+      .sort((left, right) => right.score - left.score || left.player.login.localeCompare(right.player.login));
+    return sorted.map((entry, index) => ({
+      ...entry,
+      rank: sorted.findIndex(({ score }) => score === entry.score) + 1,
+    })).slice(0, limit);
   }
 
   #rankPlayers(players) {

@@ -166,16 +166,25 @@ export function voteLockLabel(allVotesIn) {
   return allVotesIn ? "ALL VOTES IN" : "VOTES LOCKED";
 }
 
-export function voteInstruction(impostorCount = 1) {
+export function voteInstruction(impostorCount = 1, bustedCount = 0) {
   const hidden = Math.max(1, Number(impostorCount) || 1);
+  const busted = Math.max(0, Number(bustedCount) || 0);
   const multiple = hidden > 1;
+  const reducedByBust = busted > 0;
+  const boardMeta = reducedByBust
+    ? `${hidden} STILL HIDDEN`
+    : multiple ? `${hidden} IMPOSTERS` : "TOP VOTE ACCUSED";
+  const outcome = multiple ? `top ${hidden} are accused` : "top vote is accused";
+  const lead = reducedByBust
+    ? `${hidden} Imposter${multiple ? "s" : ""} still hidden · ${multiple ? `top ${hidden} accused` : "top vote accused"}`
+    : multiple ? `${hidden} Imposters · top ${hidden} accused` : "Top vote accused";
   return {
     boardTitle: "WHO HID IT?",
-    boardMeta: multiple ? `${hidden} STILL HIDDEN` : "1 STILL HIDDEN",
-    outcome: multiple ? `top ${hidden} are accused` : "top vote is accused",
-    howTo: `Type a player's number in chat, or tap them on your card · ${multiple ? `top ${hidden} are accused` : "top vote is accused"}`,
+    boardMeta,
+    outcome,
+    howTo: `Type a player's number in chat, or tap them on your card · ${outcome}`,
     bannerLines: [
-      `${hidden} Imposter${multiple ? "s" : ""} still hidden · ${multiple ? `top ${hidden} accused` : "top vote accused"}`,
+      lead,
       "Type a number in chat or tap your card",
     ],
   };

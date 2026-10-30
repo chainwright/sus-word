@@ -6,6 +6,7 @@ import Game from "../src/game.js";
 import {
   cardRenderSignature,
   cardScreen,
+  cardVoteInstruction,
   hiddenImpostorCount,
   impostorStatus,
   showRoleTips,
@@ -104,6 +105,16 @@ describe("card screen selection", () => {
     assert.equal(hiddenImpostorCount(null), 0);
     assert.equal(showRoleTips({ busted: true }, "IMPOSTER"), false);
     assert.equal(showRoleTips({ busted: false }, "IMPOSTER"), true);
+  });
+
+  test("vote copy only says still hidden after an Imposter was busted", () => {
+    assert.equal(cardVoteInstruction({ impostorCount: 1, remainingImpostorCount: 1 }), "Top vote accused");
+    assert.equal(cardVoteInstruction({
+      impostorCount: 2,
+      remainingImpostorCount: 1,
+      bustedImpostorIds: ["caught"],
+    }), "1 Imposter still hidden · top vote accused");
+    assert.equal(cardVoteInstruction({ impostorCount: 2, remainingImpostorCount: 2 }), "2 Imposters · top 2 are accused");
   });
 
   test("real game cards render every live role and lobby state", () => {

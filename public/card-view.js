@@ -57,6 +57,14 @@ export function hiddenImpostorCount(state) {
   return Math.max(0, Number(card.remainingImpostorCount ?? card.impostorCount) || 0);
 }
 
+export function cardVoteInstruction(state) {
+  const card = state ?? {};
+  const hidden = hiddenImpostorCount(card);
+  const busted = (card.bustedImpostorIds || []).filter(Boolean).length;
+  if (hidden > 1) return `${hidden} Imposters${busted ? " still hidden" : ""} · top ${hidden} are accused`;
+  return busted ? "1 Imposter still hidden · top vote accused" : "Top vote accused";
+}
+
 export function cardRenderSignature(state = {}) {
   const card = state ?? {};
   const mate = (player) => ({

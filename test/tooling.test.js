@@ -7,6 +7,7 @@ test("browser checks and push CI stay wired independently of npm test", async ()
   const packageJson = JSON.parse(await readFile(new URL("package.json", root), "utf8"));
   const workflow = await readFile(new URL(".github/workflows/test.yml", root), "utf8");
   const browserCheck = await readFile(new URL("scripts/browser-test.js", root), "utf8");
+  const cardCss = await readFile(new URL("public/card.css", root), "utf8");
   const readme = await readFile(new URL("README.md", root), "utf8");
   assert.equal(packageJson.scripts.test, "node --test test/*.test.js");
   assert.equal(packageJson.scripts["test:browser"], "node scripts/browser-test.js");
@@ -21,6 +22,7 @@ test("browser checks and push CI stay wired independently of npm test", async ()
   assert.match(browserCheck, /player-name-vertical-clipped/);
   assert.match(browserCheck, /player-name-vote-overlap/);
   assert.match(browserCheck, /width: 1920, height: 1080/);
+  assert.match(browserCheck, /width: 1280, height: 720/);
   assert.match(browserCheck, /reveal-caption-card-overflow/);
   assert.match(browserCheck, /mock=reveal&frame=payoff/);
   assert.match(browserCheck, /player-name-busted-overlap/);
@@ -36,7 +38,11 @@ test("browser checks and push CI stay wired independently of npm test", async ()
   assert.match(browserCheck, /\/card\?demo=\$\{number\}/);
   assert.match(browserCheck, /real demo Imposter card did not show secret word/);
   assert.match(browserCheck, /reveal-caption-verdict-overlap/);
+  assert.match(browserCheck, /"reveal-voice"/);
+  assert.match(browserCheck, /mock=reveal-voice&frame=payoff/);
   assert.match(browserCheck, /champion-moment-too-narrow/);
+  assert.match(cardCss, /\.copy-command \{[^}]*"Courier Prime"/,
+    "the !join copy control must use a font with an unmistakable exclamation mark");
   const resolutionLoop = browserCheck.indexOf("for (const dimensions");
   const sizeDeclaration = browserCheck.indexOf("const size =", resolutionLoop);
   const mockLoop = browserCheck.indexOf("for (const mock of OVERLAY_MOCKS)", resolutionLoop);

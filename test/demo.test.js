@@ -5,6 +5,7 @@ import { test } from "node:test";
 import Game, { PHASES } from "../src/game.js";
 import {
   demoRoundOutcomes,
+  demoIntermissionPlan,
   demoPublicUrl,
   demoWordLines,
   demoWordPicker,
@@ -96,7 +97,7 @@ test("the demo lets the game choose a fresh catalog word each round", async () =
   assert.match(source, /wordPicker: demoWordPicker\(gameRandom\)/);
 });
 
-test("every demo word is grammatical in every category-aware chat template", () => {
+test("every demo word is grammatical in both category-aware chat templates", () => {
   for (const entry of WORDS) {
     const lines = demoWordLines(entry);
     for (const line of Object.values(lines)) {
@@ -105,11 +106,28 @@ test("every demo word is grammatical in every category-aware chat template", () 
     const plurals = ["pants", "socks", "shoes", "boots", "shorts", "glasses", "scissors", "notes"];
     if (plurals.includes(entry.word)) {
       assert.doesNotMatch(lines.decoy, new RegExp(`\\b(?:a|an)\\s+${entry.word}\\b`, "i"));
-    } else if (!["feelings", "colors", "actions"].includes(entry.category)) {
+    } else if (["animals", "travel", "people"].includes(entry.category)
+      || (entry.category === "fantasy" && !["space", "treasure"].includes(entry.word))) {
       const article = entry.word === "uniform" ? "a" : /^[aeiou]/.test(entry.word) ? "an" : "a";
       assert.match(lines.decoy, new RegExp(`\\b${article} ${entry.word}\\b`, "i"), lines.decoy);
     }
+    assert.doesNotMatch(lines.decoy, /I keep (?:a |an )?(?:river|ocean|forest|mountain|valley|desert|island) near my desk/i);
   }
+});
+
+test("full demo intermissions show card results and clearly restart after a final", () => {
+  assert.deepEqual(demoIntermissionPlan(false, false), {
+    sessionOverMs: 0,
+    nextSessionMs: 0,
+    lobbyMs: 10_000,
+  });
+  assert.deepEqual(demoIntermissionPlan(false, true), {
+    sessionOverMs: 2_000,
+    nextSessionMs: 8_000,
+    lobbyMs: 0,
+  });
+  assert.equal(demoIntermissionPlan(true, false).lobbyMs, 2_000);
+  assert.ok(demoIntermissionPlan(true, true).nextSessionMs < 1_000, "--fast must stay fast");
 });
 
 test("demo voters never target an already-busted Imposter", () => {

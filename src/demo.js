@@ -53,23 +53,37 @@ function articleFor(word) {
 export function demoWordLines(entry) {
   const word = String(entry?.word ?? entry ?? "word").toLowerCase();
   const category = String(entry?.category ?? "");
-  if (category === "feelings") return {
-    decoy: `I feel ${word} when the rain starts at night`,
-    smuggle: `the weather turned and I felt ${word} beside the window`,
-  };
-  if (category === "colors") return {
-    decoy: `that desk lamp looks ${word} when I dim it`,
-    smuggle: `the whole room looked ${word} when the weather turned`,
-  };
-  if (category === "actions") return {
-    decoy: `I always ${word} when thunder catches me off guard`,
-    smuggle: `the weather got dramatic enough to make me ${word}`,
-  };
   const noun = PLURAL_WORDS.has(word) ? word : `${articleFor(word)} ${word}`;
-  return {
-    decoy: `I keep ${noun} near my desk for stormy nights`,
-    smuggle: `the weather turned so I moved my ${word} beside the monitor`,
-  };
+  const fantasyNoun = ["space", "treasure"].includes(word) ? word : noun;
+  const templates = {
+    feelings: [`I feel ${word} when the rain starts at night`, `the weather turned and I felt ${word} beside the window`],
+    colors: [`that desk lamp looks ${word} when I dim it`, `the whole room looked ${word} when the weather turned`],
+    actions: [`I always ${word} when thunder catches me off guard`, `the weather got dramatic enough to make me ${word}`],
+    home: [`I noticed something about the ${word} earlier`, `I took another look at the ${word} before the stream`],
+    food: [`I was thinking about ${word} while making dinner`, `we talked about adding ${word} to dinner`],
+    animals: [`I saw ${noun} in a documentary last night`, `that ${word} clip from yesterday was adorable`],
+    nature: [`I was just thinking about the ${word} earlier`, `we ended up talking about the ${word} before the stream`],
+    travel: [`I was reading about ${noun} before the stream`, `the ${word} came up while we planned the trip`],
+    technology: [`we were talking about the ${word} setup earlier`, `the ${word} gave me trouble before the stream`],
+    entertainment: [`we were talking about the ${word} before the stream`, `the ${word} made last night much more fun`],
+    sports: [`we were talking about ${word} before the stream`, `${word} came up during dinner last night`],
+    work: [`we talked about ${word} at work today`, `the ${word} came up before my break`],
+    people: [`I met ${noun} on the way home`, `the ${word} told a great story earlier`],
+    clothing: [`I left my ${word} in the other room`, `my ${word} was still damp from the rain`],
+    places: [`I stopped by the ${word} before the stream`, `the ${word} was surprisingly quiet today`],
+    objects: [`I put the ${word} beside my desk`, `the ${word} was exactly where I left it`],
+    fantasy: [`we talked about ${fantasyNoun} in the story`, `the story mentioned ${fantasyNoun} near the end`],
+  }[category] || [`we talked about ${word} before the stream`, `the word ${word} came up earlier tonight`];
+  return { decoy: templates[0], smuggle: templates[1] };
+}
+
+export function demoIntermissionPlan(fast, sessionOver = false) {
+  if (fast) return sessionOver
+    ? { sessionOverMs: 50, nextSessionMs: 100, lobbyMs: 0 }
+    : { sessionOverMs: 0, nextSessionMs: 0, lobbyMs: 2_000 };
+  return sessionOver
+    ? { sessionOverMs: 2_000, nextSessionMs: 8_000, lobbyMs: 0 }
+    : { sessionOverMs: 0, nextSessionMs: 0, lobbyMs: 10_000 };
 }
 
 export function selectDemoVoteTarget(table, player, outcomes) {
@@ -419,11 +433,20 @@ export async function runDemo(options = {}) {
   let round = 0;
 
   while (running) {
-    await sleep(fast ? 2_000 : 4_000);
+    const intermission = demoIntermissionPlan(fast, game.sessionOver);
+    if (game.sessionOver) {
+      await sleep(intermission.sessionOverMs);
+      if (!running) break;
+      game.prepareNextSession(intermission.nextSessionMs);
+      await sleep(intermission.nextSessionMs);
+    } else {
+      await sleep(intermission.lobbyMs);
+    }
     if (!running) break;
     round += 1;
     console.log(`[demo] Starting round ${round}`);
-    game.go();
+    if (game.phase === PHASES.LOBBY) game.go();
+    if (game.phase !== PHASES.ROUND) continue;
     const outcomes = demoRoundOutcomes(game, behaviorRandom, missOffset);
     await driveDemoRound(game, {
       playChat: () => playRoundChat(game, service, profiles, fast, voiceSocket, outcomes),

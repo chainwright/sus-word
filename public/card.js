@@ -1,7 +1,7 @@
 import {
   cardRenderSignature,
   cardScreen,
-  hiddenImpostorCount,
+  cardVoteInstruction,
   impostorStatus,
   showRoleTips,
   vibrateIfActivated,
@@ -409,10 +409,7 @@ function renderVote() {
   const progress = node("div", "vote-progress");
   progress.append(node("i"));
   banner.append(timer, progress);
-  const hiddenCount = hiddenImpostorCount(state);
-  page.append(banner, node("p", "vote-instruction", hiddenCount > 1
-    ? `${hiddenCount} Imposters still hidden · top ${hiddenCount} are accused`
-    : "1 Imposter still hidden · top vote accused"));
+  page.append(banner, node("p", "vote-instruction", cardVoteInstruction(state)));
   const grid = node("section", "vote-grid");
   const bustedIds = new Set(state.bustedImpostorIds || []);
   const mates = [...(state.tableMates || [])].filter(Boolean)

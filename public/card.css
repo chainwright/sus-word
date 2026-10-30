@@ -189,7 +189,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 4px s
   letter-spacing: .13em;
   text-align: center;
 }
-.copy-command { color: var(--yellow); background: var(--ink); box-shadow: 0 6px 0 #100806, 0 10px 15px #1208066b; font-size: 21px; }
+.copy-command { color: var(--yellow); background: var(--ink); box-shadow: 0 6px 0 #100806, 0 10px 15px #1208066b; font: 700 19px/1.2 "Courier Prime", monospace; }
 .copy-command.copied { color: #fff; background: var(--green); }
 .claim-steps { padding-left: 35px; font-size: 16px; }
 .claim-steps li { margin: 13px 0; padding-left: 4px; }

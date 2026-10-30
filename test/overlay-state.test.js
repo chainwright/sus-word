@@ -182,12 +182,15 @@ test("the Champion board replaces vote tallies with five final standings", () =>
 test("vote instructions follow the table's Imposter count", () => {
   assert.deepEqual(voteInstruction(1), {
     boardTitle: "WHO HID IT?",
-    boardMeta: "1 STILL HIDDEN",
+    boardMeta: "TOP VOTE ACCUSED",
     outcome: "top vote is accused",
     howTo: "Type a player's number in chat, or tap them on your card · top vote is accused",
-    bannerLines: ["1 Imposter still hidden · top vote accused", "Type a number in chat or tap your card"],
+    bannerLines: ["Top vote accused", "Type a number in chat or tap your card"],
   });
+  assert.equal(voteInstruction(1, 1).boardMeta, "1 STILL HIDDEN");
+  assert.equal(voteInstruction(1, 1).bannerLines[0], "1 Imposter still hidden · top vote accused");
   assert.equal(voteInstruction(2).outcome, "top 2 are accused");
+  assert.equal(voteInstruction(2).boardMeta, "2 IMPOSTERS");
   assert.equal(voteInstruction(2).bannerLines.length, 2);
 });
 
