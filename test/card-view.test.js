@@ -5,6 +5,7 @@ import Game from "../src/game.js";
 
 import {
   cardRenderSignature,
+  cardResultModel,
   cardScreen,
   cardVoteInstruction,
   hiddenImpostorCount,
@@ -116,6 +117,61 @@ describe("card screen selection", () => {
       bustedImpostorIds: ["caught"],
     }), "1 Imposter still hidden · top vote accused");
     assert.equal(cardVoteInstruction({ impostorCount: 2, remainingImpostorCount: 2 }), "2 Imposters · top 2 are accused");
+  });
+
+  test("detective result headlines follow the round outcome, not merely a right guess", () => {
+    const detective = { id: "detective", login: "cydshop" };
+    const impostor = { id: "impostor", login: "romabuilds", number: 3 };
+    const other = { id: "other", login: "romans178", number: 2 };
+    const result = (verdict) => ({ imposters: [{ impostor, word: "station", verdict }] });
+
+    assert.deepEqual(cardResultModel({
+      player: detective,
+      voteTarget: impostor,
+      voteWasRight: true,
+      result: result("CAUGHT"),
+    }), {
+      headline: "YOU CAUGHT ONE!",
+      outcome: "Your vote helped catch @romabuilds.",
+      good: true,
+    });
+    assert.deepEqual(cardResultModel({
+      player: detective,
+      voteTarget: other,
+      voteWasRight: false,
+      result: result("CAUGHT"),
+    }), {
+      headline: "IMPOSTER CAUGHT",
+      outcome: "The detectives caught @romabuilds.",
+      good: false,
+    });
+    assert.deepEqual(cardResultModel({
+      player: detective,
+      voteTarget: impostor,
+      voteWasRight: true,
+      result: result("GOT AWAY"),
+    }), {
+      headline: "RIGHT GUESS",
+      outcome: "The vote split, so @romabuilds got away.",
+      good: true,
+    });
+    const escaped = {
+      headline: "THEY GOT AWAY",
+      outcome: "@romabuilds got away this round.",
+      good: false,
+    };
+    assert.deepEqual(cardResultModel({
+      player: detective,
+      voteTarget: other,
+      voteWasRight: false,
+      result: result("GOT AWAY"),
+    }), escaped);
+    assert.deepEqual(cardResultModel({
+      player: detective,
+      voteTarget: null,
+      voteWasRight: false,
+      result: result("GOT AWAY"),
+    }), escaped);
   });
 
   test("real game cards render every live role and lobby state", () => {

@@ -166,5 +166,5 @@
 .evidence-tray.live-chat .message-slip{min-height:64px;padding:9px 14px;font-size:22px;line-height:1.15}
 
 /* Keep the reveal's headline count geometrically stable while Oswald swaps in. */
-.case-card.lifted{height:230px}
+.case-card.lifted{top:450px;height:250px}
 .case-card.lifted .read-count[data-stable="true"]{display:inline-flex;width:330px;height:40px;min-width:330px;min-height:40px;align-items:center;overflow:hidden;white-space:nowrap;vertical-align:bottom;font-size:32px;line-height:40px}

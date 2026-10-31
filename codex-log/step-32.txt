@@ -1,0 +1,13 @@
+Step 32. Second live test on twitch.tv/romabuilds (31.10, 3 real players: cydshop on a phone, romans178, romabuilds; no SIM; build f1d022d). Three rounds, all ended "nobody noticed", and the players' own screens showed these problems. Fix them, with tests.
+
+1) HIGH — player card result contradicts the round. Round 1: cydshop was a Detective, voted for the real Imposter (#3 @romabuilds), the vote split 1–1, the Imposter got away (chat: "Round 1: STATION slipped in at 1:01 · 2 read it · nobody noticed"). Yet his card result said headline "YOU CAUGHT ONE!" with "Your vote #3 @romabuilds ✓ Imposter" and "STATION · GOT AWAY +0". The headline must follow the round outcome, not the player's own vote. When your vote was right but the Imposter escaped, say so honestly, e.g. headline "RIGHT GUESS" + line "The vote split, so @romabuilds got away." Cover all four cases (caught & you voted right / caught & you voted wrong / escaped & you voted right / escaped & you voted wrong or didn't vote) in a unit test on the function that builds the card result, and a browser check on the card.
+
+2) Tie / split-vote messaging (overlay reveal, case file, chat result line). With 3 players a 1–1 split is common (R2 and R3 both had one correct vote and still read "nobody noticed"). When at least one Detective voted for the Imposter but the top vote didn't land, the text must not say "nobody noticed". Use e.g. "1 vote on @cydshop, not enough to catch them" / chat: "Round 2: SPACE slipped in at 1:13 · 2 read it · 1 vote on the Imposter, not enough". Keep "nobody noticed" only for zero correct votes. Do not change the scoring rules.
+
+3) Word data: "space" is in the fantasy list in src/words.js, so the topic hint read "FANTASY" for SPACE (misleading). Move it to a fitting topic (or remove it), and add a test that every word's topic is sensible for a small hand-made list of known pairs (space ∉ fantasy, lantern ∈ objects, station ∈ travel).
+
+4) "read it" count: in Round 3 the word landed 2 s before voting ("LANTERN slipped in at 2:58 · 0 read it") and people read it during the vote. Keep counting readers through the vote phase until the lock, so the case file reflects who actually saw it. Test with a fake clock.
+
+5) Lobby footer typo: it renders "Starting in0:30" (missing space). Fix and add an assertion on the rendered text.
+
+Run node --check, npm test (currently 151) and keep every existing test green; I'll run test:browser outside the sandbox. Write codex-log/step-32.txt. Do not commit.

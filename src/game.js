@@ -454,7 +454,9 @@ export class Game extends EventEmitter {
   }
 
   recordMessage(input, text) {
-    if (this.state !== PHASES.ROUND || !this.tables.size) return { ok: false, reason: "invalid_state" };
+    if (![PHASES.ROUND, PHASES.VOTE].includes(this.state) || !this.tables.size) {
+      return { ok: false, reason: "invalid_state" };
+    }
     const options = input && typeof input === "object" ? input : { userId: input, text };
     const reference = options.userId ?? options.id ?? options.login;
     const messageText = String(options.text ?? options.message ?? "");
@@ -495,6 +497,10 @@ export class Game extends EventEmitter {
     const player = this.#resolvePlayer(reference, table.roster);
     if (!player) return { ok: false, reason: "invalid_message" };
     const now = this.#now();
+    if (this.state === PHASES.VOTE) {
+      this.#markAssignmentReaders(table, player.id);
+      return { ok: true, tableId: table.id, readerActivity: true, evidence: false, visible: false };
+    }
     const message = {
       id: String(options.messageId ?? options.idempotencyKey ?? `${this.roundNumber}:${table.id}:${table.messages.length + 1}`),
       userId: player.id,
@@ -509,6 +515,7 @@ export class Game extends EventEmitter {
       elapsedMs: Math.max(0, now - table.startedAt),
       sequence: table.messages.length,
     };
+    this.#markAssignmentReaders(table, player.id);
     table.messages.push(message);
     const count = (table.messageCounts.get(player.id) ?? 0) + 1;
     table.messageCounts.set(player.id, count);
@@ -678,6 +685,7 @@ export class Game extends EventEmitter {
       };
     }
     if (voter.id === target.id) return { ok: false, reason: "self_vote" };
+    if (!crowd) this.#markAssignmentReaders(table, voter.id);
     if (crowd) {
       const previousTableId = this.crowdVoteTables.get(voter.id);
       if (previousTableId && previousTableId !== table.id) {
@@ -1136,6 +1144,7 @@ export class Game extends EventEmitter {
         bustedAt: null,
         bustedBy: null,
         caught: false,
+        readers: new Set(),
       }));
       for (const player of group) nextPlayerTables.set(player.id, id);
       for (const player of impostorPlayers) nextImpostors.add(player.id);
@@ -1303,8 +1312,8 @@ export class Game extends EventEmitter {
     const caseFileMessage = `Round ${table.number}: ${results.map((result) => (
       result.evidence
         ? result.evidence.source === "voice"
-          ? `${result.word.toUpperCase()} was said out loud at ${result.elapsed} · ${result.verdict === "GOT AWAY" ? "nobody noticed" : "caught"}`
-          : `${result.word.toUpperCase()} slipped in at ${result.elapsed} · ${result.readerCount} read it · ${result.verdict === "GOT AWAY" ? "nobody noticed" : "caught"}`
+          ? `${result.word.toUpperCase()} was said out loud at ${result.elapsed} · ${this.#caseFileOutcome(result)}`
+          : `${result.word.toUpperCase()} slipped in at ${result.elapsed} · ${result.readerCount} read it · ${this.#caseFileOutcome(result)}`
         : `${result.word.toUpperCase()} never landed · 0 read it`
     )).join(" · ")}`;
     return {
@@ -1319,26 +1328,51 @@ export class Game extends EventEmitter {
     };
   }
 
+  #markAssignmentReaders(table, playerId) {
+    if (!table?.roster.has(playerId)) return;
+    for (const assignment of table.impostors) {
+      if (assignment.smuggle && assignment.playerId !== playerId) assignment.readers.add(playerId);
+    }
+  }
+
+  #caseFileOutcome(result) {
+    if (result.busted || result.caught) return "caught";
+    const votes = Number(result.correctVoteCount) || 0;
+    if (votes > 0) return `${votes} vote${votes === 1 ? "" : "s"} on the Imposter, not enough`;
+    return "nobody noticed";
+  }
+
   #assignmentReveal(table, assignment) {
     const impostor = this.#publicPlayer(
       table.roster.get(assignment.playerId) ?? this.profiles.get(assignment.playerId),
       this.scores.get(assignment.playerId) ?? 0,
     );
     const evidence = assignment.smuggle ? this.#revealMessage(assignment.smuggle, table) : null;
-    const readers = assignment.smuggle ? [...new Set(
-      table.messages.slice(assignment.smuggle.sequence + 1).map(({ userId }) => userId)
-        .filter((id) => id !== assignment.playerId),
-    )].map((id) => this.#publicPlayer(table.roster.get(id))).filter(Boolean) : [];
+    const readers = assignment.smuggle
+      ? [...assignment.readers].map((id) => this.#publicPlayer(table.roster.get(id))).filter(Boolean)
+      : [];
+    const impostorIds = new Set(table.impostors.map(({ playerId }) => playerId));
+    const correctVoterIds = [...table.votes]
+      .filter(([voterId, targetId]) => targetId === assignment.playerId && !impostorIds.has(voterId))
+      .map(([voterId]) => voterId);
+    const correctVoters = correctVoterIds
+      .map((id) => this.#publicPlayer(table.roster.get(id)))
+      .filter(Boolean);
+    const correctVoteCount = correctVoters.length;
     const elapsed = assignment.smuggle ? formatElapsed(assignment.smuggle.elapsedMs) : null;
     const verdict = !assignment.smuggle ? "WORD NEVER LANDED"
       : assignment.busted ? "BUSTED" : assignment.caught ? "CAUGHT" : "GOT AWAY";
     const noticed = assignment.busted || assignment.caught;
+    const notice = noticed ? "Someone noticed."
+      : correctVoteCount > 0
+        ? `${correctVoteCount} vote${correctVoteCount === 1 ? "" : "s"} on @${impostor.login}, not enough to catch them.`
+        : "Nobody noticed.";
     const caption = assignment.smuggle
       ? assignment.smuggle.source === "voice"
-        ? `Said out loud on stream. ${noticed ? "Someone noticed." : "Nobody noticed."}`
+        ? `Said out loud on stream. ${notice}`
         : readers.length === 0
-          ? `${elapsed} into the round. Nobody spoke after it. ${noticed ? "Someone noticed anyway." : "It slipped by quietly."}`
-          : `${elapsed} into the round. ${readers.length} ${readers.length === 1 ? "person" : "people"} read this. ${noticed ? "Someone noticed." : "Nobody noticed."}`
+          ? `${elapsed} into the round. Nobody spoke after it. ${notice}`
+          : `${elapsed} into the round. ${readers.length} ${readers.length === 1 ? "person" : "people"} read this. ${notice}`
       : "The word never made it out.";
     const sneakiness = !assignment.smuggle ? `Never found a clean opening for '${assignment.word}'.`
       : noticed ? `Slipped '${assignment.word}' in, but chat smelled it.`
@@ -1368,6 +1402,8 @@ export class Game extends EventEmitter {
       elapsed,
       readerCount: readers.length,
       readers,
+      correctVoteCount,
+      correctVoters,
       caption,
       messages: table.messages.map((message) => this.#publicMessage(message, table)),
       accidentalDecoys,

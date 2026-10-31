@@ -65,6 +65,57 @@ export function cardVoteInstruction(state) {
   return busted ? "1 Imposter still hidden · top vote accused" : "Top vote accused";
 }
 
+function wasCaught(result) {
+  return ["CAUGHT", "BUSTED"].includes(String(result?.verdict || "").toUpperCase());
+}
+
+export function cardResultModel(state = {}) {
+  const card = state ?? {};
+  const imposters = (card.result?.imposters || []).filter(Boolean);
+  const mine = imposters.find(({ impostor }) => impostor?.id === card.player?.id);
+  if (mine) {
+    const verdict = String(mine.verdict || "");
+    return {
+      headline: verdict === "GOT AWAY" ? "YOU GOT AWAY!"
+        : verdict === "WORD NEVER LANDED" ? "WORD NEVER LANDED" : "YOU WERE CAUGHT",
+      outcome: verdict === "GOT AWAY" ? "You escaped the vote." : "",
+      good: verdict === "GOT AWAY",
+    };
+  }
+
+  const votedResult = imposters.find(({ impostor }) => impostor?.id === card.voteTarget?.id);
+  const voteWasRight = Boolean(card.voteWasRight && votedResult);
+  const caughtResult = imposters.find(wasCaught);
+  const escapedResult = imposters.find(({ verdict }) => verdict === "GOT AWAY");
+  const missedResult = imposters.find(({ verdict }) => verdict === "WORD NEVER LANDED");
+  if (voteWasRight && wasCaught(votedResult)) return {
+    headline: "YOU CAUGHT ONE!",
+    outcome: `Your vote helped catch @${votedResult.impostor?.login || "the Imposter"}.`,
+    good: true,
+  };
+  if (voteWasRight && votedResult?.verdict === "GOT AWAY") return {
+    headline: "RIGHT GUESS",
+    outcome: `The vote split, so @${votedResult.impostor?.login || "the Imposter"} got away.`,
+    good: true,
+  };
+  if (caughtResult) return {
+    headline: "IMPOSTER CAUGHT",
+    outcome: `The detectives caught @${caughtResult.impostor?.login || "the Imposter"}.`,
+    good: false,
+  };
+  if (escapedResult) return {
+    headline: "THEY GOT AWAY",
+    outcome: `@${escapedResult.impostor?.login || "The Imposter"} got away this round.`,
+    good: false,
+  };
+  if (missedResult) return {
+    headline: "WORD NEVER LANDED",
+    outcome: `@${missedResult.impostor?.login || "The Imposter"} never landed the secret word.`,
+    good: false,
+  };
+  return { headline: "CASE CLOSED", outcome: "", good: false };
+}
+
 export function cardRenderSignature(state = {}) {
   const card = state ?? {};
   const mate = (player) => ({

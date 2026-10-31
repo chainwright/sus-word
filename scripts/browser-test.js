@@ -15,7 +15,7 @@ const OVERLAY_MOCKS = [
 ];
 const CARD_MOCKS = [
   "join", "join-wrong", "claim", "claim-help", "imposter", "imposter-2", "delivered", "busted",
-  "detective", "vote", "reveal-hold", "result", "champion", "side", "featured",
+  "detective", "vote", "reveal-hold", "result", "result-split", "champion", "side", "featured",
 ];
 
 function chromePath() {
@@ -226,6 +226,13 @@ const OVERLAY_LAYOUT_CHECK = String.raw`(async () => {
     }
   }
   const frame = new URLSearchParams(location.search).get("frame");
+  if (new URLSearchParams(location.search).get("mock") === "lobby-first") {
+    const lobbyClock = document.querySelector("#how-clock");
+    const copy = lobbyClock?.textContent.replace(/\s+/g, " ").trim() || "";
+    if (!/^Starting in \d+:\d{2}$/.test(copy)) {
+      failures.push({ check: "lobby-countdown-spacing", element: "#how-clock", detail: copy || "missing" });
+    }
+  }
   if (frame === "count") {
     const count = document.querySelector(".read-count[data-stable='true']");
     if (!visible(count) || count.textContent.trim().replace(/\s+/g, " ") !== "9 people read it") {
@@ -350,6 +357,16 @@ const CARD_LAYOUT_CHECK = String.raw`(async () => {
     const help = document.querySelector(".claim-help");
     if (!help || help.hidden || !help.textContent.includes("Twitch sometimes hides messages from brand-new accounts")) {
       failures.push({ check: "claim-timeout-help-missing", element: ".claim-help", detail: help?.textContent || "missing" });
+    }
+  }
+  if (new URLSearchParams(location.search).get("mock") === "result-split") {
+    const headline = document.querySelector(".result-headline");
+    const outcome = document.querySelector(".result-outcome");
+    if (headline?.textContent.trim() !== "RIGHT GUESS") {
+      failures.push({ check: "split-vote-card-headline", element: ".result-headline", detail: headline?.textContent || "missing" });
+    }
+    if (!outcome?.textContent.includes("The vote split, so @romabuilds got away.")) {
+      failures.push({ check: "split-vote-card-outcome", element: ".result-outcome", detail: outcome?.textContent || "missing" });
     }
   }
   return failures;

@@ -146,6 +146,15 @@ test("the reveal board promotes the case-file summary to its headline", () => {
     evidence: { source: "voice" },
     readerCount: 0,
   }), "LEMON was said out loud at 0:33 · nobody noticed");
+  assert.equal(caseFileHeadline({
+    word: "space",
+    impostor: { login: "cydshop" },
+    elapsed: "1:13",
+    verdict: "GOT AWAY",
+    evidence: { source: "chat" },
+    readerCount: 2,
+    correctVoteCount: 1,
+  }), "SPACE slipped in at 1:13 · 2 read\u00a0it · 1 vote on the Imposter, not enough");
 });
 
 test("a missed word has one-line stamp copy plus the real case details", async () => {

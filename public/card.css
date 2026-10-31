@@ -348,6 +348,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 4px s
 .result-sheet { margin-top: 70px; }
 .result-headline { display: table; margin: 8px auto 17px; padding: 8px 12px; border: 6px solid var(--red); color: var(--red); font: 700 42px/1 "Oswald", sans-serif; transform: rotate(-2deg); }
 .result-headline.good { border-color: var(--green); color: var(--green); }
+.result-outcome { margin: -7px 4px 14px; color: var(--ink); font: 700 20px/1.25 "Oswald", sans-serif; text-align: center; }
 .result-row { padding: 10px 0; display: grid; grid-template-columns: minmax(90px, .8fr) minmax(0, 1.4fr); gap: 8px; border-bottom: 2px dashed #b79a75; font-size: 15px; }
 .result-row strong { overflow-wrap: anywhere; font: 700 19px/1.15 "Oswald", sans-serif; text-align: right; }
 .result-row .score { color: var(--red); font-size: 28px; }

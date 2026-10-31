@@ -1,5 +1,6 @@
 import {
   cardRenderSignature,
+  cardResultModel,
   cardScreen,
   cardVoteInstruction,
   impostorStatus,
@@ -479,11 +480,9 @@ function renderResult() {
   sheet.setAttribute("aria-live", "polite");
   sheet.append(node("p", "step-label", `YOU WERE ${state.role === "IMPOSTER" ? "AN IMPOSTER" : "A DETECTIVE"}`));
   const resultImposters = (state.result?.imposters || []).filter(Boolean);
-  const mine = resultImposters.find(({ impostor }) => impostor?.id === state.player?.id);
-  const headline = mine
-    ? (mine.verdict === "GOT AWAY" ? "YOU GOT AWAY!" : mine.verdict === "WORD NEVER LANDED" ? "WORD NEVER LANDED" : "YOU WERE CAUGHT")
-    : state.voteWasRight ? "YOU CAUGHT ONE!" : "CASE CLOSED";
-  sheet.append(node("div", `result-headline ${state.voteWasRight || mine?.verdict === "GOT AWAY" ? "good" : ""}`, headline));
+  const resultModel = cardResultModel(state);
+  sheet.append(node("div", `result-headline${resultModel.good ? " good" : ""}`, resultModel.headline));
+  if (resultModel.outcome) sheet.append(node("p", "result-outcome", resultModel.outcome));
   const rows = node("div", "result-rows");
   const voteText = state.voteTarget
     ? `#${state.voteTarget.number || "?"} @${state.voteTarget.login} ${state.voteWasRight ? "✓ Imposter" : "✕ Detective"}`
@@ -744,12 +743,12 @@ function mockCard(kind) {
   if (kind === "side") Object.assign(base, { tableId: 2, tableCount: 3, onStream: false });
   if (kind === "vote") Object.assign(base, { state: "VOTE", remainingMs: 19_000, phaseDurationMs: 30_000, voteTargetId: "p2" });
   if (kind === "reveal-hold") Object.assign(base, { state: "REVEAL", role: null, revealHold: true, resultAvailableAt: Date.now() + 26_000 });
-  if (kind === "result") Object.assign(base, {
-    state: "LOBBY", role: "DETECTIVE", showResult: true, voteTarget: tableMates[1], voteWasRight: true,
-    roundPoints: 1, totalScore: 4, rank: 2, playerCount: 12,
+  if (["result", "result-split"].includes(kind)) Object.assign(base, {
+    state: "LOBBY", role: "DETECTIVE", showResult: true, voteTarget: kind === "result-split" ? tableMates[2] : tableMates[1], voteWasRight: true,
+    roundPoints: kind === "result-split" ? 0 : 1, totalScore: 4, rank: 2, playerCount: 12,
     result: { imposters: [
-      { impostor: tableMates[1], word: "lemon", verdict: "CAUGHT" },
-      { impostor: tableMates[4], word: "blanket", verdict: "GOT AWAY" },
+      { impostor: kind === "result-split" ? tableMates[2] : tableMates[1], word: kind === "result-split" ? "station" : "lemon", verdict: kind === "result-split" ? "GOT AWAY" : "CAUGHT", correctVoteCount: 1 },
+      ...(kind === "result-split" ? [] : [{ impostor: tableMates[4], word: "blanket", verdict: "GOT AWAY" }]),
     ] },
   });
   if (kind === "champion") Object.assign(base, {
@@ -774,7 +773,7 @@ document.addEventListener("visibilitychange", () => {
 
 setInterval(updateTimers, 250);
 const mock = new URLSearchParams(location.search).get("mock");
-const mockKinds = ["join", "join-wrong", "claim", "claim-help", "imposter", "imposter-2", "delivered", "busted", "detective", "vote", "reveal-hold", "result", "champion", "side", "featured"];
+const mockKinds = ["join", "join-wrong", "claim", "claim-help", "imposter", "imposter-2", "delivered", "busted", "detective", "vote", "reveal-hold", "result", "result-split", "champion", "side", "featured"];
 if (mockKinds.includes(mock)) {
   connection.textContent = "PREVIEW";
   render(mockCard(mock));

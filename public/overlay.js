@@ -366,7 +366,8 @@ function renderLobby(next) {
     const status = $("#how-clock");
     status.replaceChildren(document.createTextNode(presentation.statusText));
     if (presentation.showCountdown) {
-      const countdown = el("time", "", ` ${clock(remaining())}`);
+      status.append(document.createTextNode(" "));
+      const countdown = el("time", "", clock(remaining()));
       countdown.id = "how-lobby-clock";
       status.append(countdown);
     }
@@ -496,16 +497,20 @@ function finalCase(result) {
 function setStableRevealCaption(card, result) {
   const caption = card.querySelector(".reveal-caption");
   if (!caption) return null;
-  const noticed = result.caught || result.busted ? " · someone noticed" : " · nobody noticed";
+  const correctVotes = Number(result.correctVoteCount) || 0;
+  const outcome = result.caught || result.busted ? "someone noticed"
+    : correctVotes > 0
+      ? `${correctVotes} vote${correctVotes === 1 ? "" : "s"} on @${result.impostor?.login || "the Imposter"}, not enough to catch them`
+      : "nobody noticed";
   if (result.evidence?.source === "voice") {
-    caption.replaceChildren(el("strong", "read-count voice-payoff", revealPayoffLabel(result)), document.createTextNode(noticed));
+    caption.replaceChildren(el("strong", "read-count voice-payoff", revealPayoffLabel(result)), document.createTextNode(` · ${outcome}`));
   } else {
     const count = el("strong", "read-count", readerCountLabel(result.readerCount ?? 0));
     count.dataset.stable = "true";
     caption.replaceChildren(
       document.createTextNode(`${result.elapsed || result.evidence?.elapsed || "1:12"} into the round · `),
       count,
-      document.createTextNode(noticed),
+      document.createTextNode(` · ${outcome}`),
     );
   }
   return caption;

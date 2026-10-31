@@ -85,11 +85,16 @@ export function caseFileHeadline(reveal = {}) {
   if (!result.evidence) {
     return `${word} never landed · @${result.impostor?.login || "imposter"} never found an opening`;
   }
+  const correctVotes = Number(result.correctVoteCount) || 0;
+  const outcome = result.verdict !== "GOT AWAY" ? "caught"
+    : correctVotes > 0
+      ? `${correctVotes} vote${correctVotes === 1 ? "" : "s"} on the Imposter, not enough`
+      : "nobody noticed";
   if (result.evidence.source === "voice") {
-    return `${word} was said out loud at ${result.elapsed || "0:00"} · ${result.verdict === "GOT AWAY" ? "nobody noticed" : "caught"}`;
+    return `${word} was said out loud at ${result.elapsed || "0:00"} · ${outcome}`;
   }
   const readers = Number(result.readerCount) || 0;
-  return `${word} slipped in at ${result.elapsed || "0:00"} · ${readers} read\u00a0it · ${result.verdict === "GOT AWAY" ? "nobody noticed" : "caught"}`;
+  return `${word} slipped in at ${result.elapsed || "0:00"} · ${readers} read\u00a0it · ${outcome}`;
 }
 
 export function missedWordCopy(result = {}) {

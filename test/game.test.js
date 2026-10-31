@@ -585,7 +585,7 @@ describe("voting and scoring", () => {
     game.finishVote();
 
     assert.equal(game.lastReveal.verdict, "CAUGHT");
-    assert.match(game.lastReveal.caption, /1 person read this\. Someone noticed\.$/);
+    assert.match(game.lastReveal.caption, /2 people read this\. Someone noticed\.$/);
   });
 
   test("uses WORD NEVER LANDED while rewarding detectives who voted right", () => {
@@ -619,8 +619,28 @@ describe("voting and scoring", () => {
     assert.equal(game.lastReveal.tallies.find(({ player }) => player.id === alice.id).votes, 1);
     assert.equal(game.lastReveal.caught, false);
     assert.equal(game.lastReveal.verdict, "GOT AWAY");
+    assert.equal(game.lastReveal.correctVoteCount, 1);
+    assert.match(game.lastReveal.caption, /1 vote on @alice, not enough to catch them\.$/);
+    assert.match(game.lastReveal.caseFileMessage, /1 vote on the Imposter, not enough$/);
+    assert.doesNotMatch(game.lastReveal.caseFileMessage, /nobody noticed/);
     assert.equal(game.scores.get(chloe.id), 0);
     assert.equal(game.scores.get(alice.id), 3);
+  });
+
+  test("reader count continues through voting until the result locks", () => {
+    const { clock, game } = createGame();
+    const [alice, bruno, chloe] = startRound(game);
+    clock.tick(DEFAULT_DURATIONS.round - 2_000);
+    game.recordMessage({ userId: alice.id, text: "This candle smells lovely" });
+    game.beginVote();
+    clock.tick(2_000);
+    game.vote(bruno.id, alice.id);
+    game.vote(chloe.id, bruno.id);
+    game.finishVote();
+
+    assert.equal(game.lastReveal.elapsed, "2:58");
+    assert.equal(game.lastReveal.readerCount, 2);
+    assert.deepEqual(game.lastReveal.readers.map(({ id }) => id).sort(), [bruno.id, chloe.id].sort());
   });
 
   test("crowd votes break seated ties but cannot decide without seated votes", () => {

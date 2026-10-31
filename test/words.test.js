@@ -14,6 +14,14 @@ describe("word catalog", () => {
       assert.ok(CATEGORIES.includes(entry.category));
     }
   });
+
+  test("known words have honest topic hints", () => {
+    const topics = new Map(WORDS.map(({ word, category }) => [word, category]));
+    assert.notEqual(topics.get("space"), "fantasy");
+    assert.equal(topics.get("space"), "places");
+    assert.equal(topics.get("lantern"), "objects");
+    assert.equal(topics.get("station"), "travel");
+  });
 });
 
 describe("findWord", () => {

@@ -69,7 +69,7 @@ const WORD_GROUPS = {
     "school", "library", "market", "bakery", "museum", "castle", "church",
     "clinic", "theater", "beach", "park", "plaza", "street", "village",
     "city", "prison", "palace", "factory", "stadium", "campus", "diner",
-    "cafe",
+    "cafe", "space",
   ],
   objects: [
     "bottle", "wallet", "keychain", "phone", "watch", "glasses", "scissors",
@@ -97,7 +97,6 @@ const WORD_GROUPS = {
     "dragon", "wizard", "pirate", "ghost", "fairy", "giant", "crown",
     "sword", "shield", "spell", "treasure", "knight", "potion", "goblin",
     "mermaid", "monster", "vampire", "zombie", "alien", "planet", "rocket",
-    "space",
   ],
   events: [
     "birthday", "holiday", "picnic", "party", "wedding", "dinner", "lunch",
