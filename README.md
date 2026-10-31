@@ -83,7 +83,7 @@ If a code is still waiting after 25 seconds, check whether the `!join CODE` mess
 
 ## Built with Codex
 
-Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first rehearsal simulator was drafted outside Codex and later rewritten in Codex (step 15). The current game is covered by 151 browser-free automated tests, plus the real-Chrome mock and live-card check:
+Built in one Codex thread ([prompts in `codex-log/`](codex-log/)); the first rehearsal simulator was drafted outside Codex and later rewritten in Codex (step 15). The current game is covered by 154 browser-free automated tests, plus the real-Chrome mock and live-card check:
 
 1. Pure game logic, word detection, scoring, and tests.
 2. Twitch OAuth, EventSub chat, server routes, and live state.
